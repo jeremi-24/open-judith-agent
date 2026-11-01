@@ -4,9 +4,10 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
-export function startBridge({ onApprove, onVisual }) {
+export function startBridge({ onApprove, onVisual, onLook }) {
   const token = randomBytes(24).toString('hex');
   const routes = {
+    '/look': () => onLook(),
     '/approve': async ({ tool, input }) => ({ allow: await onApprove(tool, input ?? {}) }),
     '/visual': async ({ title, html }) => {
       onVisual(String(title ?? ''), String(html ?? ''));

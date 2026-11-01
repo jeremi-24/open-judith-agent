@@ -28,7 +28,7 @@ test('user content puts the image first, then the context and the question', () 
 
 test('Judith decides by herself between showing and doing', () => {
   const prompt = buildSystemPrompt();
-  assert.match(prompt, /SHOW, EXPLAIN or DO/);
+  assert.match(prompt, /TALK, SHOW, EXPLAIN or DO/);
   assert.match(prompt, /mcp__judith__open_app/);
 });
 
@@ -41,4 +41,11 @@ test('tool calls are described in plain words', () => {
 
 test('user content works without an image', () => {
   assert.deepEqual(buildUserContent({ question: 'Salut' }), [{ type: 'text', text: 'Salut' }]);
+});
+
+test('the annotation mode changes the drawing rule', () => {
+  assert.match(buildSystemPrompt({ annotations: 'none' }), /Never draw on the screen/);
+  assert.match(buildSystemPrompt(), /Draw on the screen ONLY when it saves the user from searching/);
+  assert.match(buildSystemPrompt({ annotations: 'always' }), /mark the elements you talk about/);
+  assert.match(buildSystemPrompt({ annotations: 'oops' }), /ONLY when/);
 });

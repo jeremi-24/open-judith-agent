@@ -102,6 +102,29 @@ server.registerTool(
   },
 );
 
+// Judith looks only when it helps: no screenshot for "open VLC" or "what is
+// a closure", one for "where is the export button".
+server.registerTool(
+  'look_at_screen',
+  {
+    description:
+      "Take a screenshot of the user's screen. Call it when the answer depends on what is on the screen " +
+      '(where is X, what is this, help me with this app or page, explain what I see, the next step on this page). ' +
+      'Do not call it for general questions, or for actions like opening an app. Call it again when the screen may have changed.',
+    inputSchema: {},
+  },
+  async () => {
+    const shot = await bridge('/look', {});
+    if (!shot?.data) return text('The screen could not be captured.');
+    return {
+      content: [
+        { type: 'image', data: shot.data, mimeType: shot.mediaType },
+        { type: 'text', text: 'This is the user screen now. Coordinates you give are fractions of this image.' },
+      ],
+    };
+  },
+);
+
 server.registerTool(
   'show_visual',
   {

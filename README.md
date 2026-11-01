@@ -81,6 +81,16 @@ Judith reads `config.json` in her user data folder
 - `voice`: `siwis` (local neural voice, ~65 MB downloaded once) or `windows`
   (the system voices, more robotic). `voiceSpeed`: 1 = normal.
 - `hideFromScreenRecordings`: keep `true` for privacy; set `false` to film demos with OBS.
+- `alwaysLook` (default `false`): Judith takes a screenshot only when the question needs it
+  (her `look_at_screen` tool). `true` sends one with every question, slower.
+- `conversation` (default `true`): after answering, Judith listens for 5 more seconds.
+- `annotations`: `helpful` (default, draws only when it saves you searching), `none`, `always`.
+
+### When marks disappear
+
+A mark is only true for the screen Judith looked at. It is not drawn if that part of the
+screen already changed (you scrolled, clicked, switched window), and it disappears as soon as
+what is under it changes, or after a minute.
 
 ### How Judith acts
 

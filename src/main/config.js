@@ -9,6 +9,12 @@ export const DEFAULTS = {
   model: 'haiku',
   language: 'fr',
   shortcut: 'Control+Alt+J',
+  // false: Judith takes a screenshot only when the question needs it.
+  alwaysLook: false,
+  // After answering, listen again for a few seconds (a real conversation).
+  conversation: true,
+  // Drawing on the screen: "helpful" (only when it saves searching), "none", "always".
+  annotations: 'helpful',
   // Listen to the microphone as soon as Judith is summoned.
   voiceInput: true,
   speechModel: 'onnx-community/whisper-base',
