@@ -63,19 +63,37 @@ Judith reads `config.json` in her user data folder
   "claudePath": "C:\\Users\\you\\.local\\bin\\claude.exe",
   "model": "haiku",
   "language": "fr",
-  "shortcut": "Control+Alt+J"
+  "shortcut": "Control+Alt+J",
+  "mode": "show",
+  "hideFromScreenRecordings": true
 }
 ```
 
-`workingDirectory` matters: Claude Code loads the memory and `CLAUDE.md` of that folder,
-so point it where you usually run `claude`.
+- `workingDirectory` matters: Claude Code loads the memory and `CLAUDE.md` of that folder,
+  so point it where you usually run `claude`. In JSON, write paths with `/` or `\\`.
+- `mode`: `show` (read-only) or `act` (Claude Code may edit files). Also in the tray menu.
+- `hideFromScreenRecordings`: keep `true` for privacy; set `false` to film demos with OBS.
 
 ## Development
 
 ```bash
-npm test          # unit tests (no Electron needed)
-npm run bench     # pointing-precision benchmark, see bench/
+npm test                                   # unit tests (no Electron needed)
+node scripts/try-engine.mjs "question" img.png   # talk to Judith from the terminal
+npm run bench                              # pointing-precision benchmark, see bench/
 ```
+
+Demo mode asks a question at launch and saves a screenshot of the result:
+
+```bash
+JUDITH_DEMO="Où est le bouton Démarrer ?" JUDITH_DEMO_SHOT=shot.jpg npm start
+```
+
+## Known limits (v0.1)
+
+- Answers take ~5 s with a screenshot (Claude Code is kept warm in the background).
+- Pointing is precise on regular buttons but can be off by ~30 px on tiny icons
+  (taskbar). Windows UI Automation is planned to snap marks onto real controls.
+- Text only for now: voice input and output are planned.
 
 ## Privacy
 
