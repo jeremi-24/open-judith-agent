@@ -27,6 +27,8 @@ function setState(state) {
 // Tiny, safe markdown: escape everything, then **bold** and `code`.
 function render(text) {
   return text
+    .replace(/\s*\[[a-z][a-z '-]{0,30}\]\s*/gi, ' ') // emotion tags are for the voice only
+    .trim()
     .replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
     .replace(/`([^`]+)`/g, '<code>$1</code>');

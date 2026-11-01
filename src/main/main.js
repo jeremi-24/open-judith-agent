@@ -15,6 +15,7 @@ import { CHANGED, markRect, regionDiff, STALE } from '../core/pixels.js';
 import { createScriptReader } from '../core/script.js';
 import { isEcho, isGhost } from '../core/hallucinations.js';
 import { decodeWav } from '../core/audio.js';
+import { stripEmotions } from '../core/emotions.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -216,8 +217,9 @@ async function speak(text) {
   const cloud = CLOUD_VOICES[config.voice];
   if (cloud && !cloudVoiceFailed && cloud.key()) {
     try {
-      const audio = await cloud.speak(text);
-      if (process.env.JUDITH_DEMO) console.log('[judith] says (cloud)', JSON.stringify(text.slice(0, 50)));
+      // Fish acts the [emotion] tags; the other voices would read them aloud.
+      const audio = await cloud.speak(config.voice === 'fish' ? text : stripEmotions(text));
+      if (process.env.JUDITH_DEMO) console.log('[judith] says (cloud)', JSON.stringify(text.slice(0, 90)));
       return audio;
     } catch (error) {
       // A bad key or no credit: say it once, then use the local voice.
@@ -225,7 +227,7 @@ async function speak(text) {
       console.error(`[judith] cloud voice off, local voice instead: ${error.message}`);
     }
   }
-  return speakLocal(text);
+  return speakLocal(stripEmotions(text));
 }
 
 function speakLocal(text) {
@@ -558,7 +560,8 @@ app.whenReady().then(async () => {
     claudePath: config.claudePath,
     cwd: config.workingDirectory,
     model: config.model,
-    systemPrompt: buildSystemPrompt({ language: config.language, annotations: config.annotations }),
+    // Emotion tags only when the voice can act them.
+    systemPrompt: buildSystemPrompt({ language: config.language, annotations: config.annotations, emotions: config.voice === 'fish' }),
     extraArgs: [
       '--mcp-config', mcpConfig,
       '--allowedTools', ALLOWED_TOOLS.join(','),

@@ -14,7 +14,14 @@ const ANNOTATION_RULES = {
   always: 'Whenever you looked at the screen, mark the elements you talk about.',
 };
 
-export function buildSystemPrompt({ language = 'fr', annotations = 'helpful' } = {}) {
+// With a voice that can act (Fish Audio), Judith directs her own delivery.
+export const EMOTION_TAGS = ['excited', 'happy', 'laughing', 'whispering', 'surprised', 'calm', 'sad', 'sigh', 'break'];
+const EMOTION_RULE = `Your voice can act. In "say" lines you may put a tag in brackets just before the words it colours:
+${EMOTION_TAGS.map((t) => `[${t}]`).join(' ')}. [break] is a short pause.
+Use them like a good teacher would: [excited] when the user succeeds, [whispering] for a tip, [break] before the key point.
+At most 2 tags per answer, never on every sentence, never in labels, steps or notes. Tags are in English, the words in the user language.`;
+
+export function buildSystemPrompt({ language = 'fr', annotations = 'helpful', emotions = false } = {}) {
   const lang = LANGUAGES[language] ?? language;
   const tu = language === 'fr' ? ' and always use "tu", never "vous"' : '';
   return `You are Judith, a visual mentor living in a notch at the top of the user's screen, in the spirit of Jarvis. Motto: "I show you, you learn."
@@ -50,7 +57,9 @@ Coordinates: fractions (0..1) of the screenshot, x from the left, y from the top
 For ring and box give the exact corners of the element itself, tight around it (not the area around it).
 Labels: at most 3 words. Mark only what is visible, at most 3 marks per answer, as precisely as you can.
 Drawings appear when the "say" line just before them is spoken: put each drawing right after the sentence that talks about it.
-At most 4 "say" lines, each under 20 words. Use **bold** for button and menu names.
+At most 4 "say" lines, each under 20 words. Use **bold** for button and menu names.${emotions ? `
+
+${EMOTION_RULE}` : ''}
 
 Example:
 say Le bouton **Exporter** est en haut à droite.

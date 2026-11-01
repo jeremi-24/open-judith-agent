@@ -24,6 +24,8 @@ window.JudithVoice = (() => {
   synth.addEventListener('voiceschanged', () => pickWindowsVoice('fr'));
 
   const plain = (text) => text.replace(/\*\*|`/g, '').replace(/\s+/g, ' ').trim();
+  // Emotion tags stay for the main process (Fish acts them), never for Windows voices.
+  const spoken = (text) => plain(text).replace(/\s*\[[a-z][a-z '-]{0,30}\]\s*/gi, ' ').trim();
 
   async function playSamples({ samples, sampleRate }) {
     context ??= new AudioContext();
@@ -42,7 +44,7 @@ window.JudithVoice = (() => {
 
   function playWindows(sentence) {
     return new Promise((resolve) => {
-      const utterance = new SpeechSynthesisUtterance(plain(sentence));
+      const utterance = new SpeechSynthesisUtterance(spoken(sentence));
       if (windowsVoice) utterance.voice = windowsVoice;
       utterance.lang = windowsVoice?.lang ?? 'fr-FR';
       utterance.rate = 1.08;
