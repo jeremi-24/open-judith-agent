@@ -1,10 +1,21 @@
-// Draws Judith's marks one by one, as she talks: a double contour (ellipse,
-// rounded box or free outline hugging the object), a numbered badge and a
-// label; her pointer lands next to the first mark.
+// Draws Judith's marks as she talks. For each mark, her pen flies to where
+// the stroke starts, then traces it by hand (a slight wobble, a start that
+// is not exactly the end); the badge and the label pop in after. The ink is
+// dark on light backgrounds and light on dark ones. Marks are drawn one
+// after the other, never at the same time.
+import { handStroke, outlinePoints } from '../core/ink.js';
+
 const canvas = document.getElementById('canvas');
 const labels = document.getElementById('labels');
 const SVG = 'http://www.w3.org/2000/svg';
+const FLY_MS = 380;
+const TRACE_MS = 650;
+
 let count = 0;
+let queue = Promise.resolve();
+let generation = 0; // a clear cancels the drawings still in the queue
+let pen = null;
+let penAt = null;
 
 function el(name, attrs, parent = canvas) {
   const node = document.createElementNS(SVG, name);
@@ -13,77 +24,111 @@ function el(name, attrs, parent = canvas) {
   return node;
 }
 
-// Smooth closed curve through the points (Catmull-Rom → cubic Bézier).
-function smoothPath(points) {
-  const n = points.length;
-  const p = (i) => points[(i + n) % n];
-  let d = `M${p(0)[0]} ${p(0)[1]}`;
-  for (let i = 0; i < n; i++) {
-    const [p0, p1, p2, p3] = [p(i - 1), p(i), p(i + 1), p(i + 2)];
-    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
-    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
-    d += ` C${c1[0]} ${c1[1]} ${c2[0]} ${c2[1]} ${p2[0]} ${p2[1]}`;
-  }
-  return `${d}Z`;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+
+// ----- Judith's pen -----
+function ensurePen() {
+  if (pen) return pen;
+  pen = document.createElement('div');
+  pen.className = 'pen';
+  pen.innerHTML =
+    '<svg viewBox="0 0 66 42" aria-hidden="true"><path d="M0 0L0 18L4.8 13.5L8.7 21.6L11.4 20.4L7.8 12.9H14.4Z"/>' +
+    '<rect x="16" y="22" width="48" height="18" rx="9"/><text x="40" y="34.5">Judith</text></svg>';
+  labels.append(pen);
+  return pen;
 }
 
-// The contour, twice (iris then sky, slightly offset) over a white halo.
-function contour(m) {
-  if (m.shape === 'shape' && m.points?.length >= 3) {
-    const d = smoothPath(m.points);
-    el('path', { class: 'halo', d });
-    el('path', { class: 'ink draw', d, pathLength: 1 });
-    el('path', { class: 'ink-2 draw late', d, pathLength: 1, transform: 'translate(2 1.5)' });
-    return;
-  }
-  if (m.shape === 'box') {
-    const box = (grow) => ({
-      x: m.cx - m.rx - grow, y: m.cy - m.ry - grow,
-      width: 2 * (m.rx + grow), height: 2 * (m.ry + grow),
-      rx: Math.min(18, m.ry + grow), pathLength: 1,
-    });
-    el('rect', { class: 'halo', ...box(0) });
-    el('rect', { class: 'ink draw', ...box(0) });
-    el('rect', { class: 'ink-2 draw late', ...box(3) });
-    return;
-  }
-  const ellipse = (rotate, grow) => ({
-    cx: m.cx, cy: m.cy, rx: m.rx + grow, ry: m.ry + grow,
-    transform: `rotate(${rotate} ${m.cx} ${m.cy})`, pathLength: 1,
-  });
-  el('ellipse', { class: 'halo', ...ellipse(-4, 0) });
-  el('ellipse', { class: 'ink draw', ...ellipse(-4, 0) });
-  el('ellipse', { class: 'ink-2 draw late', ...ellipse(3, 3) });
+function placePen(x, y) {
+  penAt = [x, y];
+  pen.style.transform = `translate(${x}px, ${y}px)`;
 }
 
-function badge(m, n) {
+async function flyTo(x, y, mine) {
+  ensurePen();
+  if (!penAt) {
+    // First mark: the pen comes from a little below and to the right.
+    placePen(x + 40, y + 40);
+    pen.classList.add('shown');
+    await wait(20);
+  }
+  const [x0, y0] = penAt;
+  const start = performance.now();
+  while (mine === generation) {
+    const t = Math.min(1, (performance.now() - start) / FLY_MS);
+    const k = ease(t);
+    // A slight arc, like a hand moving over the page.
+    const lift = Math.sin(Math.PI * t) * Math.min(60, Math.hypot(x - x0, y - y0) * 0.15);
+    placePen(x0 + (x - x0) * k, y0 + (y - y0) * k - lift);
+    if (t === 1) break;
+    await new Promise(requestAnimationFrame);
+  }
+}
+
+// The pen follows the path while the stroke (and its halo) appears behind it.
+async function trace(paths, mine) {
+  const [path] = paths.slice(-1);
+  const total = path.getTotalLength();
+  for (const p of paths) {
+    p.style.strokeDasharray = `${total}`;
+    p.style.strokeDashoffset = `${total}`;
+  }
+  const start = performance.now();
+  while (mine === generation) {
+    const t = Math.min(1, (performance.now() - start) / TRACE_MS);
+    const k = ease(t);
+    for (const p of paths) p.style.strokeDashoffset = `${total * (1 - k)}`;
+    const p = path.getPointAtLength(total * k);
+    placePen(p.x, p.y);
+    if (t === 1) break;
+    await new Promise(requestAnimationFrame);
+  }
+}
+
+// ----- a mark -----
+async function drawMark(m, mine) {
+  const group = el('g', { class: `mark ink-${m.ink === 'light' ? 'light' : 'dark'}` });
+  const outline = outlinePoints(m);
+  const size = Math.max(m.rx, m.ry);
+  const stroke = handStroke(outline, m.seed ?? 1, { wobble: Math.min(3.2, 1.2 + size * 0.02) });
+  const echo = handStroke(outline, (m.seed ?? 1) + 101, { wobble: Math.min(3.2, 1.2 + size * 0.02) });
+
+  const halo = el('path', { class: 'halo', d: stroke.d }, group);
+  const main = el('path', { class: 'ink', d: stroke.d }, group);
+  const second = el('path', { class: 'ink-2', d: echo.d, transform: 'translate(1.5 1)' }, group);
+  second.style.opacity = '0';
+
+  await flyTo(stroke.start[0], stroke.start[1], mine);
+  if (mine !== generation) return;
+  await trace([halo, main], mine);
+  if (mine !== generation) return;
+  second.style.opacity = '';
+  second.classList.add('fade-in');
+
+  count += 1;
+  badge(m, count, group);
+  label(m, count, m.ink);
+  // The pen rests next to the mark, ready for the next one.
+  await flyTo(m.cx + m.rx * 0.6, m.cy + m.ry * 0.5, mine);
+}
+
+function badge(m, n, group) {
   const x = m.cx - m.rx * 0.85;
   const y = m.cy - m.ry - 2;
-  el('circle', { class: 'badge pop', cx: x, cy: y, r: 10 });
-  el('text', { class: 'badge-text pop', x, y }).textContent = String(n);
+  el('circle', { class: 'badge pop', cx: x, cy: y, r: 10 }, group);
+  el('text', { class: 'badge-text pop', x, y }, group).textContent = String(n);
 }
 
-function label(m, n) {
+function label(m, n, ink) {
   if (!m.label) return;
   const pill = document.createElement('div');
-  pill.className = 'pill label';
+  pill.className = `pill label${ink === 'light' ? ' on-dark' : ''}`;
   pill.style.left = `${m.cx}px`;
   pill.style.top = `${m.cy + m.ry + 8}px`;
   pill.append(Object.assign(document.createElement('span'), { className: 'n', textContent: String(n) }), document.createTextNode(m.label));
   labels.append(pill);
   keepOnScreen(pill, m);
   avoidOverlap(pill);
-}
-
-function pointer(m) {
-  const node = document.createElement('div');
-  node.className = 'pointer';
-  node.style.left = `${m.cx + m.rx * 0.5}px`;
-  node.style.top = `${m.cy + m.ry * 0.35}px`;
-  node.innerHTML =
-    '<svg viewBox="0 0 110 70" aria-hidden="true"><path d="M0 0L0 30L8 22.5L14.5 36L19 34L13 21.5L24 21.5Z" fill="#5CB8FF" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round"/>' +
-    '<rect x="26" y="36" width="80" height="30" rx="15" fill="#6B57E8"/><text x="66" y="56" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="14" font-weight="600" fill="#FFFFFF">Judith</text></svg>';
-  labels.append(node);
 }
 
 function keepOnScreen(pill, m) {
@@ -105,9 +150,13 @@ function avoidOverlap(pill) {
 }
 
 function clear() {
+  generation += 1;
+  queue = Promise.resolve();
   count = 0;
   canvas.replaceChildren();
   labels.replaceChildren();
+  pen = null;
+  penAt = null;
 }
 
 function scan(on) {
@@ -119,9 +168,6 @@ window.judith.on('clear', clear);
 window.judith.on('scan', scan);
 window.judith.on('mark', (m) => {
   scan(false);
-  count += 1;
-  contour(m);
-  badge(m, count);
-  label(m, count);
-  if (count === 1) pointer(m);
+  const mine = generation;
+  queue = queue.then(() => (mine === generation ? drawMark(m, mine) : null)).catch(() => {});
 });

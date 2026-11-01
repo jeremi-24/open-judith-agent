@@ -11,7 +11,8 @@ import { BOARD_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtec
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
 import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
-import { CHANGED, markRect, regionDiff, STALE } from '../core/pixels.js';
+import { averageLuma, bestShift, CHANGED, markCore, markRect, regionDiff, STALE } from '../core/pixels.js';
+import { inkFor } from '../core/ink.js';
 import { createScriptReader } from '../core/script.js';
 import { isEcho, isGhost } from '../core/hallucinations.js';
 import { decodeWav } from '../core/audio.js';
@@ -293,7 +294,16 @@ async function drawMark(mark) {
   }
   if (session.reference) {
     const now = await screenNow(display).catch(() => null);
-    const diff = now ? regionDiff(session.reference, now, markRect(mark), ownAreas(display)) : 0;
+    // The content may have moved a little (icons re-centred, a small scroll):
+    // the mark follows it. If it is nowhere near, the mark is dropped.
+    const found = now ? bestShift(session.reference, now, markCore(mark), ownAreas(display)) : { diff: 0, dx: 0, dy: 0 };
+    const diff = found.diff;
+    if (diff <= STALE && (found.dx || found.dy)) {
+      const fx = found.dx / now.width;
+      const fy = found.dy / now.height;
+      mark = { ...mark, x: mark.x + fx, y: mark.y + fy, ...(mark.points ? { points: mark.points.map(([x, y]) => [x + fx, y + fy]) } : {}) };
+      console.log(`[judith] mark follows its content (${found.dx}, ${found.dy})`);
+    }
     if (diff > STALE) {
       console.log(`[judith] mark dropped: the screen changed since Judith looked (${diff.toFixed(1)})`);
       if (process.env.JUDITH_DEBUG_DIR) {
@@ -310,7 +320,10 @@ async function drawMark(mark) {
     overlay.setBounds(bounds);
     overlay.showInactive();
   }
-  send(overlay, 'mark', toPixels(mark, bounds));
+  // The ink that stays readable on what is under the mark.
+  const ground = session.reference ?? (await screenNow(display).catch(() => null));
+  const ink = inkFor(averageLuma(ground, markRect(mark, 0)));
+  send(overlay, 'mark', { ...toPixels(mark, bounds), ink, seed: shownMarks.length + 1 + Math.round(mark.x * 997 + mark.y * 787) });
   shownMarks.push(mark);
   watchMarks(display);
 }
@@ -326,7 +339,8 @@ function watchMarks(display) {
     try {
       const now = await captureSmall(display);
       if (!baseline) baseline = now;
-      else if (shownMarks.some((m) => regionDiff(baseline, now, markRect(m), ownAreas(display)) > CHANGED)) {
+      // Gone, not just nudged: a little slide (icons re-centring) keeps the marks.
+      else if (shownMarks.some((m) => bestShift(baseline, now, markCore(m), ownAreas(display), 12).diff > CHANGED)) {
         console.log('[judith] marks cleared: the screen changed under them');
         return clearMarks();
       }
@@ -399,7 +413,7 @@ function show(command) {
 }
 
 // Every action Claude Code takes appears on the board.
-const QUIET_TOOLS = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'mcp__judith__find_apps', 'mcp__judith__approve', 'mcp__judith__look_at_screen']);
+const QUIET_TOOLS = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'ToolSearch', 'mcp__judith__find_apps', 'mcp__judith__approve', 'mcp__judith__look_at_screen']);
 const actions = new Map();
 function trackTool({ id, name, input }) {
   if (QUIET_TOOLS.has(name)) return;

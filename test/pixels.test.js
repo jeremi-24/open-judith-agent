@@ -51,3 +51,24 @@ test('a tint change or a one-pixel jitter is not a change; a scroll is', () => {
   assert.ok(regionDiff(text(0, 0), text(1, 0), all) < CHANGED, 'jitter');
   assert.ok(regionDiff(text(0, 0), text(3, 0), all) > CHANGED, 'scroll');
 });
+
+test('markCore keeps only the centre of the element', async () => {
+  const { markCore } = await import('../src/core/pixels.js');
+  const r = markCore({ x: 0.5, y: 0.5, w: 0.2, h: 0.1 });
+  assert.ok(Math.abs(r.x1 - 0.43) < 1e-9 && Math.abs(r.x2 - 0.57) < 1e-9);
+  assert.ok(Math.abs(r.y1 - 0.465) < 1e-9 && Math.abs(r.y2 - 0.535) < 1e-9);
+});
+
+test('bestShift finds where the content moved', async () => {
+  const { bestShift } = await import('../src/core/pixels.js');
+  // A dark square at (20,10), then the same square moved 7 px right and 3 px down.
+  const scene = (ox, oy) => image(80, 40, (x, y) => (x >= 20 + ox && x < 30 + ox && y >= 10 + oy && y < 20 + oy ? [20, 20, 20] : [235, 235, 235]));
+  const rect = { x1: 15 / 80, y1: 5 / 40, x2: 35 / 80, y2: 25 / 40 };
+  const moved = bestShift(scene(0, 0), scene(7, 3), rect);
+  // Sampled every other pixel: right within one pixel.
+  assert.ok(Math.abs(moved.dx - 7) <= 1, `dx ${moved.dx}`);
+  assert.ok(Math.abs(moved.dy - 3) <= 1, `dy ${moved.dy}`);
+  assert.ok(moved.diff < CHANGED);
+  const still = bestShift(scene(0, 0), scene(0, 0), rect);
+  assert.deepEqual([still.dx, still.dy], [0, 0]);
+});

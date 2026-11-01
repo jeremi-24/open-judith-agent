@@ -10,19 +10,19 @@ html, body {
 
 #canvas, #labels { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-/* Annotation language of the mockup, in light strokes: they point without
-   hiding what is underneath, and a soft white halo keeps them readable. */
-.halo { fill: none; stroke: #fff; stroke-opacity: 0.7; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
-.ink { fill: none; stroke: var(--iris); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
-.ink-2 { fill: none; stroke: var(--sky); stroke-width: 1.5; stroke-opacity: 0.8; stroke-linecap: round; stroke-linejoin: round; }
-.badge { fill: var(--deep-iris); stroke: #fff; stroke-width: 2; }
-.badge-text { fill: #fff; font: 600 12px var(--font-mono); text-anchor: middle; dominant-baseline: central; }
+/* Hand-drawn ink that stays readable on anything: dark ink with a white halo
+   on light backgrounds, light ink with a dark halo on dark ones. */
+.mark { --ink: #4a35d4; --ink-2: #2b86d6; --halo: rgb(255 255 255 / 0.75); --badge: var(--deep-iris); --badge-text: #fff; }
+.mark.ink-light { --ink: #d2c9ff; --ink-2: #8fd3ff; --halo: rgb(20 17 29 / 0.6); --badge: #d2c9ff; --badge-text: #14111d; }
+.halo { fill: none; stroke: var(--halo); stroke-width: 6.5; stroke-linecap: round; stroke-linejoin: round; transition: opacity 0.2s; }
+.ink { fill: none; stroke: var(--ink); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.ink-2 { fill: none; stroke: var(--ink-2); stroke-width: 1.4; stroke-opacity: 0.75; stroke-linecap: round; stroke-linejoin: round; }
+.fade-in { animation: fade 0.35s ease-out; }
+@keyframes fade { from { opacity: 0; } }
+.badge { fill: var(--badge); stroke: var(--halo); stroke-width: 2; }
+.badge-text { fill: var(--badge-text); font: 600 12px var(--font-mono); text-anchor: middle; dominant-baseline: central; }
 
-/* Strokes draw themselves in. */
-.draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.5s ease-out forwards; }
-.draw.late { animation-delay: 0.2s; }
-@keyframes draw { to { stroke-dashoffset: 0; } }
-.pop { opacity: 0; animation: pop 0.25s 0.3s ease-out forwards; }
+.pop { opacity: 0; animation: pop 0.25s ease-out forwards; }
 @keyframes pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
 .pop { transform-box: fill-box; transform-origin: center; }
 
@@ -39,7 +39,9 @@ html, body {
   font: 700 12.5px var(--font-ui);
   box-shadow: 0 4px 14px -6px rgb(36 32 58 / 0.5), 0 0 0 1px rgb(143 124 255 / 0.25);
 }
-.label { transform: translateX(-50%); opacity: 0; animation: appear 0.25s 0.35s ease-out forwards; }
+.label { transform: translateX(-50%); opacity: 0; animation: appear 0.25s 0.1s ease-out forwards; }
+.label.on-dark { background: rgb(20 17 29 / 0.92); color: #f4f2ff; box-shadow: 0 4px 14px -6px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(210 201 255 / 0.3); }
+.label.on-dark .n { background: #d2c9ff; color: #14111d; }
 .label .n {
   width: 18px; height: 18px; border-radius: 50%;
   display: grid; place-items: center;
@@ -48,10 +50,14 @@ html, body {
 }
 @keyframes appear { from { opacity: 0; translate: 0 4px; } to { opacity: 1; translate: 0 0; } }
 
-/* Judith's pointer: flies in and settles next to the first mark. */
-.pointer { position: absolute; opacity: 0; animation: land 0.45s 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.3) forwards; }
-.pointer svg { display: block; width: 66px; height: 42px; overflow: visible; }
-@keyframes land { from { opacity: 0; translate: 26px 26px; } to { opacity: 1; translate: 0 0; } }
+/* Judith's pen: flies from mark to mark and traces each one. Its tip is at
+   the top-left corner of the element, which is the point it draws. */
+.pen { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity 0.2s; will-change: transform; }
+.pen.shown { opacity: 1; }
+.pen svg { display: block; width: 66px; height: 42px; overflow: visible; filter: drop-shadow(0 2px 3px rgb(20 17 29 / 0.4)); }
+.pen path { fill: var(--sky); stroke: #fff; stroke-width: 2; stroke-linejoin: round; }
+.pen rect { fill: var(--deep-iris); }
+.pen text { fill: #fff; font: 600 10.5px var(--font-mono); text-anchor: middle; }
 
 /* Thinking: a dashed frame sweeps over what Judith looks at. */
 .scan {
