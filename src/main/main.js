@@ -13,6 +13,7 @@ import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } f
 import { toPixels } from '../core/annotations.js';
 import { CHANGED, markRect, regionDiff, STALE } from '../core/pixels.js';
 import { createScriptReader } from '../core/script.js';
+import { isGhost } from '../core/hallucinations.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -79,10 +80,20 @@ async function summon() {
   placeBubble(display, bubble.getBounds());
   bubble.show();
   bubble.focus();
-  send(bubble, 'focus', { listen: config.voiceInput && speechReady, conversation: config.conversation });
+  const ears = liveEars();
+  send(bubble, 'focus', { listen: config.voiceInput && (speechReady || Boolean(ears)), conversation: config.conversation, stt: ears });
 }
 
-// ----- voice in: Whisper, in a worker thread -----
+// ----- voice in, cloud: Deepgram live listening (the user's own key) -----
+// Words Judith should hear right, whatever the accent.
+const KEYTERMS = ['Judith', 'Claude Code', 'GitHub', 'VS Code', 'VLC', 'CapCut', 'Blender', 'pull request'];
+function liveEars() {
+  const key = config.deepgramKey || process.env.DEEPGRAM_API_KEY;
+  if (config.speechInput !== 'deepgram' || !key) return null;
+  return { provider: 'deepgram', key, model: config.deepgramModel, language: config.language, keyterms: KEYTERMS };
+}
+
+// ----- voice in, local: Whisper, in a worker thread -----
 let speech = null;
 let speechReady = false;
 let speechJob = 0;
@@ -101,7 +112,8 @@ function startSpeech() {
     const job = speechJobs.get(message.id);
     speechJobs.delete(message.id);
     if (message.error) job?.reject(new Error(message.error));
-    else job?.resolve(message.text);
+    // Phantom words Whisper invents in silence are not a question.
+    else job?.resolve(isGhost(message.text) ? '' : message.text);
   });
   speech.on('error', (error) => console.error('[judith] speech worker:', error.message));
 }
@@ -121,9 +133,11 @@ let ttsReady = false;
 let ttsJob = 0;
 const ttsJobs = new Map();
 async function startVoice() {
+  // Siwis also backs up the cloud voice when it fails.
   if (!config.voice || config.voice === 'windows') return;
   try {
-    const voice = await ensureVoice(config.voice, join(app.getPath('userData'), 'models'));
+    const local = config.voice === 'elevenlabs' ? 'siwis' : config.voice;
+    const voice = await ensureVoice(local, join(app.getPath('userData'), 'models'));
     tts = fork(join(import.meta.dirname, 'tts-process.js'), [], {
       serialization: 'advanced', // typed arrays cross the pipe as they are
       env: {
@@ -137,7 +151,7 @@ async function startVoice() {
     tts.on('message', (message) => {
       if (message.ready) {
         ttsReady = true;
-        console.log(`[judith] voice ${config.voice} ready`);
+        console.log(`[judith] voice ${local} ready`);
         return;
       }
       const job = ttsJobs.get(message.id);
@@ -155,7 +169,40 @@ async function startVoice() {
   }
 }
 
-function speak(text) {
+// ----- voice out, cloud: ElevenLabs (the user's own key) -----
+async function speakElevenLabs(text) {
+  const key = config.elevenlabsKey || process.env.ELEVENLABS_API_KEY;
+  const response = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${config.elevenlabsVoice}/stream?output_format=pcm_16000`,
+    {
+      method: 'POST',
+      headers: { 'xi-api-key': key, 'content-type': 'application/json' },
+      body: JSON.stringify({ text, model_id: config.elevenlabsModel, language_code: config.language }),
+    },
+  );
+  if (!response.ok) throw new Error(`ElevenLabs ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  // Raw 16-bit PCM, 16 kHz, mono.
+  const pcm = Buffer.from(await response.arrayBuffer());
+  const samples = new Float32Array(pcm.length >> 1);
+  for (let i = 0; i < samples.length; i++) samples[i] = pcm.readInt16LE(i * 2) / 32768;
+  return { samples, sampleRate: 16000 };
+}
+
+let cloudVoiceFailed = false;
+async function speak(text) {
+  if (config.voice === 'elevenlabs' && !cloudVoiceFailed && (config.elevenlabsKey || process.env.ELEVENLABS_API_KEY)) {
+    try {
+      return await speakElevenLabs(text);
+    } catch (error) {
+      // A bad key or no credit: say it once, then use the local voice.
+      cloudVoiceFailed = true;
+      console.error(`[judith] cloud voice off, local voice instead: ${error.message}`);
+    }
+  }
+  return speakLocal(text);
+}
+
+function speakLocal(text) {
   if (!tts || !ttsReady) return Promise.resolve(null); // the notch falls back to Windows voices
   const id = ++ttsJob;
   if (process.env.JUDITH_DEMO) console.log('[judith] says', JSON.stringify(text.slice(0, 50)));

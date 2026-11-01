@@ -10,6 +10,10 @@ const question = document.getElementById('question');
 const pauseButton = document.getElementById('pause');
 const voice = window.JudithVoice;
 const recorder = window.JudithRecorder;
+// Ears: Deepgram live listening when the user gave a key, local Whisper otherwise.
+let stt = null;
+const live = () => stt?.provider === 'deepgram' && stt.key;
+const ears = () => (live() ? window.JudithLive : recorder);
 
 const LABELS = { listening: "J'écoute…", thinking: 'Je réfléchis…', speaking: 'Judith parle' };
 const MOODS = { none: 'listen', listening: 'listen', thinking: 'think', speaking: 'explain' };
@@ -66,7 +70,7 @@ function run(command) {
 window.judith.on('cmd', (command) => {
   if (command.type === 'say') {
     // Never listen while Judith talks: the mic would hear her.
-    recorder.cancel();
+    ears().cancel();
     const item = { actions: [], started: false };
     lastSay = item;
     voice.say(command.text, () => {
@@ -89,7 +93,10 @@ let answerDone = false;
 function maybeListenAgain() {
   if (!answerDone || voice.speaking || !approval.hidden) return;
   answerDone = false;
-  if (conversation && canListen && notch.dataset.state !== 'none') listen({ followUp: true });
+  // A short pause first: the speakers may still be playing her last word.
+  if (conversation && canListen && notch.dataset.state !== 'none') {
+    setTimeout(() => notch.dataset.state !== 'none' && !voice.speaking && listen({ followUp: true }), 400);
+  }
 }
 
 voice.onIdle(() => {
@@ -127,25 +134,26 @@ window.judith.on('tool', (text) => {
 });
 
 // ----- asking -----
-function askJudith(text) {
+// heard: the spoken question, shown so the user sees what Judith understood.
+function askJudith(text, heard = null) {
   if (!text) return;
   resetAnswer();
   answerDone = false;
   setState('thinking');
-  doing.textContent = 'Je réfléchis à ta demande';
+  doing.textContent = heard ? `« ${heard} »` : 'Je réfléchis à ta demande';
   window.judith.ask(text);
 }
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
   const text = question.value.trim();
-  recorder.cancel();
+  ears().cancel();
   askJudith(text);
 });
 
 question.addEventListener('input', () => {
   // Typing means the user prefers to write: stop listening.
-  if (recorder.listening && question.value) recorder.cancel();
+  if (ears().listening && question.value) ears().cancel();
 });
 
 // ----- listening -----
@@ -153,21 +161,44 @@ const bars = document.querySelector('.bars');
 // followUp: the short listening after an answer; silence just ends the
 // conversation, and the marks stay on screen.
 async function listen({ followUp = false } = {}) {
-  if (recorder.listening) return;
+  if (ears().listening) return;
   if (!followUp) resetAnswer();
   setState('listening');
   question.value = '';
   question.placeholder = followUp ? 'Autre chose ? Je t’écoute…' : 'Parle, ou écris ta question…';
   question.focus();
+  const onLevel = (level) => bars.style.setProperty('--level', level.toFixed(2));
+  const noSpeechMs = followUp ? 5000 : 6000;
   try {
-    await recorder.start({
-      onLevel: (level) => bars.style.setProperty('--level', level.toFixed(2)),
-      onEnd: (audio) => heard(audio, followUp),
-      noSpeechMs: followUp ? 5000 : 6000,
-    });
+    if (live()) {
+      // Words appear while the user talks; Deepgram knows when the sentence ends.
+      await window.JudithLive.start({
+        ...stt,
+        onLevel,
+        noSpeechMs,
+        onPartial: (text) => {
+          question.value = text;
+          question.scrollLeft = question.scrollWidth;
+        },
+        onEnd: (text) => heardText(text, followUp),
+      });
+    } else {
+      await recorder.start({ onLevel, noSpeechMs, onEnd: (audio) => heard(audio, followUp) });
+    }
   } catch (error) {
     question.placeholder = `Micro indisponible : ${error.message}. Écris ta question.`;
   }
+}
+
+function heardText(text, followUp) {
+  bars.style.setProperty('--level', '0');
+  if (!text) {
+    if (followUp) setState('none');
+    else question.placeholder = "Je n'ai rien entendu. Parle, ou écris ta question…";
+    return;
+  }
+  question.value = text;
+  askJudith(text, text);
 }
 
 async function heard(audio, followUp = false) {
@@ -187,19 +218,19 @@ async function heard(audio, followUp = false) {
       return;
     }
     question.value = text;
-    askJudith(text);
+    askJudith(text, text);
   } catch (error) {
     setState('listening');
     question.placeholder = error.message;
   }
 }
 
-document.getElementById('stop').addEventListener('click', () => recorder.finish());
+document.getElementById('stop').addEventListener('click', () => ears().finish());
 
 // ----- controls -----
 function close() {
   resetAnswer();
-  recorder.cancel();
+  ears().cancel();
   setState('none');
   window.judith.close();
 }
@@ -217,10 +248,11 @@ pauseButton.addEventListener('click', () => {
 
 // Summoned (shortcut): listen right away. Summoned again while listening:
 // the user is done talking.
-window.judith.on('focus', ({ listen: shouldListen, conversation: keepTalking } = {}) => {
+window.judith.on('focus', ({ listen: shouldListen, conversation: keepTalking, stt: ears_ } = {}) => {
+  stt = ears_ ?? null;
   canListen = Boolean(shouldListen);
   conversation = Boolean(keepTalking);
-  if (recorder.listening) return recorder.finish();
+  if (ears().listening) return ears().finish();
   if (shouldListen) listen();
   else {
     resetAnswer();
@@ -229,12 +261,12 @@ window.judith.on('focus', ({ listen: shouldListen, conversation: keepTalking } =
   }
 });
 window.judith.on('idle', () => {
-  recorder.cancel();
+  ears().cancel();
   setState('none');
 });
 // A question sent by the app itself (demo mode).
 window.judith.on('ask', (text) => {
-  recorder.cancel();
+  ears().cancel();
   question.value = text;
   askJudith(text);
 });

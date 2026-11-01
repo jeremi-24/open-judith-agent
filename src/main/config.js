@@ -18,8 +18,17 @@ export const DEFAULTS = {
   // Listen to the microphone as soon as Judith is summoned.
   voiceInput: true,
   speechModel: 'onnx-community/whisper-base',
+  // Cloud listening, like HeyClicky (your own key, https://deepgram.com):
+  // "deepgram" streams your voice and shows words as you speak. "whisper" stays local.
+  speechInput: 'whisper',
+  deepgramKey: '',
+  deepgramModel: 'nova-3',
   // Judith's voice: a local neural voice, or "windows" for the system voices.
+  // "elevenlabs" = premium cloud voice (your own key, https://elevenlabs.io).
   voice: 'siwis',
+  elevenlabsKey: '',
+  elevenlabsVoice: '21m00Tcm4TlvDq8ikWAM',
+  elevenlabsModel: 'eleven_flash_v2_5',
   voiceSpeed: 1.05,
   // false = Judith shows up in screen recordings (handy to film demos).
   hideFromScreenRecordings: true,

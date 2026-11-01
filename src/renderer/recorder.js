@@ -29,6 +29,7 @@ window.JudithRecorder = (() => {
     const startedAt = performance.now();
     let spokeAt = null;
     let lastVoiceAt = null;
+    let voiced = 0; // frames above the speech level: a cough or a click is not a question
 
     session = { stream, context, processor, chunks, onEnd, done: false };
 
@@ -44,10 +45,12 @@ window.JudithRecorder = (() => {
       if (level > SPEECH_LEVEL) {
         spokeAt ??= now;
         lastVoiceAt = now;
+        voiced += 1;
       }
       const silentTooLong = spokeAt !== null && now - lastVoiceAt > END_SILENCE_MS;
       const nobodySpoke = spokeAt === null && now - startedAt > noSpeechMs;
-      if (silentTooLong || nobodySpoke || now - startedAt > MAX_MS) finish(spokeAt !== null);
+      // At least ~0.4 s of real voice (frames of 2048 samples = 128 ms).
+      if (silentTooLong || nobodySpoke || now - startedAt > MAX_MS) finish(voiced >= 3);
     };
     source.connect(processor);
     processor.connect(context.destination);

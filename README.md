@@ -86,6 +86,20 @@ Judith reads `config.json` in her user data folder
 - `conversation` (default `true`): after answering, Judith listens for 5 more seconds.
 - `annotations`: `helpful` (default, draws only when it saves you searching), `none`, `always`.
 
+### Cloud voice and listening (optional, your own keys)
+
+Out of the box everything is local: Whisper listens, Piper "Siwis" speaks. For the best
+quality, the same approach as commercial assistants is available with your own accounts:
+
+| Setting | Effect |
+|---|---|
+| `"speechInput": "deepgram"`, `"deepgramKey": "…"` | Live listening with [Deepgram](https://deepgram.com): words appear while you speak and the end of your sentence is detected by the service. Free credit at sign-up. |
+| `"voice": "elevenlabs"`, `"elevenlabsKey": "…"` | Natural voice by [ElevenLabs](https://elevenlabs.io) (`elevenlabsVoice` = voice id). Free tier available. |
+
+Keys can also come from the `DEEPGRAM_API_KEY` and `ELEVENLABS_API_KEY` environment variables.
+If a cloud service fails (bad key, no credit), Judith falls back to the local voice.
+Cloud mode sends your voice (Deepgram) and Judith's sentences (ElevenLabs) to those services.
+
 ### When marks disappear
 
 A mark is only true for the screen Judith looked at. It is not drawn if that part of the
