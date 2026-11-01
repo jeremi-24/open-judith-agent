@@ -7,6 +7,8 @@ export const DEFAULTS = {
   workingDirectory: homedir(),
   claudePath: null,
   model: 'haiku',
+  // How much Claude thinks before answering: "low" is fast, right for a conversation.
+  effort: 'low',
   language: 'fr',
   shortcut: 'Control+Alt+J',
   // false: Judith takes a screenshot only when the question needs it.

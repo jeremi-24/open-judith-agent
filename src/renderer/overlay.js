@@ -108,6 +108,8 @@ async function drawMark(m, mine) {
   count += 1;
   badge(m, count, group);
   label(m, count, m.ink);
+  // The mark is on screen: Judith may talk about it.
+  window.judith.marked();
   // The pen rests next to the mark, ready for the next one.
   await flyTo(m.cx + m.rx * 0.6, m.cy + m.ry * 0.5, mine);
 }

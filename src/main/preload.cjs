@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const EVENTS = [
   // notch
-  'focus', 'idle', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale',
+  'focus', 'idle', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale', 'marked', 'speech',
   // overlay
   'mark', 'clear', 'scan',
   // board
@@ -19,10 +19,13 @@ contextBridge.exposeInMainWorld('judith', {
   transcribe: (audio) => ipcRenderer.invoke('judith:transcribe', audio),
   // '' when what was heard is a Whisper phantom or Judith's own echo.
   filterHeard: (text, spoken) => ipcRenderer.invoke('judith:filter-heard', text, spoken),
-  // text → { samples: Float32Array, sampleRate } with the neural voice, or null.
-  speak: (text) => ipcRenderer.invoke('judith:speak', text),
+  // Starts speaking a sentence; its audio arrives as 'speech' events. → id
+  speakStart: (text) => ipcRenderer.invoke('judith:speak-start', text),
   // A drawing or board command whose sentence just started.
   show: (command) => ipcRenderer.send('judith:show', command),
+  // The overlay finished drawing a mark (the voice may talk about it now).
+  marked: () => ipcRenderer.send('judith:marked'),
+  timing: (step) => ipcRenderer.send('judith:timing', step),
   summon: () => ipcRenderer.send('judith:summon'),
   close: () => ipcRenderer.send('judith:close'),
   approve: (id, allow) => ipcRenderer.send('judith:approve', { id, allow }),

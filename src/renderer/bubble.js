@@ -59,8 +59,31 @@ function showState(state, info = {}) {
 // ----- the answer: spoken sentences, steps and drawings -----
 let lastSay = null; // the last sentence queued, until it starts
 
+// Draw first, then talk: a sentence waits until the drawings sent before it
+// are on screen (at most 1.6 s, so the voice never hangs).
+let pendingMarks = 0;
+let marksDrawn = [];
+function waitForMarks(maxMs = 1600) {
+  if (!pendingMarks) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, maxMs);
+    marksDrawn.push(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+function markDrawn() {
+  pendingMarks = Math.max(0, pendingMarks - 1);
+  if (!pendingMarks) marksDrawn.splice(0).forEach((done) => done());
+}
+voice.setGate(waitForMarks);
+api.on('marked', markDrawn);
+
 function resetAnswer() {
   lastSay = null;
+  pendingMarks = 0;
+  marksDrawn.splice(0).forEach((done) => done());
   textBox.innerHTML = '';
   textBox.classList.remove('error');
   steps.replaceChildren();
@@ -72,8 +95,9 @@ function addStep(text) {
 }
 
 function run(command) {
-  if (command.type === 'step') addStep(command.text);
-  else api.show(command);
+  if (command.type === 'step') return addStep(command.text);
+  if (command.type === 'mark') pendingMarks += 1;
+  api.show(command);
 }
 
 // ----- the components, driven by the conversation manager -----
@@ -93,7 +117,7 @@ const spokenNow = [];
 const conversation = createConversation({
   listen: (info) => {
     resetAnswer();
-    ears.start(info, (text) => conversation.heard(text, info)).catch((error) => {
+    ears.start(info, (text) => conversation.heard(text, info), () => api.timing('heard')).catch((error) => {
       conversation.cancel();
       showState('idle', { error: `Micro indisponible : ${error.message}. Écris ta question.` });
     });
@@ -127,22 +151,21 @@ voice.onIdle(() => {
 api.on('cmd', ({ turn, ...command }) => {
   if (turn !== conversation.turn) return; // a cancelled turn
   if (command.type === 'say') {
-    const item = { actions: [], started: false };
+    const item = { started: false };
     lastSay = item;
     voice.say(command.text, () => {
       if (!conversation.sentence(turn)) return;
+      api.timing('voice');
       item.started = true;
       spokenNow.push(command.text);
       notch.classList.add('talking');
       textBox.classList.remove('error');
       textBox.innerHTML = render(command.text);
-      item.actions.forEach(run);
     });
     return;
   }
-  // Drawings wait for the sentence just before them.
-  if (lastSay && !lastSay.started && voice.enabled) lastSay.actions.push(command);
-  else run(command);
+  // Drawings start right away: they come before the sentence about them.
+  run(command);
 });
 
 api.on('answer', ({ turn }) => conversation.answered(turn));

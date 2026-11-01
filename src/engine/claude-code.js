@@ -16,9 +16,10 @@ export function findClaude(configured) {
 
 export class ClaudeCodeEngine extends EventEmitter {
   // extraArgs: more Claude Code flags (MCP servers, allowed tools…).
-  constructor({ claudePath, cwd, model, systemPrompt, extraArgs = [] }) {
+  // env: extra environment variables for Claude Code.
+  constructor({ claudePath, cwd, model, systemPrompt, extraArgs = [], env = {} }) {
     super();
-    this.options = { claudePath: findClaude(claudePath), cwd, model, systemPrompt, extraArgs };
+    this.options = { claudePath: findClaude(claudePath), cwd, model, systemPrompt, extraArgs, env };
     this.proc = null;
     this.pending = null;
     this.sessionId = null; // to resume the same conversation after a restart
@@ -31,7 +32,7 @@ export class ClaudeCodeEngine extends EventEmitter {
 
   start({ resume = false } = {}) {
     if (this.proc) return;
-    const { claudePath, cwd, model, systemPrompt, extraArgs } = this.options;
+    const { claudePath, cwd, model, systemPrompt, extraArgs, env } = this.options;
     const args = [
       ...(resume && this.sessionId ? ['--resume', this.sessionId] : []),
       '-p',
@@ -44,7 +45,7 @@ export class ClaudeCodeEngine extends EventEmitter {
       ...extraArgs,
     ];
 
-    const proc = spawn(claudePath, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const proc = spawn(claudePath, args, { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.proc = proc;
     proc.stdout.setEncoding('utf8');
     proc.stdout.on('data', createLineParser((event) => this.#onEvent(event)));

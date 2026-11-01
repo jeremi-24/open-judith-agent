@@ -196,39 +196,75 @@ async function speakElevenLabs(text) {
 
 // ----- voice out, cloud: Fish Audio (the user's own key) -----
 // The "s2.1-pro-free" model is free (until 30/11/2026 at least).
-async function speakFish(text) {
+// Streamed: raw 16-bit PCM at 44.1 kHz arrives in pieces; the first one comes
+// after ~1.1 s instead of ~4 s for the whole sentence. onChunk(audio) is
+// called with ~0.25 s pieces as they arrive.
+const FISH_RATE = 44100;
+async function speakFish(text, onChunk) {
   const key = config.fishKey || process.env.FISH_API_KEY;
   const response = await fetch('https://api.fish.audio/v1/tts', {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json', model: config.fishModel },
-    body: JSON.stringify({ text, format: 'wav', ...(config.fishVoice ? { reference_id: config.fishVoice } : {}) }),
+    body: JSON.stringify({ text, format: 'pcm', latency: 'balanced', ...(config.fishVoice ? { reference_id: config.fishVoice } : {}) }),
   });
   if (!response.ok) throw new Error(`Fish Audio ${response.status}: ${(await response.text()).slice(0, 200)}`);
-  const { samples, rate } = decodeWav(Buffer.from(await response.arrayBuffer()));
-  return { samples, sampleRate: rate };
+  const reader = response.body.getReader();
+  let pending = Buffer.alloc(0);
+  const flush = (all) => {
+    const usable = all ? pending.length - (pending.length % 2) : Math.floor(pending.length / 2) * 2;
+    if (!usable) return;
+    const samples = new Float32Array(usable / 2);
+    for (let i = 0; i < samples.length; i++) samples[i] = pending.readInt16LE(i * 2) / 32768;
+    pending = pending.subarray(usable);
+    onChunk({ samples, sampleRate: FISH_RATE });
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending = Buffer.concat([pending, Buffer.from(value)]);
+    if (pending.length >= FISH_RATE / 2) flush(false); // ~0.25 s of audio
+  }
+  flush(true);
 }
 
+// speak(text, onChunk): every voice delivers its audio in one or more chunks.
 const CLOUD_VOICES = {
-  elevenlabs: { speak: speakElevenLabs, key: () => config.elevenlabsKey || process.env.ELEVENLABS_API_KEY },
+  elevenlabs: { speak: async (text, onChunk) => onChunk(await speakElevenLabs(text)), key: () => config.elevenlabsKey || process.env.ELEVENLABS_API_KEY },
   fish: { speak: speakFish, key: () => config.fishKey || process.env.FISH_API_KEY },
 };
 
 let cloudVoiceFailed = false;
-async function speak(text) {
-  const cloud = CLOUD_VOICES[config.voice];
-  if (cloud && !cloudVoiceFailed && cloud.key()) {
-    try {
-      // Fish acts the [emotion] tags; the other voices would read them aloud.
-      const audio = await cloud.speak(config.voice === 'fish' ? text : stripEmotions(text));
-      if (process.env.JUDITH_DEMO) console.log('[judith] says (cloud)', JSON.stringify(text.slice(0, 90)));
-      return audio;
-    } catch (error) {
-      // A bad key or no credit: say it once, then use the local voice.
-      cloudVoiceFailed = true;
-      console.error(`[judith] cloud voice off, local voice instead: ${error.message}`);
+// A sentence is streamed to the notch as 'speech' events: { id, samples,
+// sampleRate } chunks, then { id, done }. The notch starts playing the first
+// chunk while the rest is still coming.
+let speechId = 0;
+function streamVoice(text) {
+  const id = ++speechId;
+  const push = (data) => send(bubble, 'speech', { id, ...data });
+  (async () => {
+    const cloud = CLOUD_VOICES[config.voice];
+    if (cloud && !cloudVoiceFailed && cloud.key()) {
+      let sent = 0;
+      try {
+        // Fish acts the [emotion] tags; the other voices would read them aloud.
+        await cloud.speak(config.voice === 'fish' ? text : stripEmotions(text), (chunk) => {
+          sent += 1;
+          push(chunk);
+        });
+        if (process.env.JUDITH_DEMO) console.log('[judith] says (cloud)', JSON.stringify(text.slice(0, 90)));
+        return push({ done: true });
+      } catch (error) {
+        // A bad key or no credit: say it once, then use the local voice.
+        cloudVoiceFailed = true;
+        console.error(`[judith] cloud voice off, local voice instead: ${error.message}`);
+        if (sent) return push({ done: true });
+      }
     }
-  }
-  return speakLocal(stripEmotions(text));
+    const audio = await speakLocal(stripEmotions(text)).catch(() => null);
+    if (audio) push(audio);
+    push({ done: true });
+  })();
+  return id;
 }
 
 function speakLocal(text) {
@@ -313,6 +349,7 @@ async function drawMark(mark) {
         console.log('[judith] rect', JSON.stringify(markRect(mark)), 'own', JSON.stringify(ownAreas(display)));
       }
       send(bubble, 'stale');
+      send(bubble, 'marked'); // nothing to wait for
       return;
     }
   }
@@ -440,12 +477,14 @@ function trackResult({ id, output, isError }) {
 
 // ----- asking -----
 let currentReader = null;
+let lastHeardAt = null;
 let lastAsk = null;
 // The turn being answered, numbered by the notch's conversation manager.
 // Everything sent to the notch carries it, so a cancelled turn is ignored.
 let activeTurn = 0;
 // The look_at_screen tool: capture, then a dashed scan while Judith reads it.
 async function lookForJudith() {
+  mark('look');
   const display = session.display ?? cursorDisplay();
   try {
     const shot = await look(display);
@@ -461,8 +500,20 @@ async function lookForJudith() {
   }
 }
 
+// Where the seconds go: logged for each question.
+let timeline = null;
+function mark(step) {
+  if (!timeline || timeline[step]) return;
+  timeline[step] = Date.now();
+  const at = (s) => (timeline[s] ? `${s} ${timeline[s] - timeline.ask} ms` : null);
+  if (step === 'voice') {
+    console.log(`[timing] ${['firstWord', 'firstLine', 'look', 'voice'].map(at).filter(Boolean).join(' · ')}${timeline.heard ? ` (spoken question ready ${timeline.ask - timeline.heard} ms after the end of speech)` : ''}`);
+  }
+}
+
 async function ask(question, turn) {
   activeTurn = turn;
+  timeline = { ask: Date.now(), heard: lastHeardAt };
   await warmingUp;
   const display = session.display ?? cursorDisplay();
   session.display = display;
@@ -479,6 +530,7 @@ async function ask(question, turn) {
   let commands = 0;
   const reader = createScriptReader((command) => {
     commands += 1;
+    mark('firstLine');
     send(bubble, 'cmd', { ...command, turn });
   });
   currentReader = reader;
@@ -591,14 +643,21 @@ app.whenReady().then(async () => {
     model: config.model,
     // Emotion tags only when the voice can act them.
     systemPrompt: buildSystemPrompt({ language: config.language, annotations: config.annotations, emotions: config.voice === 'fish' }),
+    // Speed: little thinking for a conversation, and Judith's tools loaded up
+    // front (no ToolSearch round trip before looking at the screen).
+    env: { ENABLE_TOOL_SEARCH: 'false' },
     extraArgs: [
+      ...(config.effort ? ['--effort', config.effort] : []),
       '--mcp-config', mcpConfig,
       '--allowedTools', ALLOWED_TOOLS.join(','),
       '--permission-prompt-tool', 'mcp__judith__approve',
     ],
   });
   // The warm-up answer stays silent: no reader is listening yet.
-  engine.on('delta', (text) => currentReader?.push(text));
+  engine.on('delta', (text) => {
+    if (currentReader) mark('firstWord');
+    currentReader?.push(text);
+  });
   engine.on('tool', (tool) => {
     console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
     send(bubble, 'tool', { turn: activeTurn, label: describeTool(tool.name, tool.input, config.language) });
@@ -641,10 +700,13 @@ app.whenReady().then(async () => {
     }
     return text;
   });
-  ipcMain.handle('judith:speak', (_e, text) => speak(String(text)));
+  ipcMain.handle('judith:speak-start', (_e, text) => streamVoice(String(text)));
   ipcMain.on('judith:close', hide);
   ipcMain.on('judith:summon', summon);
   ipcMain.on('judith:show', (_e, command) => show(command));
+  ipcMain.on('judith:marked', () => send(bubble, 'marked'));
+  // The notch reports the end of speech and the first spoken sentence.
+  ipcMain.on('judith:timing', (_e, step) => (step === 'heard' ? (lastHeardAt = Date.now()) : mark(step)));
   ipcMain.on('judith:approve', (_e, { id, allow }) => settleApproval(id, allow === true));
   ipcMain.on('judith:resize', (_e, size) => {
     const width = Math.min(720, Math.max(120, Math.ceil(size?.width ?? 0)));

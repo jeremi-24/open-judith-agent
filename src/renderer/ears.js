@@ -39,7 +39,7 @@ export function createEars({ transcribe, filter, onLevel = () => {}, onPartial =
       model: stt.model ?? 'nova-3', language: stt.language ?? 'fr',
       encoding: 'linear16', sample_rate: String(RATE), channels: '1',
       interim_results: 'true', smart_format: 'true', punctuate: 'true',
-      endpointing: '400', utterance_end_ms: '1200', vad_events: 'true',
+      endpointing: '300', utterance_end_ms: '1000', vad_events: 'true',
     });
     for (const term of stt.keyterms ?? []) params.append('keyterm', term);
     const socket = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, ['token', stt.key]);
@@ -77,7 +77,8 @@ export function createEars({ transcribe, filter, onLevel = () => {}, onPartial =
   }
 
   // info: { followUp, continuation, bargeIn }; onEnd(text) once, '' if nothing.
-  async function start(info, onEnd) {
+  // onStop: the user stopped talking (before the transcription).
+  async function start(info, onEnd, onStop = () => {}) {
     cancel();
     const mine = ++attempt;
     await openMic();
@@ -95,6 +96,7 @@ export function createEars({ transcribe, filter, onLevel = () => {}, onPartial =
     const finish = async (useWhisper = !deepgram) => {
       if (done) return;
       done = true;
+      onStop();
       unsubscribe();
       const live = deepgram;
       deepgram = null;
