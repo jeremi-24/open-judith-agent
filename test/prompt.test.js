@@ -50,3 +50,17 @@ test('the annotation mode changes the drawing rule', () => {
   assert.match(buildSystemPrompt({ annotations: 'always' }), /mark the elements you talk about/);
   assert.match(buildSystemPrompt({ annotations: 'oops' }), /ONLY when/);
 });
+
+test('"ça" is what is under the mouse pointer', async () => {
+  const { pointerNote } = await import('../src/core/prompt.js');
+  const [text] = buildUserContent({ question: "C'est quoi ça ?", pointer: { x: 0.4, y: 0.25 } });
+  assert.match(text.text, /Mouse pointer: x=0\.400 y=0\.250/);
+  assert.match(text.text, /C'est quoi ça \?$/);
+  assert.equal(pointerNote(null), '');
+});
+
+test('the notes board is only offered when it is turned on', () => {
+  assert.doesNotMatch(buildSystemPrompt(), /^board </m);
+  assert.match(buildSystemPrompt({ board: true }), /^board </m);
+  assert.match(buildSystemPrompt(), /annotate the real thing, never redraw it/);
+});

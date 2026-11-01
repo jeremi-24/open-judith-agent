@@ -19,6 +19,10 @@ export const DEFAULTS = {
   interruptions: true,
   // Drawing on the screen: "helpful" (only when it saves searching), "none", "always".
   annotations: 'helpful',
+  // The notes board next to the screen (off: marks on the screen say enough).
+  board: false,
+  // One line per question in journal.jsonl (this PC only), to learn how Judith is used.
+  journal: true,
   // Listen to the microphone as soon as Judith is summoned.
   voiceInput: true,
   speechModel: 'onnx-community/whisper-base',

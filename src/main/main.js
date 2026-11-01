@@ -1,5 +1,5 @@
 import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, session as sessions, shell, Tray } from 'electron';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
@@ -78,7 +78,11 @@ async function look(display) {
 async function summon() {
   const display = cursorDisplay();
   clearMarks();
-  session = { display, reference: null };
+  // Where the mouse points when Judith is called: "c'est quoi ça ?" is about it.
+  const cursor = screen.getCursorScreenPoint();
+  const { x, y, width, height } = display.bounds;
+  const pointer = { x: (cursor.x - x) / width, y: (cursor.y - y) / height };
+  session = { display, reference: null, pointer };
 
   placeBubble(display, bubble.getBounds());
   bubble.show();
@@ -360,6 +364,7 @@ async function drawMark(mark) {
   // The ink that stays readable on what is under the mark.
   const ground = session.reference ?? (await screenNow(display).catch(() => null));
   const ink = inkFor(averageLuma(ground, markRect(mark, 0)));
+  if (entry) entry.marks += 1;
   send(overlay, 'mark', { ...toPixels(mark, bounds), ink, seed: shownMarks.length + 1 + Math.round(mark.x * 997 + mark.y * 787) });
   shownMarks.push(mark);
   watchMarks(display);
@@ -439,6 +444,7 @@ function preview(path) {
 function show(command) {
   if (command.type === 'mark') return drawMark(command);
   if (command.type === 'clear') return clearMarks();
+  if ((command.type === 'board' || command.type === 'note') && !config.board) return;
   if (command.type === 'board') {
     showBoard();
     return send(board, 'board', { title: command.title, subtitle: command.subtitle });
@@ -464,6 +470,8 @@ function trackTool({ id, name, input }) {
     status: 'running',
   };
   actions.set(id, item);
+  journalTool(name);
+  if (!config.board) return;
   showBoard();
   send(board, 'activity', item);
 }
@@ -493,7 +501,7 @@ async function lookForJudith() {
     overlay.showInactive();
     scanning = true;
     send(overlay, 'scan', true);
-    return { data: shot.data, mediaType: shot.mediaType };
+    return { data: shot.data, mediaType: shot.mediaType, pointer: session.pointer };
   } catch (error) {
     console.error('[judith] look failed:', error.message);
     return {};
@@ -511,8 +519,24 @@ function mark(step) {
   }
 }
 
+// The diary of the week: one line per question, on this PC only
+// (journal.jsonl in the user data folder), to learn what Judith is really used for.
+let entry = null;
+function journalTool(name) {
+  entry?.tools.push(name.replace(/^mcp__judith__/, ''));
+}
+function journal(fields) {
+  if (!config.journal || !entry) return;
+  const line = { ...entry, ...fields, ms: Date.now() - entry.at, at: new Date(entry.at).toISOString() };
+  entry = null;
+  try {
+    appendFileSync(join(app.getPath('userData'), 'journal.jsonl'), `${JSON.stringify(line)}\n`);
+  } catch {}
+}
+
 async function ask(question, turn) {
   activeTurn = turn;
+  entry = { at: Date.now(), question, spoken: Boolean(lastHeardAt && Date.now() - lastHeardAt < 15000), tools: [], marks: 0 };
   timeline = { ask: Date.now(), heard: lastHeardAt };
   await warmingUp;
   const display = session.display ?? cursorDisplay();
@@ -535,11 +559,13 @@ async function ask(question, turn) {
   });
   currentReader = reader;
   try {
-    const result = await engine.ask(buildUserContent({ question, image: image && { mediaType: image.mediaType, data: image.data } }));
+    const result = await engine.ask(buildUserContent({ question, image: image && { mediaType: image.mediaType, data: image.data }, pointer: session.pointer }));
     reader.finish(result.streamed || result.text);
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
+    journal({ outcome: 'answered', commands, firstVoiceMs: timeline?.voice ? timeline.voice - timeline.ask : null });
   } catch (error) {
     if (!error.cancelled) send(bubble, 'error', { turn, message: error.message });
+    journal({ outcome: error.cancelled ? 'cancelled' : 'error', error: error.cancelled ? undefined : error.message });
   } finally {
     if (currentReader === reader) currentReader = null;
     scanning = false;
@@ -642,7 +668,7 @@ app.whenReady().then(async () => {
     cwd: config.workingDirectory,
     model: config.model,
     // Emotion tags only when the voice can act them.
-    systemPrompt: buildSystemPrompt({ language: config.language, annotations: config.annotations, emotions: config.voice === 'fish' }),
+    systemPrompt: buildSystemPrompt({ language: config.language, annotations: config.annotations, emotions: config.voice === 'fish', board: config.board }),
     // Speed: little thinking for a conversation, and Judith's tools loaded up
     // front (no ToolSearch round trip before looking at the screen).
     env: { ENABLE_TOOL_SEARCH: 'false' },

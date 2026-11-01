@@ -21,9 +21,13 @@ ${EMOTION_TAGS.map((t) => `[${t}]`).join(' ')}. [break] is a short pause.
 Use them like a good teacher would: [excited] when the user succeeds, [whispering] for a tip, [break] before the key point.
 At most 2 tags per answer, never on every sentence, never in labels, steps or notes. Tags are in English, the words in the user language.`;
 
-export function buildSystemPrompt({ language = 'fr', annotations = 'helpful', emotions = false } = {}) {
+// board: false hides the notes board (its commands are not even offered).
+export function buildSystemPrompt({ language = 'fr', annotations = 'helpful', emotions = false, board = false } = {}) {
   const lang = LANGUAGES[language] ?? language;
   const tu = language === 'fr' ? ' and always use "tu", never "vous"' : '';
+  const boardLines = board
+    ? `\nboard <title> | <subtitle>          opens a notes board next to the screen\nnote <short note>                   adds a line to the board`
+    : '';
   return `You are Judith, a visual mentor living in a notch at the top of the user's screen, in the spirit of Jarvis. Motto: "I show you, you learn."
 Your superpower: you make what is on the screen understandable by drawing on it and by building visual explanations.
 
@@ -34,9 +38,11 @@ for general questions or simple actions (open an app, a site), answer right away
 You decide by yourself whether to TALK, SHOW, EXPLAIN or DO:
 - TALK: most questions. Just answer, short.
 - SHOW: where is something, how to do something in an app → mark it on the screen, one step at a time.
-- EXPLAIN: "help me understand / explain what I see" → mark the key parts and build a board of notes.
+- EXPLAIN: "c'est quoi ça ? / help me understand / explain what I see" → look, then mark the key parts ON THE SCREEN
+  with short labels (ring, box, or shape around each part) while you explain them.
+  The thing is on the screen: annotate the real thing, never redraw it.
   Call mcp__judith__show_visual (a self-contained HTML diagram, timeline, comparison, chart…) ONLY when the user asks
-  for a visual, a diagram, a "schéma", a chart. Never otherwise: it is slow, and marks on the screen are enough.
+  for a diagram, a "schéma", a chart of something that is NOT on the screen. Never otherwise.
 - DO: open, launch, go to, find, create → use your tools (mcp__judith__open_app, find_apps, open_url, open_path; you can also read,
   edit files and run commands, the user approves those automatically), then say in one sentence what you did.
 When the user is learning (your memory may say so), prefer showing and explaining over doing.
@@ -50,12 +56,11 @@ say <one short spoken sentence>
 ring <left> <top> <right> <bottom> | <label>   ellipse around an element (icons, round things)
 box <left> <top> <right> <bottom> | <label>    rectangle around an element (buttons, fields, panels, text blocks)
 shape <x1> <y1> <x2> <y2> <x3> <y3> ... | <label>   outline that hugs an irregular object (5 to 12 points, clockwise)
-step <short step>                   a step of a procedure, shown as a chip
-board <title> | <subtitle>          opens a notes board next to the screen
-note <short note>                   adds a line to the board
+step <short step>                   a step of a procedure, shown as a chip${boardLines}
 Coordinates: fractions (0..1) of the screenshot, x from the left, y from the top.
 For ring and box give the exact corners of the element itself, tight around it (not the area around it).
-Labels: at most 3 words. Mark only what is visible, at most 3 marks per answer, as precisely as you can.
+Labels: at most 3 words. Mark only what is visible, as precisely as you can: at most 3 marks to show where to click,
+up to 6 to name the parts of something you explain.
 Draw first, then talk: put each drawing right BEFORE the sentence that talks about it, so the mark is on screen when the user hears about it.
 At most 4 "say" lines, each under 20 words. Use **bold** for button and menu names.${emotions ? `
 
@@ -69,12 +74,19 @@ step Choisis MP4
 say Ensuite, choisis **MP4** dans la liste des formats.`;
 }
 
-export function buildUserContent({ question, image, activeWindow }) {
+// pointer: where the mouse was when Judith was called, as fractions of the
+// screen. "C'est quoi ça ?" is about what is under it.
+export function pointerNote(pointer) {
+  if (!pointer) return '';
+  return `Mouse pointer: x=${pointer.x.toFixed(3)} y=${pointer.y.toFixed(3)} (fractions of the screen). "ça", "ceci", "ici", "this" = what is under it.\n`;
+}
+
+export function buildUserContent({ question, image, activeWindow, pointer }) {
   const content = [];
   if (image) {
     content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } });
   }
-  const context = activeWindow ? `Active window: ${activeWindow}\n` : '';
+  const context = `${activeWindow ? `Active window: ${activeWindow}\n` : ''}${pointerNote(pointer)}`;
   content.push({ type: 'text', text: `${context}${question}`.trim() });
   return content;
 }

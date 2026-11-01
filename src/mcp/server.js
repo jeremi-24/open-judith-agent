@@ -119,7 +119,12 @@ server.registerTool(
     return {
       content: [
         { type: 'image', data: shot.data, mimeType: shot.mediaType },
-        { type: 'text', text: 'This is the user screen now. Coordinates you give are fractions of this image.' },
+        {
+          type: 'text',
+          text:
+            'This is the user screen now. Coordinates you give are fractions of this image.' +
+            (shot.pointer ? ` The mouse pointer is at x=${shot.pointer.x.toFixed(3)} y=${shot.pointer.y.toFixed(3)}: "ça"/"this" is what is under it.` : ''),
+        },
       ],
     };
   },
