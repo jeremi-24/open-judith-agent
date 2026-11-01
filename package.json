@@ -1,0 +1,27 @@
+{
+  "name": "open-judith-agent",
+  "version": "0.1.0",
+  "description": "Judith — a desktop mentor that sees your screen, draws the answer on it, and runs on your own Claude Code.",
+  "type": "module",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/",
+    "bench": "node bench/bench.mjs"
+  },
+  "keywords": [
+    "claude-code",
+    "desktop-assistant",
+    "screen-annotation",
+    "electron",
+    "learning"
+  ],
+  "author": "jeremi-24",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "electron": "~44.10.1"
+  }
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "image": "captures/essai-chrome.webp",
+    "cibles": [
+      "le lien « pricing » dans le menu du site",
+      "le bouton d'actualisation (recharger) de Chrome",
+      "l'étoile pour ajouter aux favoris dans la barre d'adresse",
+      "le bouton Stop (carré) dans la fenêtre FL Studio"
+    ]
+  }
+]

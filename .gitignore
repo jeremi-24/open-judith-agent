@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+*.log
+.env
+
+# Benchmark inputs and outputs stay local (screenshots can contain private data)
+bench/captures/*
+!bench/captures/.gitkeep
+bench/resultats.json
+bench/rapport.html
