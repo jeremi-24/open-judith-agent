@@ -102,6 +102,21 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  'show_visual',
+  {
+    description:
+      'Show a rich visual explanation next to the screen: a diagram, timeline, comparison, chart, mind map, annotated schema… ' +
+      'Give a complete, self-contained HTML page (inline CSS and SVG, optional inline JS, no external files or network). ' +
+      'Design it for a 300 px wide panel, light background, clear labels in the user language.',
+    inputSchema: { title: z.string(), html: z.string() },
+  },
+  async ({ title, html }) => {
+    await bridge('/visual', { title, html });
+    return text('The visual is on screen.');
+  },
+);
+
 // Claude Code calls this (--permission-prompt-tool) before any tool that is
 // not pre-approved: editing a file, running a command…
 server.registerTool(

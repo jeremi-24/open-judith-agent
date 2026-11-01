@@ -1,21 +1,20 @@
-// Judith's voice. Sentences are spoken as soon as they are complete, while
-// the answer streams. Each one is synthesized ahead by the neural voice
+// Judith's voice. Each sentence is synthesized ahead by the neural voice
 // (main process) and played in order; Windows voices are the fallback.
+// say(text, onStart): onStart runs when that sentence starts playing, which is
+// how drawings appear exactly when Judith talks about them.
 window.JudithVoice = (() => {
   const synth = window.speechSynthesis;
   const PREFERRED = ['Julie', 'Hortense', 'Denise', 'Paul'];
   let windowsVoice = null;
-  let spokenUpTo = 0;
   let enabled = true;
-  let onSentence = () => {};
   let onIdle = () => {};
 
-  // Playback queue: [{ sentence, audio: Promise<{samples, sampleRate} | null> }]
   const queue = [];
   let playing = false;
   let generation = 0;
   let context = null;
   let current = null;
+  let paused = false;
 
   function pickWindowsVoice(lang) {
     const voices = synth.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
@@ -26,8 +25,9 @@ window.JudithVoice = (() => {
 
   const plain = (text) => text.replace(/\*\*|`/g, '').replace(/\s+/g, ' ').trim();
 
-  function playSamples({ samples, sampleRate }) {
+  async function playSamples({ samples, sampleRate }) {
     context ??= new AudioContext();
+    if (context.state === 'suspended' && !paused) await context.resume();
     const buffer = context.createBuffer(1, samples.length, sampleRate);
     buffer.copyToChannel(samples, 0);
     const source = context.createBufferSource();
@@ -57,10 +57,10 @@ window.JudithVoice = (() => {
     playing = true;
     const mine = generation;
     while (queue.length && mine === generation) {
-      const { sentence, audio } = queue.shift();
-      const samples = await audio.catch(() => null);
+      const { sentence, audio, onStart } = queue.shift();
+      const samples = await audio;
       if (mine !== generation) break;
-      onSentence(sentence);
+      onStart();
       await (samples ? playSamples(samples) : playWindows(sentence));
     }
     playing = false;
@@ -68,56 +68,58 @@ window.JudithVoice = (() => {
     if (mine === generation) onIdle();
   }
 
-  function say(sentence) {
+  function say(sentence, onStart = () => {}) {
+    if (!enabled) {
+      onStart();
+      return;
+    }
     // A failed synthesis falls back to the Windows voice for that sentence.
-    queue.push({ sentence, audio: window.judith.speak(plain(sentence)).catch(() => null) });
+    queue.push({ sentence, onStart, audio: window.judith.speak(plain(sentence)).catch(() => null) });
     drain();
-  }
-
-  // Speaks every complete sentence of `text` not spoken yet. With `final`,
-  // the unfinished tail is spoken too.
-  function feed(text, final = false) {
-    if (!enabled) return;
-    const rest = text.slice(spokenUpTo);
-    const re = /[^.!?…]+[.!?…]+(\s|$)/g;
-    let match;
-    let consumed = 0;
-    while ((match = re.exec(rest))) {
-      say(match[0].trim());
-      consumed = re.lastIndex;
-    }
-    spokenUpTo += consumed;
-    if (final && text.slice(spokenUpTo).trim()) {
-      say(text.slice(spokenUpTo).trim());
-      spokenUpTo = text.length;
-    }
   }
 
   function stop() {
     generation++;
     queue.length = 0;
-    spokenUpTo = 0;
     synth.cancel();
     try {
       current?.stop();
     } catch {}
     current = null;
     playing = false;
+    setPaused(false);
+  }
+
+  function setPaused(on) {
+    paused = on;
+    if (on) {
+      context?.suspend();
+      synth.pause();
+    } else {
+      context?.resume();
+      synth.resume();
+    }
   }
 
   return {
-    feed,
+    say,
     stop,
     get enabled() {
       return enabled;
+    },
+    get speaking() {
+      return playing;
+    },
+    get paused() {
+      return paused;
     },
     setEnabled(on) {
       enabled = on;
       if (!on) stop();
     },
-    on(handlers) {
-      onSentence = handlers.sentence ?? onSentence;
-      onIdle = handlers.idle ?? onIdle;
+    setPaused,
+    onIdle(handler) {
+      onIdle = handler;
     },
   };
 })();

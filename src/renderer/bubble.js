@@ -1,22 +1,23 @@
+// The notch: listens, thinks, speaks, and plays Judith's script so that each
+// drawing appears when the sentence before it starts.
 const notch = document.querySelector('.notch');
-const status = document.getElementById('status');
-const caption = document.getElementById('caption');
+const label = document.getElementById('label');
+const doing = document.getElementById('doing');
+const textBox = document.getElementById('text');
 const steps = document.getElementById('steps');
 const form = document.getElementById('form');
 const question = document.getElementById('question');
-const send = form.querySelector('.send');
-const voiceButton = document.getElementById('voice');
+const pauseButton = document.getElementById('pause');
 const voice = window.JudithVoice;
-
-const STATUS = { idle: 'Judith', listening: "Je t'écoute…", transcribing: "J'ai entendu…", thinking: 'Je réfléchis…', speaking: 'Judith parle' };
 const recorder = window.JudithRecorder;
-const mic = document.getElementById('mic');
-let answerText = '';
+
+const LABELS = { listening: "J'écoute…", thinking: 'Je réfléchis…', speaking: 'Judith parle' };
+const MOODS = { none: 'listen', listening: 'listen', thinking: 'think', speaking: 'explain' };
 
 function setState(state) {
   notch.dataset.state = state;
-  status.textContent = STATUS[state];
-  send.disabled = state === 'thinking';
+  notch.dataset.mood = MOODS[state] ?? 'listen';
+  if (LABELS[state]) label.textContent = LABELS[state];
 }
 
 // Tiny, safe markdown: escape everything, then **bold** and `code`.
@@ -24,144 +25,181 @@ function render(text) {
   return text
     .replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\n+/g, ' ');
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
 }
 
-function showCaption(text, { error = false, full = false } = {}) {
-  caption.hidden = !text;
-  caption.classList.toggle('error', error);
-  caption.classList.toggle('full', full);
-  caption.innerHTML = render(text);
+// ----- the answer: spoken sentences, steps and drawings -----
+let spoken = [];
+let lastSay = null; // the last sentence queued, until it starts
+
+function resetAnswer() {
+  voice.stop();
+  spoken = [];
+  lastSay = null;
+  textBox.innerHTML = '';
+  textBox.classList.remove('error');
+  steps.replaceChildren();
+  notch.classList.remove('talking');
 }
 
-function showSteps(list) {
-  steps.hidden = list.length === 0;
-  steps.replaceChildren(...list.map((s) => Object.assign(document.createElement('li'), { textContent: s, title: s })));
+function showSentence(text) {
+  setState('speaking');
+  notch.classList.add('talking');
+  textBox.classList.remove('error');
+  spoken.push(text);
+  textBox.innerHTML = render(text);
 }
 
-function autosize() {
-  question.style.height = 'auto';
-  question.style.height = `${question.scrollHeight}px`;
+function addStep(text) {
+  for (const li of steps.children) li.classList.remove('current');
+  const li = Object.assign(document.createElement('li'), { textContent: text, title: text, className: 'current' });
+  steps.append(li);
+  li.scrollIntoView({ inline: 'nearest' });
 }
 
-// With the voice on, the caption follows the sentence being spoken, so the
-// notch stays small. With the voice off, it shows the whole answer.
-voice.on({
-  sentence: (sentence) => {
-    notch.classList.add('talking');
-    showCaption(sentence);
-  },
-  idle: () => notch.classList.remove('talking'),
+function run(command) {
+  if (command.type === 'step') addStep(command.text);
+  else window.judith.show(command);
+}
+
+window.judith.on('cmd', (command) => {
+  if (command.type === 'say') {
+    const item = { actions: [], started: false };
+    lastSay = item;
+    voice.say(command.text, () => {
+      item.started = true;
+      showSentence(command.text);
+      item.actions.forEach(run);
+    });
+    return;
+  }
+  // Drawings wait for the sentence just before them.
+  if (lastSay && !lastSay.started && voice.enabled) lastSay.actions.push(command);
+  else run(command);
 });
 
-function setVoice(on) {
-  voice.setEnabled(on);
-  voiceButton.setAttribute('aria-pressed', String(on));
-  voiceButton.setAttribute('aria-label', on ? 'Couper la voix' : 'Activer la voix');
-  if (!on) {
-    notch.classList.remove('talking');
-    if (answerText) showCaption(answerText, { full: true });
-  }
-  try {
-    localStorage.setItem('judith.voice', on ? 'on' : 'off');
-  } catch {}
-}
+voice.onIdle(() => notch.classList.remove('talking'));
 
+window.judith.on('answer', () => {
+  if (!spoken.length && !lastSay) setState('none');
+  question.value = '';
+});
+
+window.judith.on('error', (message) => {
+  setState('speaking');
+  textBox.innerHTML = render(message);
+  textBox.classList.add('error');
+});
+
+window.judith.on('tool', (text) => {
+  if (notch.dataset.state === 'speaking' && voice.speaking) return;
+  setState('thinking');
+  doing.textContent = `${text}…`;
+});
+
+// ----- asking -----
 function askJudith(text) {
-  if (!text || notch.dataset.state === 'thinking') return;
-  voice.stop();
-  answerText = '';
-  showCaption('');
-  showSteps([]);
+  if (!text) return;
+  resetAnswer();
+  setState('thinking');
+  doing.textContent = 'Je regarde ton écran';
   window.judith.ask(text);
 }
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
   const text = question.value.trim();
-  question.value = '';
-  autosize();
+  recorder.cancel();
   askJudith(text);
 });
 
-// Voice: listen, stop after a short silence, transcribe with Whisper, ask.
+question.addEventListener('input', () => {
+  // Typing means the user prefers to write: stop listening.
+  if (recorder.listening && question.value) recorder.cancel();
+});
+
+// ----- listening -----
+const bars = document.querySelector('.bars');
 async function listen() {
   if (recorder.listening) return;
-  voice.stop();
-  notch.classList.remove('talking');
+  resetAnswer();
+  setState('listening');
+  question.value = '';
+  question.focus();
   try {
     await recorder.start({
-      onLevel: (level) => mic.style.setProperty('--level', level.toFixed(2)),
+      onLevel: (level) => bars.style.setProperty('--level', level.toFixed(2)),
       onEnd: heard,
     });
   } catch (error) {
-    showCaption(`Je n'ai pas accès au micro : ${error.message}`, { error: true, full: true });
-    return;
+    question.placeholder = `Micro indisponible : ${error.message}. Écris ta question.`;
   }
-  mic.setAttribute('aria-pressed', 'true');
-  setState('listening');
-}
-
-function stopListening() {
-  mic.setAttribute('aria-pressed', 'false');
-  mic.style.setProperty('--level', '0');
 }
 
 async function heard(audio) {
-  stopListening();
+  bars.style.setProperty('--level', '0');
   if (!audio) {
-    setState('idle');
-    showCaption("Je n'ai rien entendu. Parle-moi ou écris ta question.", { full: true });
+    question.placeholder = "Je n'ai rien entendu. Parle, ou écris ta question…";
     return;
   }
-  setState('transcribing');
+  setState('thinking');
+  doing.textContent = "J'écoute ce que tu as dit";
   try {
     const text = await window.judith.transcribe(audio);
     if (!text) {
-      setState('idle');
-      showCaption("Je n'ai pas compris, tu peux répéter ?", { full: true });
+      setState('listening');
+      question.placeholder = "Je n'ai pas compris, tu peux répéter ?";
       return;
     }
-    showCaption(`« ${text} »`, { full: true });
+    question.value = text;
     askJudith(text);
   } catch (error) {
-    setState('idle');
-    showCaption(error.message, { error: true, full: true });
+    setState('listening');
+    question.placeholder = error.message;
   }
 }
 
-mic.addEventListener('click', () => (recorder.listening ? recorder.finish() : listen()));
+document.getElementById('stop').addEventListener('click', () => recorder.finish());
 
-question.addEventListener('input', () => {
-  autosize();
-  // Typing means the user prefers to write: stop listening.
-  if (recorder.listening && question.value) {
-    recorder.cancel();
-    stopListening();
-    setState('idle');
-  }
-});
-question.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault();
-    form.requestSubmit();
-  }
-});
+// ----- controls -----
 function close() {
-  voice.stop();
+  resetAnswer();
   recorder.cancel();
-  stopListening();
+  setState('none');
   window.judith.close();
 }
+document.getElementById('close').addEventListener('click', close);
+document.getElementById('summon').addEventListener('click', () => window.judith.summon());
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') close();
 });
-document.getElementById('close').addEventListener('click', close);
-voiceButton.addEventListener('click', () => setVoice(!voice.enabled));
-caption.addEventListener('click', () => answerText && showCaption(answerText, { full: true }));
+pauseButton.addEventListener('click', () => {
+  voice.setPaused(!voice.paused);
+  pauseButton.setAttribute('aria-pressed', String(voice.paused));
+  pauseButton.setAttribute('aria-label', voice.paused ? 'Reprendre' : 'Pause');
+  notch.classList.toggle('talking', !voice.paused);
+});
 
-// Approval card: Judith wants to edit a file or run a command.
+// Summoned (shortcut): listen right away. Summoned again while listening:
+// the user is done talking.
+window.judith.on('focus', ({ listen: shouldListen } = {}) => {
+  if (recorder.listening) return recorder.finish();
+  if (shouldListen) listen();
+  else {
+    resetAnswer();
+    setState('listening');
+    question.focus();
+  }
+});
+window.judith.on('idle', () => setState('none'));
+// A question sent by the app itself (demo mode).
+window.judith.on('ask', (text) => {
+  recorder.cancel();
+  question.value = text;
+  askJudith(text);
+});
+
+// ----- approvals -----
 const approval = document.getElementById('approval');
 let approvalId = null;
 function answerApproval(allow) {
@@ -177,7 +215,7 @@ window.judith.on('approval', ({ id, title, detail }) => {
   document.getElementById('approval-title').textContent = `${title} ?`;
   document.getElementById('approval-detail').textContent = detail;
   approval.hidden = false;
-  if (voice.enabled) voice.feed(`${title} ?`, true);
+  if (notch.dataset.state === 'none') setState('thinking');
   document.getElementById('allow').focus();
 });
 window.judith.on('approved', ({ id }) => {
@@ -187,47 +225,8 @@ window.judith.on('approved', ({ id }) => {
   }
 });
 
-// While Judith uses a tool, the status says what she is doing.
-window.judith.on('tool', (label) => {
-  setState('thinking');
-  status.textContent = `${label}…`;
-});
-
-// Summoned (shortcut): listen right away. Summoned again while listening:
-// the user is done talking.
-window.judith.on('focus', ({ listen: shouldListen } = {}) => {
-  question.focus();
-  if (recorder.listening) return recorder.finish();
-  if (notch.dataset.state === 'thinking' || notch.dataset.state === 'transcribing') return;
-  setState('idle');
-  if (shouldListen) listen();
-});
-window.judith.on('state', setState);
-window.judith.on('delta', (text) => {
-  setState('speaking');
-  answerText = text;
-  if (voice.enabled) voice.feed(text);
-  else showCaption(text, { full: true });
-});
-window.judith.on('answer', ({ text, steps: list }) => {
-  setState('speaking');
-  answerText = text;
-  if (voice.enabled) voice.feed(text, true);
-  else showCaption(text, { full: true });
-  showSteps(list);
-  question.focus();
-});
-window.judith.on('error', (message) => {
-  setState('idle');
-  showCaption(message, { error: true, full: true });
-});
-
-try {
-  if (localStorage.getItem('judith.voice') === 'off') setVoice(false);
-} catch {}
-
-// The window hugs the notch (plus its shoulders and shadow): transparent
-// pixels around it would still catch the user's clicks.
+// The window hugs the notch: transparent pixels around it would catch clicks.
 new ResizeObserver(() => {
-  window.judith.resize({ width: notch.offsetWidth + 28, height: notch.offsetHeight + 12 });
+  window.judith.resize({ width: notch.offsetWidth + 40, height: notch.offsetHeight + 22 });
 }).observe(notch);
+setState('none');

@@ -1,0 +1,100 @@
+// Judith answers with a tiny line-based script that mixes speech and drawing,
+// so each drawing appears exactly when she talks about it:
+//
+//   say Le bouton Exporter est en haut à droite.
+//   box 0.79 0.04 0.85 0.08 | Exporter
+//   step Clique sur Exporter
+//   say Ensuite, choisis le format MP4.
+//   board Exporter une vidéo | Les réglages qui comptent
+//   note Le MP4 se lit partout
+//
+// Coordinates are fractions (0..1) of the screenshot; ring and box take the
+// corners of the element (left top right bottom), or a single point.
+// Lines are read as they stream in; a line that is not a command is spoken.
+
+const NUMBER = /^-?\d*\.?\d+$/;
+const clamp01 = (n) => Math.min(1, Math.max(0, n));
+
+function splitLabel(rest) {
+  const bar = rest.indexOf('|');
+  return bar < 0 ? [rest.trim(), ''] : [rest.slice(0, bar).trim(), rest.slice(bar + 1).trim()];
+}
+
+function numbers(text) {
+  const parts = text.split(/[\s,]+/).filter(Boolean);
+  return parts.every((p) => NUMBER.test(p)) ? parts.map(Number) : null;
+}
+
+export function parseLine(raw) {
+  const line = raw.trim().replace(/^[-*•]\s+/, '');
+  if (!line || line.startsWith('```')) return null;
+  const space = line.indexOf(' ');
+  const word = (space < 0 ? line : line.slice(0, space)).toLowerCase();
+  const rest = space < 0 ? '' : line.slice(space + 1);
+
+  switch (word) {
+    case 'say':
+      return rest.trim() ? { type: 'say', text: rest.trim() } : null;
+    case 'ring':
+    case 'box': {
+      const [coords, label] = splitLabel(rest);
+      const n = numbers(coords);
+      if (!n || (n.length !== 2 && n.length !== 4)) return null;
+      const [left, top, right = left, bottom = top] = n.map(clamp01);
+      const [x1, x2] = [Math.min(left, right), Math.max(left, right)];
+      const [y1, y2] = [Math.min(top, bottom), Math.max(top, bottom)];
+      return { type: 'mark', shape: word, x: (x1 + x2) / 2, y: (y1 + y2) / 2, w: x2 - x1, h: y2 - y1, label };
+    }
+    case 'shape': {
+      const [coords, label] = splitLabel(rest);
+      const n = numbers(coords);
+      if (!n || n.length < 6 || n.length % 2) return null;
+      const points = [];
+      for (let i = 0; i < n.length; i += 2) points.push([clamp01(n[i]), clamp01(n[i + 1])]);
+      const xs = points.map((p) => p[0]);
+      const ys = points.map((p) => p[1]);
+      const x = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const y = (Math.min(...ys) + Math.max(...ys)) / 2;
+      return { type: 'mark', shape: 'shape', points, x, y, w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), label };
+    }
+    case 'step':
+      return rest.trim() ? { type: 'step', text: rest.trim() } : null;
+    case 'board': {
+      const [title, subtitle] = splitLabel(rest);
+      return title ? { type: 'board', title, subtitle } : null;
+    }
+    case 'note':
+      return rest.trim() ? { type: 'note', text: rest.trim() } : null;
+    case 'clear':
+      return { type: 'clear' };
+    default:
+      // Not a command: Judith says it.
+      return { type: 'say', text: line };
+  }
+}
+
+// Feeds the growing answer text; calls onCommand once per complete line.
+// finish() flushes the last line when the answer is over.
+export function createScriptReader(onCommand) {
+  let done = 0;
+  let last = '';
+  const emit = (line) => {
+    const command = parseLine(line);
+    if (command) onCommand(command);
+  };
+  return {
+    push(text) {
+      last = text;
+      let newline;
+      while ((newline = text.indexOf('\n', done)) >= 0) {
+        emit(text.slice(done, newline));
+        done = newline + 1;
+      }
+    },
+    finish(text = last) {
+      this.push(text);
+      if (done < text.length) emit(text.slice(done));
+      done = text.length;
+    },
+  };
+}

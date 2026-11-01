@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-src 'self' about:">
+<title>Judith · tableau</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="board.css">
+<script src="board.js" defer></script>
+</head>
+<body>
+<main class="board">
+  <header>
+    <div class="titles">
+      <h1 id="title">Judith</h1>
+      <p id="subtitle"></p>
+    </div>
+    <button type="button" class="close" id="close" aria-label="Fermer le tableau">
+      <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1L9 9M9 1L1 9"/></svg>
+    </button>
+  </header>
+
+  <div class="paper">
+   <div class="content" id="content">
+    <ul class="notes" id="notes"></ul>
+
+    <section class="visual" id="visual" hidden>
+      <h2 id="visual-title"></h2>
+      <iframe id="frame" title="Visuel de Judith" sandbox="allow-scripts"></iframe>
+    </section>
+
+    <section class="activity" id="activity" hidden>
+      <h2>Ce que j'ai fait</h2>
+      <ol id="actions"></ol>
+    </section>
+   </div>
+  </div>
+</main>
+</body>
+</html>

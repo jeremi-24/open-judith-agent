@@ -80,18 +80,30 @@ export class ClaudeCodeEngine extends EventEmitter {
     const pending = this.pending;
     if (!pending) return;
 
-    if (event.type === 'stream_event' && event.event?.type === 'content_block_delta' && event.event.delta?.type === 'text_delta') {
+    // A new text block (e.g. after a tool call) starts on a new line.
+    if (event.type === 'stream_event' && event.event?.type === 'content_block_start' && event.event.content_block?.type === 'text') {
+      if (pending.text && !pending.text.endsWith('\n')) pending.text += '\n';
+    } else if (event.type === 'stream_event' && event.event?.type === 'content_block_delta' && event.event.delta?.type === 'text_delta') {
       pending.text += event.event.delta.text;
       this.emit('delta', pending.text);
     } else if (event.type === 'assistant') {
       const blocks = event.message?.content ?? [];
       for (const block of blocks) {
-        if (block.type === 'tool_use') this.emit('tool', { name: block.name, input: block.input ?? {} });
+        if (block.type === 'tool_use') this.emit('tool', { id: block.id, name: block.name, input: block.input ?? {} });
       }
       if (!pending.text) {
         // Fallback when partial messages are not streamed.
         pending.text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('');
         if (pending.text) this.emit('delta', pending.text);
+      }
+    } else if (event.type === 'user') {
+      // What a tool returned (command output, file written…).
+      for (const block of event.message?.content ?? []) {
+        if (block.type !== 'tool_result') continue;
+        const output = Array.isArray(block.content)
+          ? block.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n')
+          : String(block.content ?? '');
+        this.emit('tool-result', { id: block.tool_use_id, output, isError: block.is_error === true });
       }
     } else if (event.type === 'result') {
       this.pending = null;
@@ -101,6 +113,8 @@ export class ClaudeCodeEngine extends EventEmitter {
       }
       pending.resolve({
         text: event.result ?? pending.text,
+        // Everything written during the turn, including text before tool calls.
+        streamed: pending.text,
         sessionId: event.session_id,
         costUsd: event.total_cost_usd,
         durationMs: Date.now() - pending.startedAt,

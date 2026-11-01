@@ -1,17 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../src/core/prompt.js';
-import { extractAnnotations } from '../src/core/annotations.js';
+import { parseLine } from '../src/core/script.js';
 
-test('the system prompt sets the language and documents the judith block', () => {
+test('the system prompt sets the language and documents the script', () => {
   const prompt = buildSystemPrompt({ language: 'fr' });
   assert.match(prompt, /You speak French/);
-  assert.match(prompt, /```judith/);
+  assert.match(prompt, /ANSWER FORMAT/);
+  assert.match(prompt, /mcp__judith__show_visual/);
 });
 
-test('the example block in the prompt is valid for the parser', () => {
-  const example = buildSystemPrompt().match(/```judith[\s\S]*?```/)[0];
-  assert.equal(extractAnnotations(example).marks.length, 1);
+test('the example in the prompt is valid script', () => {
+  const example = buildSystemPrompt().split('Example:\n')[1].split('\n').map(parseLine);
+  assert.deepEqual(example.map((c) => c.type), ['say', 'mark', 'step', 'say', 'step']);
 });
 
 test('user content puts the image first, then the context and the question', () => {
@@ -27,7 +28,7 @@ test('user content puts the image first, then the context and the question', () 
 
 test('Judith decides by herself between showing and doing', () => {
   const prompt = buildSystemPrompt();
-  assert.match(prompt, /SHOW or to DO/);
+  assert.match(prompt, /SHOW, EXPLAIN or DO/);
   assert.match(prompt, /mcp__judith__open_app/);
 });
 

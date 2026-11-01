@@ -1,31 +1,33 @@
 import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, session as sessions, shell, Tray } from 'electron';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
 import { configPath, loadConfig } from './config.js';
 import { ensureVoice } from './models.js';
 import { captureDisplay } from './capture.js';
-import { BUBBLE_WIDTH, createBubble, createOverlay, setCaptureProtection } from './windows.js';
+import { BOARD_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtection } from './windows.js';
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
 import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../core/prompt.js';
-import { extractAnnotations, toPixels, visibleText } from '../core/annotations.js';
+import { toPixels } from '../core/annotations.js';
+import { createScriptReader } from '../core/script.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const config = loadConfig();
 const root = join(import.meta.dirname, '..', '..');
 const iconPath = join(root, 'assets', 'icon.png');
-let bubble, overlay, tray, engine, warmingUp;
+let bubble, overlay, board, tray, engine, warmingUp;
 
-// Tools Judith may use without asking: opening things and reading.
+// Tools Judith may use without asking: opening things, reading, showing.
 // Everything else (editing files, running commands) goes through the notch.
 const ALLOWED_TOOLS = [
   'mcp__judith__open_app',
   'mcp__judith__find_apps',
   'mcp__judith__open_url',
   'mcp__judith__open_path',
+  'mcp__judith__show_visual',
   'Read',
   'Glob',
   'Grep',
@@ -33,7 +35,7 @@ const ALLOWED_TOOLS = [
   'WebFetch',
 ];
 
-// The screenshot taken when Judith is summoned, before her notch appears.
+// The screenshot taken when Judith is summoned, before her notch wakes up.
 let session = { display: null, image: null };
 
 function send(win, event, data) {
@@ -48,11 +50,13 @@ async function look(display) {
   if (config.hideFromScreenRecordings) return captureDisplay(display);
   bubble.setOpacity(0);
   overlay.hide();
+  board.setOpacity(0);
   await wait(120);
   try {
     return await captureDisplay(display);
   } finally {
     bubble.setOpacity(1);
+    board.setOpacity(1);
   }
 }
 
@@ -73,8 +77,7 @@ async function summon() {
   send(bubble, 'focus', { listen: config.voiceInput && speechReady });
 }
 
-// Whisper, in a worker thread. Pressing the shortcut again while Judith
-// listens just sends what was said (handled by the notch).
+// ----- voice in: Whisper, in a worker thread -----
 let speech = null;
 let speechReady = false;
 let speechJob = 0;
@@ -98,7 +101,16 @@ function startSpeech() {
   speech.on('error', (error) => console.error('[judith] speech worker:', error.message));
 }
 
-// Judith's neural voice, in its own process (see tts-process.js).
+function transcribe(audio) {
+  if (!speech || !speechReady) return Promise.reject(new Error("La voix n'est pas encore prête, écris ta question."));
+  const id = ++speechJob;
+  return new Promise((resolve, reject) => {
+    speechJobs.set(id, { resolve, reject });
+    speech.postMessage({ id, audio });
+  });
+}
+
+// ----- voice out: Judith's neural voice, in its own process (tts-process.js) -----
 let tts = null;
 let ttsReady = false;
 let ttsJob = 0;
@@ -148,62 +160,116 @@ function speak(text) {
   });
 }
 
-function transcribe(audio) {
-  if (!speech || !speechReady) return Promise.reject(new Error("La voix n'est pas encore prête, écris ta question."));
-  const id = ++speechJob;
-  return new Promise((resolve, reject) => {
-    speechJobs.set(id, { resolve, reject });
-    speech.postMessage({ id, audio });
-  });
-}
-
-// The notch is glued to the very top of the screen, centered unless it had
-// to slide aside (dodgeX) to uncover a mark.
-let dodgeX = null;
+// ----- the notch -----
+// Glued to the very top of the screen, always centered.
 function placeBubble(display, { width, height }) {
   const { x, y, width: screenWidth } = display.bounds;
-  bubble.setBounds({ x: dodgeX ?? Math.round(x + (screenWidth - width) / 2), y, width, height });
+  bubble.setBounds({ x: Math.round(x + (screenWidth - width) / 2), y, width, height });
 }
 
+// Back to the small idle notch.
 function hide() {
-  bubble.hide();
+  send(bubble, 'idle');
+  send(overlay, 'scan', false);
   clearMarks();
 }
 
-function drawMarks(marks) {
-  const { display } = session;
-  if (!marks.length || !display) return;
+// ----- marks on the screen -----
+function drawMark(mark) {
+  const display = session.display ?? cursorDisplay();
   const { bounds } = display;
-  const pixels = marks.map((m) => toPixels(m, bounds));
-  dodgeMarks(display, pixels);
-  overlay.setBounds(bounds);
-  send(overlay, 'marks', { marks: pixels });
-  overlay.showInactive();
-}
-
-// If the notch sits on top of what Judith points at, it slides aside.
-function dodgeMarks(display, pixels) {
-  const b = bubble.getBounds();
-  const { x: left, width: screenWidth } = display.bounds;
-  const hidden = pixels.some((m) => {
-    const mx = left + m.cx;
-    return mx + m.rx > b.x && mx - m.rx < b.x + b.width && display.bounds.y + m.cy - m.ry < b.y + b.height;
-  });
-  if (!hidden) return;
-  const onLeft = pixels[0].cx < screenWidth / 2;
-  dodgeX = onLeft ? left + screenWidth - b.width - 24 : left + 24;
-  bubble.setBounds({ ...b, x: dodgeX });
+  if (!overlay.isVisible()) {
+    overlay.setBounds(bounds);
+    overlay.showInactive();
+  }
+  send(overlay, 'mark', toPixels(mark, bounds));
 }
 
 function clearMarks() {
   send(overlay, 'clear');
   overlay?.hide();
-  if (dodgeX !== null && session.display) {
-    dodgeX = null;
-    placeBubble(session.display, bubble.getBounds());
+}
+
+// ----- the board: notes, visuals and what Claude Code did -----
+// Bottom-left corner, growing upwards: tabs and toolbars stay visible.
+function placeBoard(height) {
+  const { workArea } = session.display ?? cursorDisplay();
+  const h = Math.min(workArea.height - 120, Math.max(80, Math.ceil(height)));
+  board.setBounds({ x: workArea.x + 8, y: workArea.y + workArea.height - h - 8, width: BOARD_WIDTH, height: h });
+}
+
+function showBoard() {
+  if (board.isVisible()) return;
+  placeBoard(board.getBounds().height);
+  board.showInactive();
+}
+
+const PREVIEWABLE = new Set(['.html', '.htm', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.md', '.txt', '.csv', '.json']);
+const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+
+// A file Claude Code created, shown in the board's visual frame.
+function preview(path) {
+  if (!existsSync(path)) return;
+  const ext = extname(path).toLowerCase();
+  const name = path.split(/[\\/]/).pop();
+  let html;
+  if (IMAGE_TYPES[ext]) {
+    html = `<img alt="" style="max-width:100%" src="data:${IMAGE_TYPES[ext]};base64,${readFileSync(path).toString('base64')}">`;
+  } else if (ext === '.html' || ext === '.htm' || ext === '.svg') {
+    html = readFileSync(path, 'utf8');
+  } else {
+    const escaped = readFileSync(path, 'utf8')
+      .slice(0, 20000)
+      .replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+    html = `<pre style="font:12px/1.5 Consolas,monospace;white-space:pre-wrap;margin:0">${escaped}</pre>`;
+  }
+  showBoard();
+  send(board, 'visual', { title: name, html });
+}
+
+// What Judith's script asks to show, when its sentence starts.
+function show(command) {
+  if (command.type === 'mark') return drawMark(command);
+  if (command.type === 'clear') return clearMarks();
+  if (command.type === 'board') {
+    showBoard();
+    return send(board, 'board', { title: command.title, subtitle: command.subtitle });
+  }
+  if (command.type === 'note') {
+    showBoard();
+    send(board, 'note', { text: command.text });
   }
 }
 
+// Every action Claude Code takes appears on the board.
+const QUIET_TOOLS = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'mcp__judith__find_apps', 'mcp__judith__approve']);
+const actions = new Map();
+function trackTool({ id, name, input }) {
+  if (QUIET_TOOLS.has(name)) return;
+  const file = input.file_path ?? input.notebook_path ?? null;
+  const item = {
+    id,
+    label: describeTool(name, input, config.language),
+    detail: input.command ?? file ?? input.url ?? input.path ?? '',
+    file,
+    previewable: Boolean(file && PREVIEWABLE.has(extname(file).toLowerCase())),
+    status: 'running',
+  };
+  actions.set(id, item);
+  showBoard();
+  send(board, 'activity', item);
+}
+
+function trackResult({ id, output, isError }) {
+  const item = actions.get(id);
+  if (!item) return;
+  Object.assign(item, { status: isError ? 'error' : 'ok', output: output.trim().slice(0, 4000) });
+  send(board, 'activity', item);
+}
+
+// ----- asking -----
+let currentReader = null;
+let lastAsk = null;
 async function ask(question) {
   await warmingUp;
   const display = session.display ?? cursorDisplay();
@@ -212,28 +278,36 @@ async function ask(question) {
   session = { display, image: null };
 
   clearMarks();
-  send(bubble, 'state', 'thinking');
+  overlay.setBounds(display.bounds);
+  overlay.showInactive();
+  send(overlay, 'scan', true);
+
+  // Script lines go to the notch as soon as they are complete.
+  let commands = 0;
+  const reader = createScriptReader((command) => {
+    commands += 1;
+    send(bubble, 'cmd', command);
+  });
+  currentReader = reader;
   try {
     const result = await engine.ask(buildUserContent({ question, image }));
-    const { text, steps, marks } = extractAnnotations(result.text);
-    console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${marks.length} mark(s)`);
-    send(bubble, 'answer', { text, steps, durationMs: result.durationMs });
-    drawMarks(marks);
+    reader.finish(result.streamed || result.text);
+    console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
   } catch (error) {
     send(bubble, 'error', error.message);
+  } finally {
+    currentReader = null;
+    send(overlay, 'scan', false);
+    send(bubble, 'answer');
   }
 }
 
-// Claude Code wants to edit a file or run a command: the notch asks the user.
+// ----- approvals: Claude Code wants to edit a file or run a command -----
 const approvals = new Map();
 let approvalId = 0;
 function requestApproval(tool, input) {
   const id = ++approvalId;
   console.log(`[judith] asks permission for ${tool}`);
-  if (!bubble.isVisible()) {
-    placeBubble(session.display ?? cursorDisplay(), bubble.getBounds());
-    bubble.showInactive();
-  }
   send(bubble, 'approval', { id, ...describeApproval(tool, input, config.language) });
   return new Promise((resolve) => {
     const timer = setTimeout(() => settleApproval(id, false), 120_000);
@@ -280,10 +354,17 @@ app.whenReady().then(async () => {
   setCaptureProtection(config.hideFromScreenRecordings);
   bubble = createBubble();
   overlay = createOverlay();
+  board = createBoard();
 
   // Judith's tools run in an MCP server that Claude Code starts. Electron
   // itself runs it as plain Node, so no separate Node install is needed.
-  const bridge = await startBridge({ onApprove: requestApproval });
+  const bridge = await startBridge({
+    onApprove: requestApproval,
+    onVisual: (title, html) => {
+      showBoard();
+      send(board, 'visual', { title, html });
+    },
+  });
   const mcpConfig = join(app.getPath('userData'), 'mcp.json');
   writeFileSync(
     mcpConfig,
@@ -309,21 +390,25 @@ app.whenReady().then(async () => {
       '--permission-prompt-tool', 'mcp__judith__approve',
     ],
   });
-  // The warm-up answer stays silent: it never reaches the notch.
-  let warm = false;
-  engine.on('delta', (text) => warm && send(bubble, 'delta', visibleText(text)));
-  engine.on('tool', ({ name, input }) => {
-    console.log(`[judith] tool ${name} ${JSON.stringify(input).slice(0, 120)}`);
-    send(bubble, 'tool', describeTool(name, input, config.language));
+  // The warm-up answer stays silent: no reader is listening yet.
+  engine.on('delta', (text) => currentReader?.push(text));
+  engine.on('tool', (tool) => {
+    console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
+    send(bubble, 'tool', describeTool(tool.name, tool.input, config.language));
+    trackTool(tool);
   });
+  engine.on('tool-result', trackResult);
   engine.on('log', (text) => console.error('[claude]', text.trim()));
   // Starts Claude Code and loads its context now, so the first real question is fast.
   warmingUp = engine
-    .ask([{ type: 'text', text: 'Réponds seulement : prête.' }])
-    .catch((error) => console.error('[judith] warm-up failed:', error.message))
-    .finally(() => {
-      warm = true;
-    });
+    .ask([{ type: 'text', text: 'Réponds seulement : say prête.' }])
+    .catch((error) => console.error('[judith] warm-up failed:', error.message));
+
+  // The idle notch ("Judith ●") is always at the top of the screen.
+  bubble.webContents.once('did-finish-load', () => {
+    placeBubble(cursorDisplay(), bubble.getBounds());
+    bubble.showInactive();
+  });
 
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }));
   tray.setToolTip('Judith');
@@ -334,22 +419,35 @@ app.whenReady().then(async () => {
     console.error(`[judith] shortcut ${config.shortcut} is already taken`);
   }
 
-  ipcMain.handle('judith:ask', (_e, question) => ask(String(question)));
+  ipcMain.handle('judith:ask', (_e, question) => (lastAsk = ask(String(question))));
   ipcMain.handle('judith:transcribe', (_e, audio) => transcribe(audio));
   ipcMain.handle('judith:speak', (_e, text) => speak(String(text)));
   ipcMain.on('judith:close', hide);
+  ipcMain.on('judith:summon', summon);
+  ipcMain.on('judith:show', (_e, command) => show(command));
   ipcMain.on('judith:approve', (_e, { id, allow }) => settleApproval(id, allow === true));
   ipcMain.on('judith:resize', (_e, size) => {
-    const width = Math.min(600, Math.max(BUBBLE_WIDTH, Math.ceil(size?.width ?? 0)));
-    const height = Math.min(400, Math.max(48, Math.ceil(size?.height ?? 0)));
+    const width = Math.min(720, Math.max(120, Math.ceil(size?.width ?? 0)));
+    const height = Math.min(480, Math.max(40, Math.ceil(size?.height ?? 0)));
     placeBubble(session.display ?? cursorDisplay(), { width, height });
   });
-  bubble.webContents.on('console-message', (event) => {
-    if (event.level === 'error' || event.level === 'warning') console.error('[bubble]', event.message);
+  ipcMain.on('judith:open-path', (_e, path) => existsSync(path) && shell.openPath(path));
+  ipcMain.on('judith:preview', (_e, path) => preview(String(path)));
+  ipcMain.on('judith:close-board', () => {
+    board.hide();
+    send(board, 'clear-board');
+    actions.clear();
   });
+  ipcMain.on('judith:resize-board', (_e, height) => placeBoard(height));
+  for (const win of [bubble, overlay, board]) {
+    win.webContents.on('console-message', (event) => {
+      if (event.level === 'error' || event.level === 'warning') console.error('[page]', event.message);
+    });
+  }
 
   // Dev: JUDITH_DEMO="question" summons Judith and asks it at launch.
-  // With JUDITH_DEMO_SHOT=file.jpg it also saves a screenshot and quits.
+  // With JUDITH_DEMO_SHOT=file.jpg it also saves a screenshot and quits,
+  // JUDITH_DEMO_WAIT ms after the answer (default 1500).
   // JUDITH_DEMO_APPROVE=yes|no answers permission requests automatically.
   // JUDITH_DEMO_AUDIO=question.wav (16 kHz) goes through Whisper first.
   if (process.env.JUDITH_DEMO) {
@@ -364,11 +462,14 @@ app.whenReady().then(async () => {
         console.log(`[judith] heard "${question}" in ${((Date.now() - started) / 1000).toFixed(1)} s`);
       }
       await summon();
-      await ask(question);
+      // Asked through the notch, exactly like a typed question.
+      send(bubble, 'ask', question);
+      while (!lastAsk) await wait(100);
+      await lastAsk;
       const shot = process.env.JUDITH_DEMO_SHOT;
       if (!shot) return;
-      await wait(1500);
-      console.log('[judith] bubble', JSON.stringify(bubble.getBounds()));
+      await wait(Number(process.env.JUDITH_DEMO_WAIT ?? 1500));
+      console.log('[judith] bubble', JSON.stringify(bubble.getBounds()), 'board', board.isVisible());
       const image = await captureDisplay(session.display ?? cursorDisplay());
       writeFileSync(shot, Buffer.from(image.data, 'base64'));
       app.quit();

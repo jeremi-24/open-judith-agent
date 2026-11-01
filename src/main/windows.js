@@ -11,6 +11,9 @@ const secure = {
   contextIsolation: true,
   sandbox: true,
   nodeIntegration: false,
+  // Judith talks after a global shortcut or a spoken question: there is never
+  // a click in her page, so the usual "user gesture" rule would mute her.
+  autoplayPolicy: 'no-user-gesture-required',
 };
 
 // With protection on, Judith's windows are invisible to every capture: hers,
@@ -42,6 +45,27 @@ export function createBubble() {
   });
   hideFromCaptures(win);
   win.loadFile(renderer('bubble.html'));
+  return win;
+}
+
+// The board, on the side of the screen: notes, visuals and activity.
+export const BOARD_WIDTH = 340;
+export function createBoard() {
+  const win = new BrowserWindow({
+    width: BOARD_WIDTH,
+    height: 200,
+    minWidth: 200,
+    minHeight: 60,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: secure,
+  });
+  hideFromCaptures(win);
+  win.loadFile(renderer('board.html'));
   return win;
 }
 
