@@ -194,7 +194,9 @@ let cloudVoiceFailed = false;
 async function speak(text) {
   if (config.voice === 'elevenlabs' && !cloudVoiceFailed && (config.elevenlabsKey || process.env.ELEVENLABS_API_KEY)) {
     try {
-      return await speakElevenLabs(text);
+      const audio = await speakElevenLabs(text);
+      if (process.env.JUDITH_DEMO) console.log('[judith] says (cloud)', JSON.stringify(text.slice(0, 50)));
+      return audio;
     } catch (error) {
       // A bad key or no credit: say it once, then use the local voice.
       cloudVoiceFailed = true;
