@@ -8,17 +8,19 @@ export function fixName(text) {
     .trim();
 }
 
-// 16-bit PCM WAV → Float32Array (for tests and the CLI).
+// 16-bit PCM WAV → Float32Array (cloud voices, tests, the CLI).
 export function decodeWav(buffer) {
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   let offset = 12;
   let format = null;
   while (offset + 8 <= view.byteLength) {
     const id = String.fromCharCode(...buffer.subarray(offset, offset + 4));
-    const size = view.getUint32(offset + 4, true);
+    // Streamed WAVs may announce a wrong (huge or zero) data size: trust the bytes.
+    const announced = view.getUint32(offset + 4, true);
+    const size = id === 'data' && (announced === 0 || offset + 8 + announced > view.byteLength) ? view.byteLength - offset - 8 : announced;
     if (id === 'fmt ') format = { channels: view.getUint16(offset + 10, true), rate: view.getUint32(offset + 12, true), bits: view.getUint16(offset + 22, true) };
     if (id === 'data' && format?.bits === 16) {
-      const samples = new Float32Array(size / 2 / format.channels);
+      const samples = new Float32Array(Math.floor(size / 2 / format.channels));
       for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(offset + 8 + i * 2 * format.channels, true) / 32768;
       return { samples, rate: format.rate };
     }

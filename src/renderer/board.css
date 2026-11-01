@@ -1,0 +1,92 @@
+/* Judith's board: a sheet of paper next to the screen where she builds notes
+   and visuals, and lists everything Claude Code did. */
+* { box-sizing: border-box; }
+
+html, body { margin: 0; background: transparent; overflow: hidden; font-family: var(--font-ui); color: var(--ink); }
+
+.board {
+  margin: 8px 10px 16px;
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  background: var(--pearl);
+  box-shadow: 0 22px 50px -18px rgb(20 17 29 / 0.55), 0 0 0 1px rgb(36 32 58 / 0.08);
+  overflow: hidden;
+}
+
+header {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 12px 10px 16px;
+  background: #14111d; color: #f4f2ff;
+  -webkit-app-region: drag;
+}
+.titles { flex: 1; min-width: 0; }
+h1 { margin: 0; font: 700 17px/22px var(--font-title); }
+#subtitle { margin: 2px 0 0; font-size: 12.5px; color: #c9c0ff; }
+#subtitle:empty { display: none; }
+.close {
+  -webkit-app-region: no-drag;
+  width: 26px; height: 26px; flex: none;
+  border: 0; border-radius: 50%; background: rgb(255 255 255 / 0.08); cursor: pointer;
+  display: grid; place-items: center;
+}
+.close svg { width: 11px; height: 11px; stroke: #a9a3c4; stroke-width: 1.6; stroke-linecap: round; }
+
+/* Paper with a light grid. */
+.paper {
+  flex: 1; overflow-y: auto;
+  padding: 12px 16px 14px;
+  background-color: var(--pearl);
+  background-image:
+    linear-gradient(rgb(143 124 255 / 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(143 124 255 / 0.08) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.content { display: flex; flex-direction: column; gap: 12px; }
+.notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.notes:empty { display: none; }
+.notes li {
+  display: flex; align-items: flex-start; gap: 12px;
+  font-size: 13.5px; line-height: 19px; font-weight: 600;
+  animation: appear 0.3s ease-out;
+}
+.notes li::before {
+  content: ''; flex: none; margin-top: 5px;
+  width: 9px; height: 9px; border-radius: 3px;
+  background: var(--dot, var(--iris));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot, var(--iris)) 25%, transparent);
+}
+.notes li:nth-child(5n + 2) { --dot: var(--sky); }
+.notes li:nth-child(5n + 3) { --dot: var(--blush); }
+.notes li:nth-child(5n + 4) { --dot: var(--mint); }
+.notes li:nth-child(5n + 5) { --dot: var(--lemon); }
+.notes b { color: var(--deep-iris); }
+@keyframes appear { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
+
+h2 { margin: 0 0 10px; font: 600 11px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--dusk); }
+
+.visual[hidden], .activity[hidden] { display: none; }
+#frame { display: block; width: 100%; height: 280px; border: 0; border-radius: 14px; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+
+/* Activity: commands, files, visuals. */
+#actions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.act { border-radius: 12px; background: #fff; box-shadow: 0 0 0 1px var(--line); padding: 8px 10px; font-size: 13px; }
+.act-head { display: flex; align-items: center; gap: 10px; }
+.act-label { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.state { width: 20px; height: 20px; flex: none; border-radius: 50%; display: grid; place-items: center; font: 700 12px var(--font-mono); color: #fff; }
+.act[data-status="running"] .state { background: var(--lilac); }
+.act[data-status="running"] .state::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--iris); animation: pulse 0.9s ease-in-out infinite; }
+.act[data-status="ok"] .state { background: var(--mint); }
+.act[data-status="ok"] .state::after { content: '✓'; }
+.act[data-status="error"] .state { background: #e8508a; }
+.act[data-status="error"] .state::after { content: '!'; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+.act-detail { margin-top: 6px; font: 500 12px/17px var(--font-mono); color: var(--dusk); word-break: break-all; }
+.act details { margin-top: 6px; }
+.act summary { cursor: pointer; font-size: 12px; color: var(--deep-iris); font-weight: 700; }
+.act pre { margin: 6px 0 0; max-height: 160px; overflow: auto; padding: 8px 10px; border-radius: 10px; background: #14111d; color: #e6e1fb; font: 500 11px/16px var(--font-mono); white-space: pre-wrap; }
+.act-buttons { display: flex; gap: 6px; margin-top: 8px; }
+.act-buttons button { border: 0; border-radius: 999px; padding: 5px 12px; font: 700 12px var(--font-ui); cursor: pointer; background: var(--lilac); color: var(--deep-iris); }
+.act-buttons button:hover { background: #e2dcff; }

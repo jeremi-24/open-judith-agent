@@ -1,72 +1,210 @@
-// Judith's voice: Windows' own voices through the Web Speech API (offline).
-// Sentences are spoken as soon as they are complete, while the answer streams.
+// Judith's voice. Every sentence is requested as soon as it is known and
+// arrives in chunks (streamed): playback starts with the first chunk and the
+// next ones are scheduled back to back, without gaps. Sentences play in order.
+// say(text, onStart): onStart runs when that sentence starts playing.
+// Windows voices are the fallback when no audio comes.
 window.JudithVoice = (() => {
   const synth = window.speechSynthesis;
-  const PREFERRED = ['Julie', 'Hortense', 'Denise', 'Paul'];
-  let voice = null;
-  let spokenUpTo = 0;
+  // Female voices only: Judith keeps one voice, whatever happens.
+  const PREFERRED = ['Julie', 'Hortense', 'Denise'];
+  let windowsVoice = null;
   let enabled = true;
-  let onSentence = () => {};
   let onIdle = () => {};
+  let gate = () => Promise.resolve(); // the notch waits for the drawing first
 
-  function pickVoice(lang) {
+  const queue = [];
+  const streams = new Map(); // speech id → stream
+  let playing = false;
+  let generation = 0;
+  let context = null;
+  let sources = [];
+  let paused = false;
+
+  function pickWindowsVoice(lang) {
     const voices = synth.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
-    voice = PREFERRED.map((name) => voices.find((v) => v.name.includes(name))).find(Boolean) ?? voices[0] ?? null;
+    windowsVoice = PREFERRED.map((name) => voices.find((v) => v.name.includes(name))).find(Boolean) ?? voices.find((v) => !/Paul|Henri|Claude/.test(v.name)) ?? null;
   }
-  pickVoice('fr');
-  synth.addEventListener('voiceschanged', () => pickVoice('fr'));
+  pickWindowsVoice('fr');
+  synth.addEventListener('voiceschanged', () => pickWindowsVoice('fr'));
 
   const plain = (text) => text.replace(/\*\*|`/g, '').replace(/\s+/g, ' ').trim();
+  // Emotion tags stay for the main process (Fish acts them), never for Windows voices.
+  const spoken = (text) => plain(text).replace(/\s*\[[a-z][a-z '-]{0,30}\]\s*/gi, ' ').trim();
 
-  function say(sentence) {
-    const utterance = new SpeechSynthesisUtterance(plain(sentence));
-    if (voice) utterance.voice = voice;
-    utterance.lang = voice?.lang ?? 'fr-FR';
-    utterance.rate = 1.08;
-    utterance.onstart = () => onSentence(sentence);
-    utterance.onend = () => {
-      if (!synth.speaking && !synth.pending) onIdle();
-    };
-    synth.speak(utterance);
+  // ----- streams: chunks of one sentence, as they arrive -----
+  function makeStream() {
+    const stream = { chunks: [], done: false, wake: null };
+    stream.next = (i) =>
+      new Promise((resolve) => {
+        const check = () => {
+          if (i < stream.chunks.length) return resolve(stream.chunks[i]);
+          if (stream.done) return resolve(null);
+          stream.wake = check;
+        };
+        check();
+      });
+    return stream;
   }
 
-  // Speaks every complete sentence of `text` not spoken yet. With `final`,
-  // the unfinished tail is spoken too.
-  function feed(text, final = false) {
-    if (!enabled) return;
-    const rest = text.slice(spokenUpTo);
-    const re = /[^.!?…]+[.!?…]+(\s|$)/g;
-    let match;
-    let consumed = 0;
-    while ((match = re.exec(rest))) {
-      say(match[0].trim());
-      consumed = re.lastIndex;
+  window.judith.on('speech', ({ id, samples, sampleRate, done }) => {
+    const stream = streams.get(id);
+    if (!stream) return;
+    if (samples) stream.chunks.push({ samples, sampleRate });
+    if (done) {
+      stream.done = true;
+      streams.delete(id);
     }
-    spokenUpTo += consumed;
-    if (final && text.slice(spokenUpTo).trim()) {
-      say(text.slice(spokenUpTo).trim());
-      spokenUpTo = text.length;
+    const wake = stream.wake;
+    stream.wake = null;
+    wake?.();
+  });
+
+  function request(sentence) {
+    const stream = makeStream();
+    window.judith
+      .speakStart(plain(sentence))
+      .then((id) => streams.set(id, stream))
+      .catch(() => {
+        stream.done = true;
+        stream.wake?.();
+      });
+    return stream;
+  }
+
+  // ----- playback -----
+  // The audio output can fail (a headset unplugged, Bluetooth switching):
+  // that context is dropped and the next sentence gets a fresh one.
+  function audio() {
+    if (!context || context.state === 'closed') {
+      const fresh = new AudioContext();
+      const drop = () => {
+        if (context !== fresh) return;
+        context = null;
+        fresh.close().catch(() => {});
+      };
+      fresh.addEventListener('error', drop);
+      fresh.addEventListener('statechange', () => fresh.state === 'closed' && drop());
+      context = fresh;
     }
+    return context;
+  }
+
+  async function playStream(stream, first, mine) {
+    const ctx = audio();
+    if (ctx.state === 'suspended' && !paused) await ctx.resume();
+    let at = ctx.currentTime + 0.03;
+    let last = null;
+    for (let i = 0, chunk = first; chunk && mine === generation; chunk = await stream.next(++i)) {
+      const buffer = ctx.createBuffer(1, chunk.samples.length, chunk.sampleRate);
+      buffer.copyToChannel(chunk.samples, 0);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+      // A chunk that arrives late starts right away; otherwise right after the previous one.
+      at = Math.max(at, ctx.currentTime);
+      source.start(at);
+      at += buffer.duration;
+      sources.push(source);
+      last = source;
+    }
+    if (last && mine === generation) {
+      // A dead device never says "ended": never wait longer than the audio
+      // itself (paused time aside), so Judith does not hang mid-sentence.
+      await new Promise((resolve) => {
+        last.onended = resolve;
+        const guard = () => (paused ? setTimeout(guard, 500) : resolve());
+        setTimeout(guard, (at - ctx.currentTime) * 1000 + 1500);
+      });
+    }
+    sources = [];
+  }
+
+  function playWindows(sentence) {
+    return new Promise((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(spoken(sentence));
+      if (windowsVoice) utterance.voice = windowsVoice;
+      utterance.lang = windowsVoice?.lang ?? 'fr-FR';
+      utterance.rate = 1.08;
+      utterance.onend = resolve;
+      utterance.onerror = resolve;
+      synth.speak(utterance);
+    });
+  }
+
+  async function drain() {
+    if (playing) return;
+    playing = true;
+    const mine = generation;
+    while (queue.length && mine === generation) {
+      const { sentence, stream, onStart } = queue.shift();
+      const first = await stream.next(0);
+      if (mine !== generation) break;
+      await gate();
+      if (mine !== generation) break;
+      onStart();
+      await (first ? playStream(stream, first, mine) : playWindows(sentence));
+    }
+    playing = false;
+    if (mine === generation) onIdle();
+  }
+
+  function say(sentence, onStart = () => {}) {
+    if (!enabled) {
+      onStart();
+      return;
+    }
+    queue.push({ sentence, onStart, stream: request(sentence) });
+    drain();
   }
 
   function stop() {
+    generation++;
+    queue.length = 0;
+    streams.clear();
     synth.cancel();
-    spokenUpTo = 0;
+    for (const source of sources) {
+      try {
+        source.stop();
+      } catch {}
+    }
+    sources = [];
+    playing = false;
+    setPaused(false);
+  }
+
+  function setPaused(on) {
+    paused = on;
+    if (on) {
+      context?.suspend();
+      synth.pause();
+    } else {
+      context?.resume();
+      synth.resume();
+    }
   }
 
   return {
-    feed,
+    say,
     stop,
     get enabled() {
       return enabled;
     },
+    get speaking() {
+      return playing;
+    },
+    get paused() {
+      return paused;
+    },
     setEnabled(on) {
       enabled = on;
-      if (!on) synth.cancel();
+      if (!on) stop();
     },
-    on(handlers) {
-      onSentence = handlers.sentence ?? onSentence;
-      onIdle = handlers.idle ?? onIdle;
+    setPaused,
+    setGate(fn) {
+      gate = fn;
+    },
+    onIdle(handler) {
+      onIdle = handler;
     },
   };
 })();

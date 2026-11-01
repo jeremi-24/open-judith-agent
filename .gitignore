@@ -9,3 +9,7 @@ bench/captures/*
 !bench/captures/.gitkeep
 bench/resultats.json
 bench/rapport.html
+
+# Voice samples generated to compare voices
+docs/voix-essai/
+.tools/

@@ -1,9 +1,22 @@
-// Draws Judith's marks right on the target: a hand-drawn ring, a numbered
-// badge, a label, and Judith's own pointer landing next to the first one.
-// No long arrow from the notch: the mark speaks for itself.
+// Draws Judith's marks as she talks. For each mark, her pen flies to where
+// the stroke starts, then traces it by hand (a slight wobble, a start that
+// is not exactly the end); the badge and the label pop in after. The ink is
+// dark on light backgrounds and light on dark ones. Marks are drawn one
+// after the other, never at the same time.
+import { handStroke, outlinePoints } from '../core/ink.js';
+import { zoneFrom } from '../core/zone.js';
+
 const canvas = document.getElementById('canvas');
 const labels = document.getElementById('labels');
 const SVG = 'http://www.w3.org/2000/svg';
+const FLY_MS = 380;
+const TRACE_MS = 650;
+
+let count = 0;
+let queue = Promise.resolve();
+let generation = 0; // a clear cancels the drawings still in the queue
+let pen = null;
+let penAt = null;
 
 function el(name, attrs, parent = canvas) {
   const node = document.createElementNS(SVG, name);
@@ -12,74 +25,233 @@ function el(name, attrs, parent = canvas) {
   return node;
 }
 
-function ellipse(m, className, rotate, grow = 0) {
-  return el('ellipse', {
-    class: className,
-    cx: m.cx, cy: m.cy, rx: m.rx + grow, ry: m.ry + grow,
-    transform: `rotate(${rotate} ${m.cx} ${m.cy})`,
-    pathLength: 1,
-  });
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+
+// ----- Judith's pen -----
+function ensurePen() {
+  if (pen) return pen;
+  pen = document.createElement('div');
+  pen.className = 'pen';
+  pen.innerHTML =
+    '<svg viewBox="0 0 66 42" aria-hidden="true"><path d="M0 0L0 18L4.8 13.5L8.7 21.6L11.4 20.4L7.8 12.9H14.4Z"/>' +
+    '<rect x="16" y="22" width="48" height="18" rx="9"/><text x="40" y="34.5">Judith</text></svg>';
+  labels.append(pen);
+  return pen;
 }
 
-function drawRing(m) {
-  ellipse(m, 'halo', -3, 2);
-  ellipse(m, 'ring draw', -3, 2);
-  ellipse(m, 'ring echo draw late', 2, 5);
+function placePen(x, y) {
+  penAt = [x, y];
+  pen.style.transform = `translate(${x}px, ${y}px)`;
+}
 
-  const bx = m.cx - m.rx * 0.8;
-  const by = m.cy - m.ry - 4;
-  el('circle', { class: 'badge', cx: bx, cy: by, r: 12 });
-  el('text', { class: 'badge-text', x: bx, y: by }).textContent = String(m.step);
-
-  if (m.label) {
-    const label = document.createElement('div');
-    label.className = 'label';
-    label.style.left = `${m.cx}px`;
-    label.style.top = `${m.cy + m.ry + 12}px`;
-    const n = Object.assign(document.createElement('span'), { className: 'n', textContent: String(m.step) });
-    label.append(n, document.createTextNode(m.label));
-    labels.append(label);
-    keepOnScreen(label);
-    avoidOverlap(label);
+async function flyTo(x, y, mine) {
+  ensurePen();
+  if (!penAt) {
+    // First mark: the pen comes from a little below and to the right.
+    placePen(x + 40, y + 40);
+    pen.classList.add('shown');
+    await wait(20);
+  }
+  const [x0, y0] = penAt;
+  const start = performance.now();
+  while (mine === generation) {
+    const t = Math.min(1, (performance.now() - start) / FLY_MS);
+    const k = ease(t);
+    // A slight arc, like a hand moving over the page.
+    const lift = Math.sin(Math.PI * t) * Math.min(60, Math.hypot(x - x0, y - y0) * 0.15);
+    placePen(x0 + (x - x0) * k, y0 + (y - y0) * k - lift);
+    if (t === 1) break;
+    await new Promise(requestAnimationFrame);
   }
 }
 
-// Judith's pointer lands at the bottom right of the ring, pointing at it.
-function drawPointer(m) {
-  const pointer = document.createElement('div');
-  pointer.className = 'pointer';
-  pointer.style.left = `${m.cx + m.rx * 0.55}px`;
-  pointer.style.top = `${m.cy + m.ry * 0.45}px`;
-  pointer.innerHTML = '<svg viewBox="0 0 22 30" aria-hidden="true"><path d="M2 2v22l6-5.5 4.5 9.5 4-1.8-4.4-9.2H20Z"/></svg><span>Judith</span>';
-  labels.append(pointer);
+// The pen follows the path while the stroke (and its halo) appears behind it.
+async function trace(paths, mine) {
+  const [path] = paths.slice(-1);
+  const total = path.getTotalLength();
+  for (const p of paths) {
+    p.style.strokeDasharray = `${total}`;
+    p.style.strokeDashoffset = `${total}`;
+  }
+  const start = performance.now();
+  while (mine === generation) {
+    const t = Math.min(1, (performance.now() - start) / TRACE_MS);
+    const k = ease(t);
+    for (const p of paths) p.style.strokeDashoffset = `${total * (1 - k)}`;
+    const p = path.getPointAtLength(total * k);
+    placePen(p.x, p.y);
+    if (t === 1) break;
+    await new Promise(requestAnimationFrame);
+  }
 }
 
-function keepOnScreen(label) {
-  const r = label.getBoundingClientRect();
-  if (r.bottom > window.innerHeight - 4) label.style.top = `${parseFloat(label.style.top) - r.height - 2 * 12 - 40}px`;
-  if (r.left < 4) label.style.left = `${parseFloat(label.style.left) - r.left + 4}px`;
-  if (r.right > window.innerWidth - 4) label.style.left = `${parseFloat(label.style.left) - (r.right - window.innerWidth) - 4}px`;
+// ----- a mark -----
+async function drawMark(m, mine) {
+  const group = el('g', { class: `mark ink-${m.ink === 'light' ? 'light' : 'dark'}` });
+  const outline = outlinePoints(m);
+  const size = Math.max(m.rx, m.ry);
+  const stroke = handStroke(outline, m.seed ?? 1, { wobble: Math.min(3.2, 1.2 + size * 0.02) });
+  const echo = handStroke(outline, (m.seed ?? 1) + 101, { wobble: Math.min(3.2, 1.2 + size * 0.02) });
+
+  const halo = el('path', { class: 'halo', d: stroke.d }, group);
+  const main = el('path', { class: 'ink', d: stroke.d }, group);
+  const second = el('path', { class: 'ink-2', d: echo.d, transform: 'translate(1.5 1)' }, group);
+  second.style.opacity = '0';
+
+  await flyTo(stroke.start[0], stroke.start[1], mine);
+  if (mine !== generation) return;
+  await trace([halo, main], mine);
+  if (mine !== generation) return;
+  second.style.opacity = '';
+  second.classList.add('fade-in');
+
+  count += 1;
+  badge(m, count, group);
+  label(m, count, m.ink);
+  // The mark is on screen: Judith may talk about it.
+  window.judith.marked();
+  // The pen rests next to the mark, ready for the next one.
+  await flyTo(m.cx + m.rx * 0.6, m.cy + m.ry * 0.5, mine);
 }
 
-// Two marks close together would stack their labels: push the new one down.
-function avoidOverlap(label) {
-  const others = [...labels.children].filter((l) => l !== label && l.classList.contains('label'));
+function badge(m, n, group) {
+  const x = m.cx - m.rx * 0.85;
+  const y = m.cy - m.ry - 2;
+  el('circle', { class: 'badge pop', cx: x, cy: y, r: 10 }, group);
+  el('text', { class: 'badge-text pop', x, y }, group).textContent = String(n);
+}
+
+function label(m, n, ink) {
+  if (!m.label) return;
+  const pill = document.createElement('div');
+  pill.className = `pill label${ink === 'light' ? ' on-dark' : ''}`;
+  pill.style.left = `${m.cx}px`;
+  pill.style.top = `${m.cy + m.ry + 8}px`;
+  pill.append(Object.assign(document.createElement('span'), { className: 'n', textContent: String(n) }), document.createTextNode(m.label));
+  labels.append(pill);
+  keepOnScreen(pill, m);
+  avoidOverlap(pill);
+}
+
+function keepOnScreen(pill, m) {
+  const r = pill.getBoundingClientRect();
+  if (r.bottom > window.innerHeight - 6) pill.style.top = `${m.cy - m.ry - r.height - 10}px`;
+  if (r.left < 6) pill.style.left = `${parseFloat(pill.style.left) - r.left + 6}px`;
+  if (r.right > window.innerWidth - 6) pill.style.left = `${parseFloat(pill.style.left) - (r.right - window.innerWidth) - 6}px`;
+}
+
+// Labels of marks close together would stack: push the new one down.
+function avoidOverlap(pill) {
+  const others = [...labels.querySelectorAll('.label')].filter((l) => l !== pill);
   for (let tries = 0; tries < 6; tries++) {
-    const r = label.getBoundingClientRect();
+    const r = pill.getBoundingClientRect();
     const hit = others.map((o) => o.getBoundingClientRect()).find((o) => r.left < o.right && o.left < r.right && r.top < o.bottom && o.top < r.bottom);
     if (!hit) return;
-    label.style.top = `${hit.bottom + 6}px`;
+    pill.style.top = `${hit.bottom + 6}px`;
   }
+}
+
+// The page scrolled: every drawing moves with its content. New marks arrive
+// in screen coordinates, so they are placed back into the moved layer.
+const offset = { x: 0, y: 0 };
+function moveAll(dx, dy) {
+  offset.x += dx;
+  offset.y += dy;
+  const t = `translate(${offset.x}px, ${offset.y}px)`;
+  canvas.style.transform = t;
+  labels.style.transform = t;
+}
+function intoLayer(m) {
+  return {
+    ...m,
+    cx: m.cx - offset.x,
+    cy: m.cy - offset.y,
+    ...(m.points ? { points: m.points.map(([x, y]) => [x - offset.x, y - offset.y]) } : {}),
+  };
 }
 
 function clear() {
+  generation += 1;
+  moveAll(-offset.x, -offset.y);
+  queue = Promise.resolve();
+  count = 0;
   canvas.replaceChildren();
   labels.replaceChildren();
+  pen = null;
+  penAt = null;
 }
 
-window.judith.on('clear', clear);
-window.judith.on('marks', ({ marks }) => {
-  clear();
-  marks.forEach(drawRing);
-  if (marks[0]) drawPointer(marks[0]);
+// With a zone, Judith scans only the zone.
+function scan(on) {
+  const frame = document.getElementById('scan');
+  frame.hidden = !on;
+  document.getElementById('scan-pill').hidden = !on;
+  if (zone) place(frame, zone);
+  else frame.removeAttribute('style');
+}
+
+// ----- the zone the user draws -----
+// While choosing, the overlay catches the mouse: the user drags a rectangle,
+// Escape (or a simple click) cancels. Then only the dashed frame stays.
+const zoneFrame = document.getElementById('zone');
+const hint = document.getElementById('select-hint');
+let zone = null; // fractions of the screen
+let dragFrom = null;
+
+function place(node, z) {
+  node.style.inset = 'auto'; // first: it would reset left and top
+  Object.assign(node.style, {
+    left: `${z.x1 * innerWidth}px`,
+    top: `${z.y1 * innerHeight}px`,
+    width: `${(z.x2 - z.x1) * innerWidth}px`,
+    height: `${(z.y2 - z.y1) * innerHeight}px`,
+  });
+}
+const at = (event) => ({ x: event.clientX / innerWidth, y: event.clientY / innerHeight });
+
+function showZone(z) {
+  zone = z;
+  zoneFrame.hidden = !z;
+  if (z) place(zoneFrame, z);
+}
+
+window.judith.on('select', (on) => {
+  document.body.classList.toggle('selecting', on);
+  document.body.classList.remove('dragging');
+  hint.hidden = !on;
+  dragFrom = null;
+  if (on) showZone(null);
 });
+window.judith.on('zone', showZone);
+
+addEventListener('pointerdown', (event) => {
+  if (!document.body.classList.contains('selecting') || event.button !== 0) return;
+  dragFrom = at(event);
+  document.body.classList.add('dragging');
+  hint.hidden = true;
+  showZone({ x1: dragFrom.x, y1: dragFrom.y, x2: dragFrom.x, y2: dragFrom.y });
+});
+addEventListener('pointermove', (event) => {
+  if (!dragFrom) return;
+  const p = at(event);
+  showZone({ x1: Math.min(dragFrom.x, p.x), y1: Math.min(dragFrom.y, p.y), x2: Math.max(dragFrom.x, p.x), y2: Math.max(dragFrom.y, p.y) });
+});
+addEventListener('pointerup', (event) => {
+  if (!dragFrom) return;
+  const picked = zoneFrom(dragFrom, at(event));
+  dragFrom = null;
+  window.judith.zoneSelected(picked);
+});
+addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && document.body.classList.contains('selecting')) window.judith.zoneSelected(null);
+});
+
+window.judith.on('clear', clear);
+window.judith.on('scan', scan);
+window.judith.on('mark', (m) => {
+  scan(false);
+  const mine = generation;
+  queue = queue.then(() => (mine === generation ? drawMark(intoLayer(m), mine) : null)).catch(() => {});
+});
+window.judith.on('shift', ({ dx, dy }) => moveAll(dx, dy));

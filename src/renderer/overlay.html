@@ -4,12 +4,16 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com">
 <title>Judith overlay</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700&family=JetBrains+Mono:wght@700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700&family=JetBrains+Mono:wght@600&display=swap">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="overlay.css">
-<script src="overlay.js" defer></script>
+<script type="module" src="overlay.js"></script>
 </head>
 <body>
+<div id="scan" class="scan" hidden><i></i></div>
+<div id="scan-pill" class="pill scan-pill" hidden><span class="pulse"></span>Je regarde ton écran…</div>
+<div id="zone" class="zone-frame" hidden><span class="zone-tag">Zone partagée</span></div>
+<div id="select-hint" class="pill select-hint" hidden>Dessine la zone à expliquer · Échap pour annuler</div>
 <svg id="canvas" aria-hidden="true"></svg>
 <div id="labels"></div>
 </body>

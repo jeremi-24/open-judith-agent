@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test \"test/*.test.js\"",
-    "bench": "node bench/bench.mjs"
+    "bench": "node bench/bench.mjs",
+    "dist": "node scripts/build-installer.mjs"
   },
   "keywords": [
     "claude-code",
@@ -27,6 +28,7 @@
   "dependencies": {
     "@huggingface/transformers": "^4.3.2",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "sherpa-onnx-node": "^1.13.8",
     "zod": "^4.6.7"
   }
 }

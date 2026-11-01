@@ -16,21 +16,25 @@ export function findClaude(configured) {
 
 export class ClaudeCodeEngine extends EventEmitter {
   // extraArgs: more Claude Code flags (MCP servers, allowed tools…).
-  constructor({ claudePath, cwd, model, systemPrompt, extraArgs = [] }) {
+  // env: extra environment variables for Claude Code.
+  constructor({ claudePath, cwd, model, systemPrompt, extraArgs = [], env = {} }) {
     super();
-    this.options = { claudePath: findClaude(claudePath), cwd, model, systemPrompt, extraArgs };
+    this.options = { claudePath: findClaude(claudePath), cwd, model, systemPrompt, extraArgs, env };
     this.proc = null;
     this.pending = null;
+    this.sessionId = null; // to resume the same conversation after a restart
+    this.draining = null; // a cancelled turn whose end we are waiting for
   }
 
   get busy() {
     return this.pending !== null;
   }
 
-  start() {
+  start({ resume = false } = {}) {
     if (this.proc) return;
-    const { claudePath, cwd, model, systemPrompt, extraArgs } = this.options;
+    const { claudePath, cwd, model, systemPrompt, extraArgs, env } = this.options;
     const args = [
+      ...(resume && this.sessionId ? ['--resume', this.sessionId] : []),
       '-p',
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
@@ -41,7 +45,7 @@ export class ClaudeCodeEngine extends EventEmitter {
       ...extraArgs,
     ];
 
-    const proc = spawn(claudePath, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const proc = spawn(claudePath, args, { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     this.proc = proc;
     proc.stdout.setEncoding('utf8');
     proc.stdout.on('data', createLineParser((event) => this.#onEvent(event)));
@@ -55,8 +59,9 @@ export class ClaudeCodeEngine extends EventEmitter {
   }
 
   // content: Anthropic message content blocks (text and image).
-  ask(content) {
-    if (this.pending) return Promise.reject(new Error('Judith is already answering'));
+  async ask(content) {
+    if (this.draining) await this.draining.done;
+    if (this.pending) throw new Error('Judith is already answering');
     this.start();
     return new Promise((resolve, reject) => {
       this.pending = { resolve, reject, text: '', startedAt: Date.now() };
@@ -64,8 +69,42 @@ export class ClaudeCodeEngine extends EventEmitter {
     });
   }
 
+  // Stops the current turn (X, or the user talks over Judith). Claude Code
+  // is asked to interrupt; if it does not finish the turn quickly, the
+  // process is restarted on the same session, so the conversation is kept.
+  cancel() {
+    const pending = this.pending;
+    if (!pending) return;
+    this.pending = null;
+    pending.reject(Object.assign(new Error('cancelled'), { cancelled: true }));
+
+    let finished;
+    const done = new Promise((resolve) => (finished = resolve));
+    const timer = setTimeout(() => {
+      this.emit('log', 'interrupt took too long, restarting on the same session');
+      this.stop();
+      this.start({ resume: true });
+      this.#endDrain();
+    }, 4000);
+    this.draining = { done, finished, timer };
+    this.#write({ type: 'control_request', request_id: `interrupt-${Date.now()}`, request: { subtype: 'interrupt' } });
+  }
+
+  #endDrain() {
+    const draining = this.draining;
+    if (!draining) return;
+    this.draining = null;
+    clearTimeout(draining.timer);
+    draining.finished();
+  }
+
+  #write(message) {
+    this.proc?.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
   // A new process is also a new conversation.
   restart() {
+    this.sessionId = null;
     this.stop();
     this.start();
   }
@@ -77,21 +116,40 @@ export class ClaudeCodeEngine extends EventEmitter {
   }
 
   #onEvent(event) {
+    if (process.env.JUDITH_DEBUG_EVENTS) console.log('[event]', event.type, event.subtype ?? '', event.event?.type ?? '', this.draining ? 'draining' : '', this.pending ? 'pending' : '');
+    if (event.session_id) this.sessionId = event.session_id;
+    // The end of a cancelled turn: ignored, then Claude Code is free again.
+    if (this.draining) {
+      if (event.type === 'result') this.#endDrain();
+      return;
+    }
     const pending = this.pending;
     if (!pending) return;
 
-    if (event.type === 'stream_event' && event.event?.type === 'content_block_delta' && event.event.delta?.type === 'text_delta') {
+    // A new text block (e.g. after a tool call) starts on a new line.
+    if (event.type === 'stream_event' && event.event?.type === 'content_block_start' && event.event.content_block?.type === 'text') {
+      if (pending.text && !pending.text.endsWith('\n')) pending.text += '\n';
+    } else if (event.type === 'stream_event' && event.event?.type === 'content_block_delta' && event.event.delta?.type === 'text_delta') {
       pending.text += event.event.delta.text;
       this.emit('delta', pending.text);
     } else if (event.type === 'assistant') {
       const blocks = event.message?.content ?? [];
       for (const block of blocks) {
-        if (block.type === 'tool_use') this.emit('tool', { name: block.name, input: block.input ?? {} });
+        if (block.type === 'tool_use') this.emit('tool', { id: block.id, name: block.name, input: block.input ?? {} });
       }
       if (!pending.text) {
         // Fallback when partial messages are not streamed.
         pending.text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('');
         if (pending.text) this.emit('delta', pending.text);
+      }
+    } else if (event.type === 'user') {
+      // What a tool returned (command output, file written…).
+      for (const block of event.message?.content ?? []) {
+        if (block.type !== 'tool_result') continue;
+        const output = Array.isArray(block.content)
+          ? block.content.filter((c) => c.type === 'text').map((c) => c.text).join('\n')
+          : String(block.content ?? '');
+        this.emit('tool-result', { id: block.tool_use_id, output, isError: block.is_error === true });
       }
     } else if (event.type === 'result') {
       this.pending = null;
@@ -101,6 +159,8 @@ export class ClaudeCodeEngine extends EventEmitter {
       }
       pending.resolve({
         text: event.result ?? pending.text,
+        // Everything written during the turn, including text before tool calls.
+        streamed: pending.text,
         sessionId: event.session_id,
         costUsd: event.total_cost_usd,
         durationMs: Date.now() - pending.startedAt,

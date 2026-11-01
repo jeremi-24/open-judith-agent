@@ -1,11 +1,21 @@
 // Local HTTP bridge between Judith's MCP server (started by Claude Code) and
-// the app: it lets the MCP server ask the user for permission in the notch.
+// the app: permission requests and visuals reach the screen through it.
 // Listens on 127.0.0.1 only, and every call must carry a random token.
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
-export function startBridge({ onApprove }) {
+export function startBridge({ onApprove, onVisual, onLook, onCopyShot, onReminder }) {
   const token = randomBytes(24).toString('hex');
+  const routes = {
+    '/look': () => onLook(),
+    '/copy-shot': () => onCopyShot(),
+    '/reminder': (body) => onReminder(body ?? {}),
+    '/approve': async ({ tool, input }) => ({ allow: await onApprove(tool, input ?? {}) }),
+    '/visual': async ({ title, html }) => {
+      onVisual(String(title ?? ''), String(html ?? ''));
+      return { ok: true };
+    },
+  };
 
   const server = createServer(async (req, res) => {
     const reply = (status, body) => {
@@ -13,13 +23,13 @@ export function startBridge({ onApprove }) {
       res.end(JSON.stringify(body));
     };
     if (req.headers.authorization !== `Bearer ${token}`) return reply(401, { error: 'unauthorized' });
-    if (req.method !== 'POST' || req.url !== '/approve') return reply(404, { error: 'not found' });
+    const route = req.method === 'POST' && routes[req.url];
+    if (!route) return reply(404, { error: 'not found' });
 
     let raw = '';
     for await (const chunk of req) raw += chunk;
     try {
-      const { tool, input } = JSON.parse(raw);
-      reply(200, { allow: await onApprove(tool, input ?? {}) });
+      reply(200, await route(JSON.parse(raw)));
     } catch {
       reply(400, { error: 'bad request' });
     }
