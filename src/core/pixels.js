@@ -35,19 +35,24 @@ const mean = (values, keep) => {
 // rect: fractions of the screen { x1, y1, x2, y2 }.
 // exclude: rects to ignore (Judith's own notch and board, which move).
 // Returns a difference score, 0 (same) to 255.
-export function regionDiff(a, b, rect, exclude = []) {
+// shiftX, shiftY: where the region is expected in b (content that scrolled).
+export function regionDiff(a, b, rect, exclude = [], shiftX = 0, shiftY = 0) {
   if (!a || !b || a.width !== b.width || a.height !== b.height) return 255;
   const x1 = Math.max(1, Math.floor(rect.x1 * a.width));
   const x2 = Math.min(a.width - 2, Math.ceil(rect.x2 * a.width));
   const y1 = Math.max(1, Math.floor(rect.y1 * a.height));
   const y2 = Math.min(a.height - 2, Math.ceil(rect.y2 * a.height));
   if (x2 < x1 || y2 < y1) return 0;
+  // The shifted region must stay inside the image.
+  if (x1 + shiftX < 1 || x2 + shiftX > a.width - 2 || y1 + shiftY < 1 || y2 + shiftY > a.height - 2) return 255;
 
   const before = luminances(a, x1, y1, x2, y2, exclude);
   const meanBefore = mean(before.values, before.keep);
   let best = Infinity;
   let meanGap = 0;
-  for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+  for (const [jx, jy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const dx = shiftX + jx;
+    const dy = shiftY + jy;
     const after = luminances(b, x1 + dx, y1 + dy, x2 + dx, y2 + dy, exclude);
     const meanAfter = mean(after.values, after.keep);
     let total = 0;
@@ -127,7 +132,8 @@ export function markCore(mark, keep = 0.7) {
 // Returns the best match: { diff, dx, dy }. A mark can then follow its
 // content (taskbar icons re-centred, a page scrolled a little) instead of
 // pointing at the old place.
-export function bestShift(a, b, rect, exclude = [], maxShift = 24) {
+// maxShiftY: pages scroll vertically, further than things slide sideways.
+export function bestShift(a, b, rect, exclude = [], maxShift = 24, maxShiftY = maxShift) {
   if (!a || !b || a.width !== b.width || a.height !== b.height) return { diff: 255, dx: 0, dy: 0 };
   const x1 = Math.max(0, Math.floor(rect.x1 * a.width));
   const x2 = Math.min(a.width - 1, Math.ceil(rect.x2 * a.width));
@@ -149,7 +155,7 @@ export function bestShift(a, b, rect, exclude = [], maxShift = 24) {
   const meanA = samples.reduce((s, p) => s + p[2], 0) / samples.length;
 
   let best = { diff: Infinity, dx: 0, dy: 0 };
-  for (let dy = -maxShift; dy <= maxShift; dy += 1) {
+  for (let dy = -maxShiftY; dy <= maxShiftY; dy += 1) {
     for (let dx = -maxShift; dx <= maxShift; dx += 1) {
       let sumB = 0;
       let n = 0;

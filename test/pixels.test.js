@@ -72,3 +72,11 @@ test('bestShift finds where the content moved', async () => {
   const still = bestShift(scene(0, 0), scene(0, 0), rect);
   assert.deepEqual([still.dx, still.dy], [0, 0]);
 });
+
+test('a region can be compared where its content scrolled to', () => {
+  const page = (scroll) => image(60, 60, (x, y) => ((y + scroll) % 12 < 3 && x % 7 < 4 ? [30, 30, 30] : [240, 240, 240]));
+  const rect = { x1: 0.2, y1: 0.3, x2: 0.8, y2: 0.5 };
+  // The page scrolled down by 5 px: content is 5 px higher.
+  assert.ok(regionDiff(page(0), page(5), rect, [], 0, -5) < CHANGED);
+  assert.ok(regionDiff(page(0), page(5), rect) > CHANGED);
+});

@@ -17,6 +17,7 @@ import { createScriptReader } from '../core/script.js';
 import { isEcho, isGhost } from '../core/hallucinations.js';
 import { decodeWav } from '../core/audio.js';
 import { stripEmotions } from '../core/emotions.js';
+import { needsScreen } from '../core/needs-screen.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -336,7 +337,7 @@ async function drawMark(mark) {
     const now = await screenNow(display).catch(() => null);
     // The content may have moved a little (icons re-centred, a small scroll):
     // the mark follows it. If it is nowhere near, the mark is dropped.
-    const found = now ? bestShift(session.reference, now, markCore(mark), ownAreas(display)) : { diff: 0, dx: 0, dy: 0 };
+    const found = now ? bestShift(session.reference, now, markCore(mark), ownAreas(display), 24, Math.round(now.height / 4)) : { diff: 0, dx: 0, dy: 0 };
     const diff = found.diff;
     if (diff <= STALE && (found.dx || found.dy)) {
       const fx = found.dx / now.width;
@@ -370,6 +371,8 @@ async function drawMark(mark) {
   watchMarks(display);
 }
 
+// Marks stick to their content: when the page scrolls (or icons slide), they
+// move with it; when the content is gone (other page, other window), they go.
 function watchMarks(display) {
   stopWatching();
   const startedAt = Date.now();
@@ -381,10 +384,24 @@ function watchMarks(display) {
     try {
       const now = await captureSmall(display);
       if (!baseline) baseline = now;
-      // Gone, not just nudged: a little slide (icons re-centring) keeps the marks.
-      else if (shownMarks.some((m) => bestShift(baseline, now, markCore(m), ownAreas(display), 12).diff > CHANGED)) {
-        console.log('[judith] marks cleared: the screen changed under them');
-        return clearMarks();
+      else {
+        const own = ownAreas(display);
+        // Where did the first mark's content go? (up to ~a quarter of the screen vertically)
+        const moved = bestShift(baseline, now, markCore(shownMarks[0]), own, 12, Math.round(now.height / 4));
+        const fx = moved.dx / now.width;
+        const fy = moved.dy / now.height;
+        const shifted = (m) => ({ ...m, x: m.x + fx, y: m.y + fy });
+        // Every mark must be found at that same shift.
+        const allThere = moved.diff <= CHANGED && shownMarks.every((m, i) => i === 0 || regionDiff(baseline, now, markCore(m), own, moved.dx, moved.dy) <= CHANGED);
+        if (!allThere) {
+          console.log('[judith] marks cleared: their content is gone');
+          return clearMarks();
+        }
+        if (moved.dx || moved.dy) {
+          shownMarks = shownMarks.map((m) => ({ ...shifted(m), points: m.points?.map(([x, y]) => [x + fx, y + fy]) }));
+          send(overlay, 'shift', { dx: fx * display.bounds.width, dy: fy * display.bounds.height });
+          baseline = now;
+        }
       }
     } catch {}
     if (shownMarks.length) watcher = setTimeout(tick, WATCH_EVERY_MS);
@@ -542,12 +559,13 @@ async function ask(question, turn) {
   const display = session.display ?? cursorDisplay();
   session.display = display;
   clearMarks();
+  // The question is about the screen ("explique ça", "où est…"): the
+  // screenshot goes with it, one round trip less than look_at_screen.
   // alwaysLook: the old behaviour, a screenshot with every question.
   let image = null;
-  if (config.alwaysLook) {
-    const shot = await look(display).catch(() => null);
-    session.reference = shot?.small ?? null;
-    image = shot;
+  if (config.alwaysLook || needsScreen(question)) {
+    const shot = await lookForJudith();
+    if (shot.data) image = shot;
   }
 
   // Script lines go to the notch as soon as they are complete.

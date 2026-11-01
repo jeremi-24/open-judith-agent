@@ -5,7 +5,7 @@ const EVENTS = [
   // notch
   'focus', 'idle', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale', 'marked', 'speech',
   // overlay
-  'mark', 'clear', 'scan',
+  'mark', 'clear', 'scan', 'shift',
   // board
   'board', 'note', 'visual', 'activity', 'clear-board',
 ];

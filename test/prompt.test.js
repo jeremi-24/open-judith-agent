@@ -11,9 +11,12 @@ test('the system prompt sets the language and documents the script', () => {
 });
 
 test('the example in the prompt is valid script', () => {
-  const example = buildSystemPrompt().split('Example:\n')[1].split('\n').map(parseLine);
+  const [, first, comparison] = buildSystemPrompt().split(/Example.*:\n/);
+  const types = (text) => text.trim().split('\n').map(parseLine).map((c) => c.type);
   // Drawing first, then the sentence about it.
-  assert.deepEqual(example.map((c) => c.type), ['mark', 'step', 'say', 'step', 'say']);
+  assert.deepEqual(types(first), ['mark', 'step', 'say', 'step', 'say']);
+  // A comparison: one mark per compared item.
+  assert.deepEqual(types(comparison), ['mark', 'say', 'mark', 'say', 'mark', 'say']);
 });
 
 test('user content puts the image first, then the context and the question', () => {

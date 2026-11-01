@@ -151,8 +151,28 @@ function avoidOverlap(pill) {
   }
 }
 
+// The page scrolled: every drawing moves with its content. New marks arrive
+// in screen coordinates, so they are placed back into the moved layer.
+const offset = { x: 0, y: 0 };
+function moveAll(dx, dy) {
+  offset.x += dx;
+  offset.y += dy;
+  const t = `translate(${offset.x}px, ${offset.y}px)`;
+  canvas.style.transform = t;
+  labels.style.transform = t;
+}
+function intoLayer(m) {
+  return {
+    ...m,
+    cx: m.cx - offset.x,
+    cy: m.cy - offset.y,
+    ...(m.points ? { points: m.points.map(([x, y]) => [x - offset.x, y - offset.y]) } : {}),
+  };
+}
+
 function clear() {
   generation += 1;
+  moveAll(-offset.x, -offset.y);
   queue = Promise.resolve();
   count = 0;
   canvas.replaceChildren();
@@ -171,5 +191,6 @@ window.judith.on('scan', scan);
 window.judith.on('mark', (m) => {
   scan(false);
   const mine = generation;
-  queue = queue.then(() => (mine === generation ? drawMark(m, mine) : null)).catch(() => {});
+  queue = queue.then(() => (mine === generation ? drawMark(intoLayer(m), mine) : null)).catch(() => {});
 });
+window.judith.on('shift', ({ dx, dy }) => moveAll(dx, dy));
