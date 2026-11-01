@@ -21,16 +21,19 @@ export class ClaudeCodeEngine extends EventEmitter {
     this.options = { claudePath: findClaude(claudePath), cwd, model, systemPrompt, extraArgs };
     this.proc = null;
     this.pending = null;
+    this.sessionId = null; // to resume the same conversation after a restart
+    this.draining = null; // a cancelled turn whose end we are waiting for
   }
 
   get busy() {
     return this.pending !== null;
   }
 
-  start() {
+  start({ resume = false } = {}) {
     if (this.proc) return;
     const { claudePath, cwd, model, systemPrompt, extraArgs } = this.options;
     const args = [
+      ...(resume && this.sessionId ? ['--resume', this.sessionId] : []),
       '-p',
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
@@ -55,8 +58,9 @@ export class ClaudeCodeEngine extends EventEmitter {
   }
 
   // content: Anthropic message content blocks (text and image).
-  ask(content) {
-    if (this.pending) return Promise.reject(new Error('Judith is already answering'));
+  async ask(content) {
+    if (this.draining) await this.draining.done;
+    if (this.pending) throw new Error('Judith is already answering');
     this.start();
     return new Promise((resolve, reject) => {
       this.pending = { resolve, reject, text: '', startedAt: Date.now() };
@@ -64,8 +68,42 @@ export class ClaudeCodeEngine extends EventEmitter {
     });
   }
 
+  // Stops the current turn (X, or the user talks over Judith). Claude Code
+  // is asked to interrupt; if it does not finish the turn quickly, the
+  // process is restarted on the same session, so the conversation is kept.
+  cancel() {
+    const pending = this.pending;
+    if (!pending) return;
+    this.pending = null;
+    pending.reject(Object.assign(new Error('cancelled'), { cancelled: true }));
+
+    let finished;
+    const done = new Promise((resolve) => (finished = resolve));
+    const timer = setTimeout(() => {
+      this.emit('log', 'interrupt took too long, restarting on the same session');
+      this.stop();
+      this.start({ resume: true });
+      this.#endDrain();
+    }, 4000);
+    this.draining = { done, finished, timer };
+    this.#write({ type: 'control_request', request_id: `interrupt-${Date.now()}`, request: { subtype: 'interrupt' } });
+  }
+
+  #endDrain() {
+    const draining = this.draining;
+    if (!draining) return;
+    this.draining = null;
+    clearTimeout(draining.timer);
+    draining.finished();
+  }
+
+  #write(message) {
+    this.proc?.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
   // A new process is also a new conversation.
   restart() {
+    this.sessionId = null;
     this.stop();
     this.start();
   }
@@ -77,6 +115,13 @@ export class ClaudeCodeEngine extends EventEmitter {
   }
 
   #onEvent(event) {
+    if (process.env.JUDITH_DEBUG_EVENTS) console.log('[event]', event.type, event.subtype ?? '', event.event?.type ?? '', this.draining ? 'draining' : '', this.pending ? 'pending' : '');
+    if (event.session_id) this.sessionId = event.session_id;
+    // The end of a cancelled turn: ignored, then Claude Code is free again.
+    if (this.draining) {
+      if (event.type === 'result') this.#endDrain();
+      return;
+    }
     const pending = this.pending;
     if (!pending) return;
 

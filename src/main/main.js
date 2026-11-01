@@ -85,7 +85,7 @@ async function summon() {
   const ears = liveEars();
   // No conversation in demo mode: nobody is there to answer.
   const conversation = config.conversation && !process.env.JUDITH_DEMO;
-  send(bubble, 'focus', { listen: config.voiceInput && (speechReady || Boolean(ears)), conversation, stt: ears });
+  send(bubble, 'focus', { conversation, interruptions: config.interruptions, stt: ears });
 }
 
 // ----- voice in, cloud: Deepgram live listening (the user's own key) -----
@@ -427,6 +427,9 @@ function trackResult({ id, output, isError }) {
 // ----- asking -----
 let currentReader = null;
 let lastAsk = null;
+// The turn being answered, numbered by the notch's conversation manager.
+// Everything sent to the notch carries it, so a cancelled turn is ignored.
+let activeTurn = 0;
 // The look_at_screen tool: capture, then a dashed scan while Judith reads it.
 async function lookForJudith() {
   const display = session.display ?? cursorDisplay();
@@ -444,7 +447,8 @@ async function lookForJudith() {
   }
 }
 
-async function ask(question) {
+async function ask(question, turn) {
+  activeTurn = turn;
   await warmingUp;
   const display = session.display ?? cursorDisplay();
   session.display = display;
@@ -461,7 +465,7 @@ async function ask(question) {
   let commands = 0;
   const reader = createScriptReader((command) => {
     commands += 1;
-    send(bubble, 'cmd', command);
+    send(bubble, 'cmd', { ...command, turn });
   });
   currentReader = reader;
   try {
@@ -469,13 +473,24 @@ async function ask(question) {
     reader.finish(result.streamed || result.text);
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
   } catch (error) {
-    send(bubble, 'error', error.message);
+    if (!error.cancelled) send(bubble, 'error', { turn, message: error.message });
   } finally {
-    currentReader = null;
+    if (currentReader === reader) currentReader = null;
     scanning = false;
     send(overlay, 'scan', false);
-    send(bubble, 'answer');
+    send(bubble, 'answer', { turn });
   }
+}
+
+// X, or the user talks over Judith: stop Claude Code and what is on screen.
+function cancelTurn(turn) {
+  if (turn !== activeTurn) return;
+  console.log(`[judith] turn ${turn} cancelled`);
+  currentReader = null;
+  engine.cancel();
+  for (const id of [...approvals.keys()]) settleApproval(id, false);
+  scanning = false;
+  send(overlay, 'scan', false);
 }
 
 // ----- approvals: Claude Code wants to edit a file or run a command -----
@@ -572,7 +587,7 @@ app.whenReady().then(async () => {
   engine.on('delta', (text) => currentReader?.push(text));
   engine.on('tool', (tool) => {
     console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
-    send(bubble, 'tool', describeTool(tool.name, tool.input, config.language));
+    send(bubble, 'tool', { turn: activeTurn, label: describeTool(tool.name, tool.input, config.language) });
     trackTool(tool);
   });
   engine.on('tool-result', trackResult);
@@ -597,7 +612,13 @@ app.whenReady().then(async () => {
     console.error(`[judith] shortcut ${config.shortcut} is already taken`);
   }
 
-  ipcMain.handle('judith:ask', (_e, question) => (lastAsk = ask(String(question))));
+  ipcMain.handle('judith:ask', (_e, question, turn) => (lastAsk = ask(String(question), Number(turn))));
+  ipcMain.on('judith:cancel', (_e, turn) => cancelTurn(Number(turn)));
+  ipcMain.on('judith:clear-screen', () => {
+    clearMarks();
+    scanning = false;
+    send(overlay, 'scan', false);
+  });
   ipcMain.handle('judith:transcribe', (_e, audio) => transcribe(audio));
   ipcMain.handle('judith:filter-heard', (_e, text, spoken) => {
     if (isGhost(text) || isEcho(text, spoken)) {
@@ -626,7 +647,10 @@ app.whenReady().then(async () => {
   ipcMain.on('judith:resize-board', (_e, height) => placeBoard(height));
   for (const win of [bubble, overlay, board]) {
     win.webContents.on('console-message', (event) => {
-      if (event.level === 'error' || event.level === 'warning') console.error('[page]', event.message);
+      // ScriptProcessorNode still works; its deprecation notice is just noise.
+      if ((event.level === 'error' || event.level === 'warning') && !event.message.includes('ScriptProcessorNode')) {
+        console.error('[page]', event.message);
+      }
     });
   }
 
@@ -648,6 +672,8 @@ app.whenReady().then(async () => {
       await summon();
       // Asked through the notch, exactly like a typed question.
       send(bubble, 'ask', question);
+      // JUDITH_DEMO_CANCEL_MS: press X after that delay.
+      if (process.env.JUDITH_DEMO_CANCEL_MS) setTimeout(() => send(bubble, 'idle'), Number(process.env.JUDITH_DEMO_CANCEL_MS));
       while (!lastAsk) await wait(100);
       await lastAsk;
       const shot = process.env.JUDITH_DEMO_SHOT;

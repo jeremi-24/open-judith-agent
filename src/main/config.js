@@ -13,6 +13,8 @@ export const DEFAULTS = {
   alwaysLook: false,
   // After answering, listen again for a few seconds (a real conversation).
   conversation: true,
+  // Talk over Judith to interrupt her (she stops and listens).
+  interruptions: true,
   // Drawing on the screen: "helpful" (only when it saves searching), "none", "always".
   annotations: 'helpful',
   // Listen to the microphone as soon as Judith is summoned.

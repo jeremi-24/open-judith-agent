@@ -1,5 +1,8 @@
-// The notch: listens, thinks, speaks, and plays Judith's script so that each
-// drawing appears when the sentence before it starts.
+// The notch. It shows the conversation and forwards events to the
+// conversation manager, which alone decides what happens next.
+import { createConversation } from '../core/conversation.js';
+import { createEars } from './ears.js';
+
 const notch = document.querySelector('.notch');
 const label = document.getElementById('label');
 const doing = document.getElementById('doing');
@@ -7,77 +10,132 @@ const textBox = document.getElementById('text');
 const steps = document.getElementById('steps');
 const form = document.getElementById('form');
 const question = document.getElementById('question');
+const bars = document.querySelector('.bars');
 const pauseButton = document.getElementById('pause');
+const approval = document.getElementById('approval');
 const voice = window.JudithVoice;
-const recorder = window.JudithRecorder;
-// Ears: Deepgram live listening when the user gave a key, local Whisper otherwise.
-let stt = null;
-const live = () => stt?.provider === 'deepgram' && stt.key;
-const ears = () => (live() ? window.JudithLive : recorder);
+const api = window.judith;
 
+// ----- display -----
 const LABELS = { listening: "J'écoute…", thinking: 'Je réfléchis…', speaking: 'Judith parle' };
-const MOODS = { none: 'listen', listening: 'listen', thinking: 'think', speaking: 'explain' };
-
-function setState(state) {
-  notch.dataset.state = state;
-  notch.dataset.mood = MOODS[state] ?? 'listen';
-  if (LABELS[state]) label.textContent = LABELS[state];
-}
+const MOODS = { idle: 'listen', listening: 'listen', thinking: 'think', speaking: 'explain' };
 
 // Tiny, safe markdown: escape everything, then **bold** and `code`.
+// Emotion tags are for the voice only.
 function render(text) {
-  return text
-    .replace(/\s*\[[a-z][a-z '-]{0,30}\]\s*/gi, ' ') // emotion tags are for the voice only
+  return String(text)
+    .replace(/\s*\[[a-z][a-z '-]{0,30}\]\s*/gi, ' ')
     .trim()
     .replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
     .replace(/`([^`]+)`/g, '<code>$1</code>');
 }
 
+let messageTimer = null;
+function showState(state, info = {}) {
+  clearTimeout(messageTimer);
+  // A message or an error is shown a few seconds, then the notch rests.
+  const message = info.error ?? info.message;
+  const shown = state === 'idle' && message ? 'speaking' : state;
+  notch.dataset.state = shown === 'idle' ? 'none' : shown;
+  notch.dataset.mood = MOODS[state] ?? 'listen';
+  if (LABELS[shown]) label.textContent = LABELS[shown];
+  notch.classList.toggle('talking', shown === 'speaking' && !message && !info.done && voice.speaking);
+
+  if (state === 'listening') {
+    question.value = info.partial ?? '';
+    question.placeholder = info.followUp ? 'Autre chose ? Je t’écoute…' : info.continuation ? 'Je t’écoute, continue…' : 'Parle, ou écris ta question…';
+    question.focus();
+  }
+  if (state === 'thinking') doing.textContent = info.heard ? `« ${info.heard} »` : 'Je réfléchis…';
+  if (message) {
+    textBox.innerHTML = render(message);
+    textBox.classList.toggle('error', Boolean(info.error));
+    messageTimer = setTimeout(() => notch.dataset.state === 'speaking' && conversation.state === 'idle' && showState('idle'), 4000);
+  }
+  if (state === 'idle' && !message) ears.close();
+}
+
 // ----- the answer: spoken sentences, steps and drawings -----
-let spoken = [];
 let lastSay = null; // the last sentence queued, until it starts
 
 function resetAnswer() {
-  voice.stop();
-  spoken = [];
   lastSay = null;
   textBox.innerHTML = '';
-  textBox.dataset.stale = '';
   textBox.classList.remove('error');
   steps.replaceChildren();
-  notch.classList.remove('talking');
-}
-
-function showSentence(text) {
-  setState('speaking');
-  notch.classList.add('talking');
-  textBox.classList.remove('error');
-  spoken.push(text);
-  textBox.innerHTML = render(text);
 }
 
 function addStep(text) {
   for (const li of steps.children) li.classList.remove('current');
-  const li = Object.assign(document.createElement('li'), { textContent: text, title: text, className: 'current' });
-  steps.append(li);
-  li.scrollIntoView({ inline: 'nearest' });
+  steps.append(Object.assign(document.createElement('li'), { textContent: text, title: text, className: 'current' }));
 }
 
 function run(command) {
   if (command.type === 'step') addStep(command.text);
-  else window.judith.show(command);
+  else api.show(command);
 }
 
-window.judith.on('cmd', (command) => {
+// ----- the components, driven by the conversation manager -----
+const ears = createEars({
+  transcribe: (audio) => api.transcribe(audio),
+  filter: (text, info) => api.filterHeard(text, info.followUp || info.bargeIn ? lastSpoken : ''),
+  onLevel: (level) => bars.style.setProperty('--level', Math.min(1, level * 12).toFixed(2)),
+  onPartial: (text) => {
+    question.value = text;
+    question.scrollLeft = question.scrollWidth;
+  },
+});
+
+let lastSpoken = ''; // what Judith just said: if the mic hears it, it is her echo
+const spokenNow = [];
+
+const conversation = createConversation({
+  listen: (info) => {
+    resetAnswer();
+    ears.start(info, (text) => conversation.heard(text, info)).catch((error) => {
+      conversation.cancel();
+      showState('idle', { error: `Micro indisponible : ${error.message}. Écris ta question.` });
+    });
+  },
+  finishListening: () => ears.finish(),
+  stopListening: () => ears.cancel(),
+  ask: (text, turn) => {
+    resetAnswer();
+    spokenNow.length = 0;
+    api.ask(text, turn);
+  },
+  cancelAsk: (turn) => api.cancel(turn),
+  stopVoice: () => voice.stop(),
+  voiceBusy: () => voice.speaking,
+  watchForInterruptions: (on) => ears.watch(on, () => conversation.interrupt()),
+  clearScreen: () => api.clearScreen(),
+  ui: showState,
+  later: (fn, ms) => {
+    const timer = setTimeout(fn, ms);
+    return () => clearTimeout(timer);
+  },
+});
+
+voice.onIdle(() => {
+  lastSpoken = spokenNow.join(' ');
+  notch.classList.remove('talking');
+  conversation.voiceIdle();
+});
+
+// ----- what Claude Code sends, tagged with the turn it belongs to -----
+api.on('cmd', ({ turn, ...command }) => {
+  if (turn !== conversation.turn) return; // a cancelled turn
   if (command.type === 'say') {
-    // Never listen while Judith talks: the mic would hear her.
-    ears().cancel();
     const item = { actions: [], started: false };
     lastSay = item;
     voice.say(command.text, () => {
+      if (!conversation.sentence(turn)) return;
       item.started = true;
-      showSentence(command.text);
+      spokenNow.push(command.text);
+      notch.classList.add('talking');
+      textBox.classList.remove('error');
+      textBox.innerHTML = render(command.text);
       item.actions.forEach(run);
     });
     return;
@@ -87,172 +145,40 @@ window.judith.on('cmd', (command) => {
   else run(command);
 });
 
-// ----- conversation: when Judith has finished, she listens again -----
-let canListen = false; // voice input ready (sent with 'focus')
-let conversation = false;
-let answerDone = false;
-
-function maybeListenAgain() {
-  if (!answerDone || voice.speaking || !approval.hidden) return;
-  answerDone = false;
-  lastSpoken = spoken.join(' ');
-  // A short pause first: the speakers (Bluetooth above all) may still be playing her last word.
-  if (conversation && canListen && notch.dataset.state !== 'none') {
-    setTimeout(() => notch.dataset.state !== 'none' && !voice.speaking && listen({ followUp: true }), 800);
-  }
-}
-
-voice.onIdle(() => {
-  notch.classList.remove('talking');
-  maybeListenAgain();
+api.on('answer', ({ turn }) => conversation.answered(turn));
+api.on('error', ({ turn, message }) => conversation.failed(turn, message));
+api.on('tool', ({ turn, label: text }) => {
+  if (turn === conversation.turn && conversation.state === 'thinking') doing.textContent = `${text}…`;
 });
-
-window.judith.on('answer', () => {
-  question.value = '';
-  answerDone = true;
-  if (!spoken.length && !lastSay) {
-    if (!conversation || !canListen) setState('none');
-  }
-  maybeListenAgain();
-});
-
-window.judith.on('error', (message) => {
-  setState('speaking');
-  textBox.innerHTML = render(message);
-  textBox.classList.add('error');
-});
-
-// A mark was not drawn: the screen changed since Judith looked at it.
-window.judith.on('stale', () => {
-  if (textBox.dataset.stale === '1') return;
-  textBox.dataset.stale = '1';
-  setState('speaking');
+api.on('stale', () => {
+  if (conversation.state !== 'speaking') return;
   textBox.innerHTML = "L'écran a bougé depuis que j'ai regardé : redemande-moi et je regarde à nouveau.";
 });
 
-window.judith.on('tool', (text) => {
-  if (notch.dataset.state === 'speaking' && voice.speaking) return;
-  setState('thinking');
-  doing.textContent = `${text}…`;
+// ----- summon, type, stop, cancel -----
+api.on('focus', ({ conversation: keepTalking, interruptions, stt } = {}) => {
+  ears.configure(stt);
+  conversation.configure({ conversation: keepTalking, interruptions });
+  conversation.summon();
 });
-
-// ----- asking -----
-// heard: the spoken question, shown so the user sees what Judith understood.
-function askJudith(text, heard = null) {
-  if (!text) return;
-  resetAnswer();
-  answerDone = false;
-  setState('thinking');
-  doing.textContent = heard ? `« ${heard} »` : 'Je réfléchis à ta demande';
-  window.judith.ask(text);
-}
+api.on('idle', () => conversation.cancel());
+// A question sent by the app itself (demo mode).
+api.on('ask', (text) => conversation.typed(text));
 
 form.addEventListener('submit', (event) => {
   event.preventDefault();
-  const text = question.value.trim();
-  ears().cancel();
-  askJudith(text);
+  conversation.typed(question.value);
+});
+question.addEventListener('input', (event) => {
+  // The user types: stop listening (only real typing fires this event).
+  if (event.isTrusted && conversation.state === 'listening') ears.cancel();
 });
 
-question.addEventListener('input', () => {
-  // Typing means the user prefers to write: stop listening.
-  if (ears().listening && question.value) ears().cancel();
-});
-
-// ----- listening -----
-const bars = document.querySelector('.bars');
-// followUp: the short listening after an answer; silence just ends the
-// conversation, and the marks stay on screen.
-async function listen({ followUp = false } = {}) {
-  if (ears().listening) return;
-  if (!followUp) resetAnswer();
-  setState('listening');
-  question.value = '';
-  question.placeholder = followUp ? 'Autre chose ? Je t’écoute…' : 'Parle, ou écris ta question…';
-  question.focus();
-  const onLevel = (level) => bars.style.setProperty('--level', level.toFixed(2));
-  const noSpeechMs = followUp ? 5000 : 6000;
-  try {
-    if (live()) {
-      // Words appear while the user talks; Deepgram knows when the sentence ends.
-      await window.JudithLive.start({
-        ...stt,
-        onLevel,
-        noSpeechMs,
-        onPartial: (text) => {
-          question.value = text;
-          question.scrollLeft = question.scrollWidth;
-        },
-        onEnd: (text) => heardText(text, followUp),
-      });
-    } else {
-      await recorder.start({
-        onLevel,
-        noSpeechMs,
-        onEnd: (audio) => heard(audio, followUp),
-        // After an answer: speak clearly, near the mic, for ~0.8 s at least.
-        ...(followUp ? { speechLevel: 0.045, minVoiced: 6 } : {}),
-      });
-    }
-  } catch (error) {
-    question.placeholder = `Micro indisponible : ${error.message}. Écris ta question.`;
-  }
-}
-
-// What Judith said last: if the mic "hears" it, it is her own echo.
-let lastSpoken = '';
-
-async function heardText(raw, followUp) {
-  bars.style.setProperty('--level', '0');
-  const text = followUp ? await window.judith.filterHeard(raw, lastSpoken) : raw;
-  if (!text) {
-    if (followUp) setState('none');
-    else question.placeholder = "Je n'ai rien entendu. Parle, ou écris ta question…";
-    return;
-  }
-  question.value = text;
-  askJudith(text, text);
-}
-
-async function heard(audio, followUp = false) {
-  bars.style.setProperty('--level', '0');
-  if (!audio) {
-    if (followUp) setState('none');
-    else question.placeholder = "Je n'ai rien entendu. Parle, ou écris ta question…";
-    return;
-  }
-  setState('thinking');
-  doing.textContent = "J'écoute ce que tu as dit";
-  try {
-    let text = await window.judith.transcribe(audio);
-    if (followUp) text = await window.judith.filterHeard(text, lastSpoken);
-    if (!text && followUp) return setState('none');
-    if (!text) {
-      setState('listening');
-      question.placeholder = "Je n'ai pas compris, tu peux répéter ?";
-      return;
-    }
-    question.value = text;
-    askJudith(text, text);
-  } catch (error) {
-    setState('listening');
-    question.placeholder = error.message;
-  }
-}
-
-document.getElementById('stop').addEventListener('click', () => ears().finish());
-
-// ----- controls -----
-function close() {
-  resetAnswer();
-  ears().cancel();
-  setState('none');
-  window.judith.close();
-}
-document.getElementById('close').addEventListener('click', close);
-document.getElementById('summon').addEventListener('click', () => window.judith.summon());
+document.getElementById('stop').addEventListener('click', () => ears.finish());
+document.getElementById('close').addEventListener('click', () => conversation.cancel());
+document.getElementById('summon').addEventListener('click', () => api.summon());
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') close();
+  if (event.key === 'Escape') conversation.cancel();
 });
 pauseButton.addEventListener('click', () => {
   voice.setPaused(!voice.paused);
@@ -261,51 +187,24 @@ pauseButton.addEventListener('click', () => {
   notch.classList.toggle('talking', !voice.paused);
 });
 
-// Summoned (shortcut): listen right away. Summoned again while listening:
-// the user is done talking.
-window.judith.on('focus', ({ listen: shouldListen, conversation: keepTalking, stt: ears_ } = {}) => {
-  stt = ears_ ?? null;
-  canListen = Boolean(shouldListen);
-  conversation = Boolean(keepTalking);
-  if (ears().listening) return ears().finish();
-  if (shouldListen) listen();
-  else {
-    resetAnswer();
-    setState('listening');
-    question.focus();
-  }
-});
-window.judith.on('idle', () => {
-  ears().cancel();
-  setState('none');
-});
-// A question sent by the app itself (demo mode).
-window.judith.on('ask', (text) => {
-  ears().cancel();
-  question.value = text;
-  askJudith(text);
-});
-
 // ----- approvals -----
-const approval = document.getElementById('approval');
 let approvalId = null;
 function answerApproval(allow) {
   if (approvalId === null) return;
-  window.judith.approve(approvalId, allow);
+  api.approve(approvalId, allow);
   approvalId = null;
   approval.hidden = true;
 }
 document.getElementById('allow').addEventListener('click', () => answerApproval(true));
 document.getElementById('deny').addEventListener('click', () => answerApproval(false));
-window.judith.on('approval', ({ id, title, detail }) => {
+api.on('approval', ({ id, title, detail }) => {
   approvalId = id;
   document.getElementById('approval-title').textContent = `${title} ?`;
   document.getElementById('approval-detail').textContent = detail;
   approval.hidden = false;
-  if (notch.dataset.state === 'none') setState('thinking');
   document.getElementById('allow').focus();
 });
-window.judith.on('approved', ({ id }) => {
+api.on('approved', ({ id }) => {
   if (id === approvalId) {
     approvalId = null;
     approval.hidden = true;
@@ -314,6 +213,6 @@ window.judith.on('approved', ({ id }) => {
 
 // The window hugs the notch: transparent pixels around it would catch clicks.
 new ResizeObserver(() => {
-  window.judith.resize({ width: notch.offsetWidth + 40, height: notch.offsetHeight + 22 });
+  api.resize({ width: notch.offsetWidth + 40, height: notch.offsetHeight + 22 });
 }).observe(notch);
-setState('none');
+showState('idle');

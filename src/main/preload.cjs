@@ -11,7 +11,10 @@ const EVENTS = [
 ];
 
 contextBridge.exposeInMainWorld('judith', {
-  ask: (question) => ipcRenderer.invoke('judith:ask', question),
+  ask: (question, turn) => ipcRenderer.invoke('judith:ask', question, turn),
+  // Stop this turn (X, or the user talks over Judith).
+  cancel: (turn) => ipcRenderer.send('judith:cancel', turn),
+  clearScreen: () => ipcRenderer.send('judith:clear-screen'),
   // audio: Float32Array, mono 16 kHz → text.
   transcribe: (audio) => ipcRenderer.invoke('judith:transcribe', audio),
   // '' when what was heard is a Whisper phantom or Judith's own echo.

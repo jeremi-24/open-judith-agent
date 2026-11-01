@@ -85,6 +85,11 @@ export function createConversation(fx, options = {}) {
       return turn;
     },
 
+    // Settings sent by the app (conversation mode, interruptions).
+    configure(next = {}) {
+      for (const key of ['conversation', 'interruptions']) if (typeof next[key] === 'boolean') opts[key] = next[key];
+    },
+
     // Shortcut or click on the idle notch.
     summon() {
       if (state === 'listening') return fx.finishListening(); // "I'm done talking"
