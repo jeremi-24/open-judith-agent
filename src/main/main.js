@@ -54,10 +54,12 @@ async function summon() {
   send(bubble, 'focus');
 }
 
-// The notch is glued to the very top of the screen, centered.
+// The notch is glued to the very top of the screen, centered unless it had
+// to slide aside (dodgeX) to uncover a mark.
+let dodgeX = null;
 function placeBubble(display, { width, height }) {
   const { x, y, width: screenWidth } = display.bounds;
-  bubble.setBounds({ x: Math.round(x + (screenWidth - width) / 2), y, width, height });
+  bubble.setBounds({ x: dodgeX ?? Math.round(x + (screenWidth - width) / 2), y, width, height });
 }
 
 function hide() {
@@ -69,18 +71,34 @@ function drawMarks(marks) {
   const { display } = session;
   if (!marks.length || !display) return;
   const { bounds } = display;
-  const b = bubble.getBounds();
+  const pixels = marks.map((m) => toPixels(m, bounds));
+  dodgeMarks(display, pixels);
   overlay.setBounds(bounds);
-  send(overlay, 'marks', {
-    marks: marks.map((m) => toPixels(m, bounds)),
-    anchor: { x: b.x - bounds.x + b.width / 2, y: b.y - bounds.y + b.height - 20 },
-  });
+  send(overlay, 'marks', { marks: pixels });
   overlay.showInactive();
+}
+
+// If the notch sits on top of what Judith points at, it slides aside.
+function dodgeMarks(display, pixels) {
+  const b = bubble.getBounds();
+  const { x: left, width: screenWidth } = display.bounds;
+  const hidden = pixels.some((m) => {
+    const mx = left + m.cx;
+    return mx + m.rx > b.x && mx - m.rx < b.x + b.width && display.bounds.y + m.cy - m.ry < b.y + b.height;
+  });
+  if (!hidden) return;
+  const onLeft = pixels[0].cx < screenWidth / 2;
+  dodgeX = onLeft ? left + screenWidth - b.width - 24 : left + 24;
+  bubble.setBounds({ ...b, x: dodgeX });
 }
 
 function clearMarks() {
   send(overlay, 'clear');
   overlay?.hide();
+  if (dodgeX !== null && session.display) {
+    dodgeX = null;
+    placeBubble(session.display, bubble.getBounds());
+  }
 }
 
 async function ask(question) {

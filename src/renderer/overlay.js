@@ -1,5 +1,6 @@
-// Draws Judith's marks: a hand-drawn ring, a numbered badge, a label and,
-// for the first mark, a curved arrow coming from her bubble.
+// Draws Judith's marks right on the target: a hand-drawn ring, a numbered
+// badge, a label, and Judith's own pointer landing next to the first one.
+// No long arrow from the notch: the mark speaks for itself.
 const canvas = document.getElementById('canvas');
 const labels = document.getElementById('labels');
 const SVG = 'http://www.w3.org/2000/svg';
@@ -38,13 +39,31 @@ function drawRing(m) {
     const n = Object.assign(document.createElement('span'), { className: 'n', textContent: String(m.step) });
     label.append(n, document.createTextNode(m.label));
     labels.append(label);
+    keepOnScreen(label);
     avoidOverlap(label);
   }
 }
 
+// Judith's pointer lands at the bottom right of the ring, pointing at it.
+function drawPointer(m) {
+  const pointer = document.createElement('div');
+  pointer.className = 'pointer';
+  pointer.style.left = `${m.cx + m.rx * 0.55}px`;
+  pointer.style.top = `${m.cy + m.ry * 0.45}px`;
+  pointer.innerHTML = '<svg viewBox="0 0 22 30" aria-hidden="true"><path d="M2 2v22l6-5.5 4.5 9.5 4-1.8-4.4-9.2H20Z"/></svg><span>Judith</span>';
+  labels.append(pointer);
+}
+
+function keepOnScreen(label) {
+  const r = label.getBoundingClientRect();
+  if (r.bottom > window.innerHeight - 4) label.style.top = `${parseFloat(label.style.top) - r.height - 2 * 12 - 40}px`;
+  if (r.left < 4) label.style.left = `${parseFloat(label.style.left) - r.left + 4}px`;
+  if (r.right > window.innerWidth - 4) label.style.left = `${parseFloat(label.style.left) - (r.right - window.innerWidth) - 4}px`;
+}
+
 // Two marks close together would stack their labels: push the new one down.
 function avoidOverlap(label) {
-  const others = [...labels.children].filter((l) => l !== label);
+  const others = [...labels.children].filter((l) => l !== label && l.classList.contains('label'));
   for (let tries = 0; tries < 6; tries++) {
     const r = label.getBoundingClientRect();
     const hit = others.map((o) => o.getBoundingClientRect()).find((o) => r.left < o.right && o.left < r.right && r.top < o.bottom && o.top < r.bottom);
@@ -53,39 +72,14 @@ function avoidOverlap(label) {
   }
 }
 
-// Quadratic curve from the bubble to the edge of the ring, bending sideways.
-function drawArrow(from, m) {
-  const dx = from.x - m.cx;
-  const dy = from.y - m.cy;
-  const distance = Math.hypot(dx, dy);
-  if (distance < 80) return;
-
-  const ux = dx / distance;
-  const uy = dy / distance;
-  const reach = Math.max(m.rx, m.ry) + 10;
-  const end = { x: m.cx + ux * reach, y: m.cy + uy * reach };
-  const bend = Math.min(120, distance * 0.25);
-  const control = { x: (from.x + end.x) / 2 - uy * bend, y: (from.y + end.y) / 2 + ux * bend };
-  const d = `M${from.x} ${from.y} Q${control.x} ${control.y} ${end.x} ${end.y}`;
-
-  // Arrow head along the curve's last tangent.
-  const angle = Math.atan2(end.y - control.y, end.x - control.x);
-  const head = (a) => `${end.x - 14 * Math.cos(angle + a)} ${end.y - 14 * Math.sin(angle + a)}`;
-  const tip = `M${head(0.5)} L${end.x} ${end.y} L${head(-0.5)}`;
-
-  for (const path of [d, tip]) el('path', { class: 'halo', d: path });
-  el('path', { class: 'arrow draw', d, pathLength: 1 });
-  el('path', { class: 'arrow draw late', d: tip, pathLength: 1 });
-}
-
 function clear() {
   canvas.replaceChildren();
   labels.replaceChildren();
 }
 
 window.judith.on('clear', clear);
-window.judith.on('marks', ({ marks, anchor }) => {
+window.judith.on('marks', ({ marks }) => {
   clear();
   marks.forEach(drawRing);
-  if (marks[0] && anchor) drawArrow(anchor, marks[0]);
+  if (marks[0]) drawPointer(marks[0]);
 });
