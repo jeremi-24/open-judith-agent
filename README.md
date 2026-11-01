@@ -51,10 +51,23 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
 ## Requirements
 
 - Windows 10/11
-- Node.js 22+
 - [Claude Code](https://code.claude.com) installed and logged in (`claude` works in a terminal)
 
-## Getting started
+## Install
+
+1. Download `Judith-Setup-<version>.exe` from the
+   [latest release](https://github.com/jeremi-24/open-judith-agent/releases/latest).
+2. Run it. The installer is not code-signed yet, so Windows SmartScreen may say
+   "Windows protected your PC": click **More info → Run anyway**.
+3. Judith starts, and from now on with Windows (right-click her icon near the clock to
+   turn that off). Press **Ctrl + Alt + J** anywhere.
+
+No admin rights needed. Uninstall from **Settings → Apps → Installed apps**; your settings,
+keys and diary stay in `%APPDATA%\open-judith-agent`.
+
+## Run from source
+
+Requires Node.js 22+.
 
 ```bash
 git clone https://github.com/jeremi-24/open-judith-agent.git
@@ -63,7 +76,7 @@ npm install
 npm start
 ```
 
-Then press **Ctrl + Alt + J** anywhere.
+To build the installer, see [docs/RELEASING.md](docs/RELEASING.md).
 
 ### Configuration
 

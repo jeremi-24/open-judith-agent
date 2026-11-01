@@ -26,7 +26,8 @@ if (!app.requestSingleInstanceLock()) app.quit();
 
 const config = loadConfig();
 const root = join(import.meta.dirname, '..', '..');
-const iconPath = join(root, 'assets', 'icon.png');
+// The installer adds a version with transparent rounded corners (tray, notifications).
+const iconPath = [join(root, 'assets', 'icon-rounded.png'), join(root, 'assets', 'icon.png')].find(existsSync);
 let bubble, overlay, board, tray, engine, warmingUp;
 
 // Tools Judith may use without asking: opening things, reading, showing.
@@ -837,9 +838,39 @@ function buildTrayMenu() {
       { label: 'Nouvelle conversation', click: newConversation },
       { label: 'Ouvrir la configuration', click: () => shell.openPath(configPath()) },
       { type: 'separator' },
+      ...(app.isPackaged
+        ? [
+            {
+              label: 'Démarrer avec Windows',
+              type: 'checkbox',
+              checked: app.getLoginItemSettings().openAtLogin,
+              click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
+            },
+          ]
+        : []),
       { label: 'Quitter', role: 'quit' },
     ]),
   );
+}
+
+// ----- the installed app (Judith-Setup.exe) -----
+// Windows ties notifications and pinning to this id: the Start menu
+// shortcut must carry it. The first start of a new version also makes
+// Judith start with Windows (the tray menu turns it off).
+const APP_ID = 'com.jeremi24.judith';
+function settleInstalledApp() {
+  if (!app.isPackaged) return;
+  // Installed by the Setup (its Start menu shortcut is there), not a copy
+  // being tried from dist/: only then does Judith start with Windows.
+  const shortcut = join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Judith.lnk');
+  if (!existsSync(shortcut)) return;
+  shell.writeShortcutLink(shortcut, 'update', { appUserModelId: APP_ID });
+  const marker = join(app.getPath('userData'), 'installed-version');
+  const known = existsSync(marker) ? readFileSync(marker, 'utf8').trim() : null;
+  if (known !== app.getVersion()) {
+    if (known === null) app.setLoginItemSettings({ openAtLogin: true });
+    writeFileSync(marker, app.getVersion());
+  }
 }
 
 app.whenReady().then(async () => {
@@ -848,7 +879,8 @@ app.whenReady().then(async () => {
   sessions.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowMedia(permission)));
   sessions.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
   // Windows needs it to show Judith's notifications (and to group her windows).
-  app.setAppUserModelId('com.jeremi24.judith');
+  app.setAppUserModelId(APP_ID);
+  settleInstalledApp();
   startSpeech();
   startVoice();
   startReminders();
