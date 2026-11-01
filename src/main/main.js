@@ -1,6 +1,7 @@
-import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron';
-import { writeFileSync } from 'node:fs';
+import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, session as sessions, shell, Tray } from 'electron';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
 import { configPath, loadConfig } from './config.js';
 import { captureDisplay } from './capture.js';
@@ -67,7 +68,41 @@ async function summon() {
   placeBubble(display, bubble.getBounds());
   bubble.show();
   bubble.focus();
-  send(bubble, 'focus');
+  send(bubble, 'focus', { listen: config.voiceInput && speechReady });
+}
+
+// Whisper, in a worker thread. Pressing the shortcut again while Judith
+// listens just sends what was said (handled by the notch).
+let speech = null;
+let speechReady = false;
+let speechJob = 0;
+const speechJobs = new Map();
+function startSpeech() {
+  if (!config.voiceInput) return;
+  speech = new Worker(join(import.meta.dirname, 'stt-worker.js'), {
+    workerData: { model: config.speechModel, language: config.language, cacheDir: join(app.getPath('userData'), 'models') },
+  });
+  speech.on('message', (message) => {
+    if ('ready' in message) {
+      speechReady = message.ready;
+      console.log(message.ready ? '[judith] voice input ready' : `[judith] voice input off: ${message.error}`);
+      return;
+    }
+    const job = speechJobs.get(message.id);
+    speechJobs.delete(message.id);
+    if (message.error) job?.reject(new Error(message.error));
+    else job?.resolve(message.text);
+  });
+  speech.on('error', (error) => console.error('[judith] speech worker:', error.message));
+}
+
+function transcribe(audio) {
+  if (!speech || !speechReady) return Promise.reject(new Error("La voix n'est pas encore prête, écris ta question."));
+  const id = ++speechJob;
+  return new Promise((resolve, reject) => {
+    speechJobs.set(id, { resolve, reject });
+    speech.postMessage({ id, audio });
+  });
 }
 
 // The notch is glued to the very top of the screen, centered unless it had
@@ -183,6 +218,12 @@ function buildTrayMenu() {
 }
 
 app.whenReady().then(async () => {
+  // Judith's own pages may use the microphone; nothing else is granted.
+  const allowMedia = (permission) => permission === 'media';
+  sessions.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowMedia(permission)));
+  sessions.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
+  startSpeech();
+
   setCaptureProtection(config.hideFromScreenRecordings);
   bubble = createBubble();
   overlay = createOverlay();
@@ -236,6 +277,7 @@ app.whenReady().then(async () => {
   }
 
   ipcMain.handle('judith:ask', (_e, question) => ask(String(question)));
+  ipcMain.handle('judith:transcribe', (_e, audio) => transcribe(audio));
   ipcMain.on('judith:close', hide);
   ipcMain.on('judith:approve', (_e, { id, allow }) => settleApproval(id, allow === true));
   ipcMain.on('judith:resize', (_e, size) => {
@@ -250,10 +292,20 @@ app.whenReady().then(async () => {
   // Dev: JUDITH_DEMO="question" summons Judith and asks it at launch.
   // With JUDITH_DEMO_SHOT=file.jpg it also saves a screenshot and quits.
   // JUDITH_DEMO_APPROVE=yes|no answers permission requests automatically.
+  // JUDITH_DEMO_AUDIO=question.wav (16 kHz) goes through Whisper first.
   if (process.env.JUDITH_DEMO) {
     warmingUp.then(async () => {
+      let question = process.env.JUDITH_DEMO;
+      const wav = process.env.JUDITH_DEMO_AUDIO;
+      if (wav) {
+        while (!speechReady) await wait(500);
+        const { decodeWav } = await import('../core/audio.js');
+        const started = Date.now();
+        question = await transcribe(decodeWav(readFileSync(wav)).samples);
+        console.log(`[judith] heard "${question}" in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+      }
       await summon();
-      await ask(process.env.JUDITH_DEMO);
+      await ask(question);
       const shot = process.env.JUDITH_DEMO_SHOT;
       if (!shot) return;
       await wait(1500);
@@ -270,4 +322,5 @@ app.on('window-all-closed', () => {}); // lives in the tray
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   engine?.stop();
+  speech?.terminate();
 });

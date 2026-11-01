@@ -9,6 +9,9 @@ export const DEFAULTS = {
   model: 'haiku',
   language: 'fr',
   shortcut: 'Control+Alt+J',
+  // Listen to the microphone as soon as Judith is summoned.
+  voiceInput: true,
+  speechModel: 'onnx-community/whisper-base',
   // false = Judith shows up in screen recordings (handy to film demos).
   hideFromScreenRecordings: true,
 };

@@ -8,7 +8,9 @@ const send = form.querySelector('.send');
 const voiceButton = document.getElementById('voice');
 const voice = window.JudithVoice;
 
-const STATUS = { idle: "Je t'écoute", thinking: 'Je réfléchis…', speaking: 'Judith parle' };
+const STATUS = { idle: 'Judith', listening: "Je t'écoute…", transcribing: "J'ai entendu…", thinking: 'Je réfléchis…', speaking: 'Judith parle' };
+const recorder = window.JudithRecorder;
+const mic = document.getElementById('mic');
 let answerText = '';
 
 function setState(state) {
@@ -66,36 +68,96 @@ function setVoice(on) {
   } catch {}
 }
 
-form.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const text = question.value.trim();
+function askJudith(text) {
   if (!text || notch.dataset.state === 'thinking') return;
-  question.value = '';
-  autosize();
   voice.stop();
   answerText = '';
   showCaption('');
   showSteps([]);
   window.judith.ask(text);
+}
+
+form.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const text = question.value.trim();
+  question.value = '';
+  autosize();
+  askJudith(text);
 });
 
-question.addEventListener('input', autosize);
+// Voice: listen, stop after a short silence, transcribe with Whisper, ask.
+async function listen() {
+  if (recorder.listening) return;
+  voice.stop();
+  notch.classList.remove('talking');
+  try {
+    await recorder.start({
+      onLevel: (level) => mic.style.setProperty('--level', level.toFixed(2)),
+      onEnd: heard,
+    });
+  } catch (error) {
+    showCaption(`Je n'ai pas accès au micro : ${error.message}`, { error: true, full: true });
+    return;
+  }
+  mic.setAttribute('aria-pressed', 'true');
+  setState('listening');
+}
+
+function stopListening() {
+  mic.setAttribute('aria-pressed', 'false');
+  mic.style.setProperty('--level', '0');
+}
+
+async function heard(audio) {
+  stopListening();
+  if (!audio) {
+    setState('idle');
+    showCaption("Je n'ai rien entendu. Parle-moi ou écris ta question.", { full: true });
+    return;
+  }
+  setState('transcribing');
+  try {
+    const text = await window.judith.transcribe(audio);
+    if (!text) {
+      setState('idle');
+      showCaption("Je n'ai pas compris, tu peux répéter ?", { full: true });
+      return;
+    }
+    showCaption(`« ${text} »`, { full: true });
+    askJudith(text);
+  } catch (error) {
+    setState('idle');
+    showCaption(error.message, { error: true, full: true });
+  }
+}
+
+mic.addEventListener('click', () => (recorder.listening ? recorder.finish() : listen()));
+
+question.addEventListener('input', () => {
+  autosize();
+  // Typing means the user prefers to write: stop listening.
+  if (recorder.listening && question.value) {
+    recorder.cancel();
+    stopListening();
+    setState('idle');
+  }
+});
 question.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
     form.requestSubmit();
   }
 });
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    voice.stop();
-    window.judith.close();
-  }
-});
-document.getElementById('close').addEventListener('click', () => {
+function close() {
   voice.stop();
+  recorder.cancel();
+  stopListening();
   window.judith.close();
+}
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') close();
 });
+document.getElementById('close').addEventListener('click', close);
 voiceButton.addEventListener('click', () => setVoice(!voice.enabled));
 caption.addEventListener('click', () => answerText && showCaption(answerText, { full: true }));
 
@@ -131,9 +193,14 @@ window.judith.on('tool', (label) => {
   status.textContent = `${label}…`;
 });
 
-window.judith.on('focus', () => {
-  setState('idle');
+// Summoned (shortcut): listen right away. Summoned again while listening:
+// the user is done talking.
+window.judith.on('focus', ({ listen: shouldListen } = {}) => {
   question.focus();
+  if (recorder.listening) return recorder.finish();
+  if (notch.dataset.state === 'thinking' || notch.dataset.state === 'transcribing') return;
+  setState('idle');
+  if (shouldListen) listen();
 });
 window.judith.on('state', setState);
 window.judith.on('delta', (text) => {

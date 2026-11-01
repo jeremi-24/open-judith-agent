@@ -25,6 +25,7 @@
     "electron": "~44.10.1"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.3.2",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^4.6.7"
   }

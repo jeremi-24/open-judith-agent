@@ -180,6 +180,24 @@ textarea::placeholder { color: #8d87a8; }
 .send svg { width: 15px; height: 15px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .send:disabled { opacity: 0.4; cursor: default; }
 
+/* Microphone: glows and breathes with the user's voice while listening. */
+.mic {
+  --level: 0;
+  width: 32px; height: 32px; flex: none;
+  border: 0; border-radius: 50%;
+  background: rgb(255 255 255 / 0.1);
+  cursor: pointer;
+  display: grid; place-items: center;
+  transition: box-shadow 0.08s linear;
+}
+.mic svg { width: 17px; height: 17px; fill: none; stroke: #e6e1fb; stroke-width: 1.7; stroke-linecap: round; }
+.mic[aria-pressed="true"] {
+  background: var(--blush);
+  box-shadow: 0 0 0 calc(3px + var(--level) * 9px) rgb(255 143 184 / 0.35);
+}
+.mic[aria-pressed="true"] svg { stroke: #fff; }
+.notch[data-state="listening"] .status { color: var(--blush); }
+
 .notch[data-state="thinking"] .eye { transform: translateY(-2px); transition: transform 0.3s; }
 .notch[data-state="thinking"] .status { animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.4; } }

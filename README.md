@@ -30,8 +30,11 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
       transparent click-through overlay draws rings, arrows and labels
 ```
 
-- **Ask mode**: question → answer + drawing. Judith only shows (read-only).
-- **Act mode**: Judith may also edit files through Claude Code (opt-in).
+- **Talk to her**: the shortcut opens the notch and listens. Stop talking and she
+  answers out loud. Speech-to-text runs locally (Whisper), so does her voice (Windows voices).
+- **She decides whether to show or to do**: "where is the export button?" → she circles it.
+  "open VLC" → she opens it. Opening apps, sites and folders is instant; editing a file
+  or running a command asks you first, right in the notch.
 - **Session mode** *(planned)*: give her a goal, she guides you step by step, quizzes
   you and tracks what you have learned.
 
@@ -64,15 +67,25 @@ Judith reads `config.json` in her user data folder
   "model": "haiku",
   "language": "fr",
   "shortcut": "Control+Alt+J",
-  "mode": "show",
+  "voiceInput": true,
+  "speechModel": "onnx-community/whisper-base",
   "hideFromScreenRecordings": true
 }
 ```
 
 - `workingDirectory` matters: Claude Code loads the memory and `CLAUDE.md` of that folder,
   so point it where you usually run `claude`. In JSON, write paths with `/` or `\\`.
-- `mode`: `show` (read-only) or `act` (Claude Code may edit files). Also in the tray menu.
+- `voiceInput`: listen as soon as Judith is summoned. The Whisper model (~80 MB) is
+  downloaded once on first launch, then everything stays offline.
 - `hideFromScreenRecordings`: keep `true` for privacy; set `false` to film demos with OBS.
+
+### How Judith acts
+
+Claude Code starts Judith's own MCP server (`src/mcp/server.js`) with four tools:
+`open_app`, `find_apps`, `open_url`, `open_path`. They, and reading files, need no
+confirmation. Any other tool (editing a file, running a command) goes through
+`--permission-prompt-tool`: the notch shows what Judith wants to do, you answer
+**Vas-y** or **Non**.
 
 ## Development
 
@@ -93,7 +106,8 @@ JUDITH_DEMO="Où est le bouton Démarrer ?" JUDITH_DEMO_SHOT=shot.jpg npm start
 - Answers take ~5 s with a screenshot (Claude Code is kept warm in the background).
 - Pointing is precise on regular buttons but can be off by ~30 px on tiny icons
   (taskbar). Windows UI Automation is planned to snap marks onto real controls.
-- Text only for now: voice input and output are planned.
+- With voice, a full turn takes ~8-10 s (end of speech, ~2 s of transcription, answer).
+- No wake word yet ("Hey Judith"): use the shortcut.
 
 ## Privacy
 
