@@ -13,3 +13,11 @@ test('real questions go through', () => {
     assert.ok(!isGhost(t), t);
   }
 });
+
+test('Judith hearing herself is an echo, a new question is not', async () => {
+  const { isEcho } = await import('../src/core/hallucinations.js');
+  const spoken = "Salut, je suis Judith, ravie de t'accompagner aujourd'hui.";
+  assert.ok(isEcho('je suis Judith ravie de t accompagner', spoken));
+  assert.ok(!isEcho('Ouvre VLC et montre-moi le bouton exporter', spoken));
+  assert.ok(!isEcho('Bonjour', ''));
+});

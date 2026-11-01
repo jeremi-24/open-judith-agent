@@ -93,9 +93,10 @@ let answerDone = false;
 function maybeListenAgain() {
   if (!answerDone || voice.speaking || !approval.hidden) return;
   answerDone = false;
-  // A short pause first: the speakers may still be playing her last word.
+  lastSpoken = spoken.join(' ');
+  // A short pause first: the speakers (Bluetooth above all) may still be playing her last word.
   if (conversation && canListen && notch.dataset.state !== 'none') {
-    setTimeout(() => notch.dataset.state !== 'none' && !voice.speaking && listen({ followUp: true }), 400);
+    setTimeout(() => notch.dataset.state !== 'none' && !voice.speaking && listen({ followUp: true }), 800);
   }
 }
 
@@ -183,15 +184,25 @@ async function listen({ followUp = false } = {}) {
         onEnd: (text) => heardText(text, followUp),
       });
     } else {
-      await recorder.start({ onLevel, noSpeechMs, onEnd: (audio) => heard(audio, followUp) });
+      await recorder.start({
+        onLevel,
+        noSpeechMs,
+        onEnd: (audio) => heard(audio, followUp),
+        // After an answer: speak clearly, near the mic, for ~0.8 s at least.
+        ...(followUp ? { speechLevel: 0.045, minVoiced: 6 } : {}),
+      });
     }
   } catch (error) {
     question.placeholder = `Micro indisponible : ${error.message}. Écris ta question.`;
   }
 }
 
-function heardText(text, followUp) {
+// What Judith said last: if the mic "hears" it, it is her own echo.
+let lastSpoken = '';
+
+async function heardText(raw, followUp) {
   bars.style.setProperty('--level', '0');
+  const text = followUp ? await window.judith.filterHeard(raw, lastSpoken) : raw;
   if (!text) {
     if (followUp) setState('none');
     else question.placeholder = "Je n'ai rien entendu. Parle, ou écris ta question…";
@@ -211,7 +222,9 @@ async function heard(audio, followUp = false) {
   setState('thinking');
   doing.textContent = "J'écoute ce que tu as dit";
   try {
-    const text = await window.judith.transcribe(audio);
+    let text = await window.judith.transcribe(audio);
+    if (followUp) text = await window.judith.filterHeard(text, lastSpoken);
+    if (!text && followUp) return setState('none');
     if (!text) {
       setState('listening');
       question.placeholder = "Je n'ai pas compris, tu peux répéter ?";

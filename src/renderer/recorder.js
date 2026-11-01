@@ -12,7 +12,9 @@ window.JudithRecorder = (() => {
 
   // noSpeechMs: give up after this long if nobody talks (shorter for the
   // "anything else?" listening after an answer).
-  async function start({ onLevel = () => {}, onEnd = () => {}, noSpeechMs = NO_SPEECH_MS } = {}) {
+  // speechLevel / minVoiced: stricter for the follow-up listening, so voices
+  // or noise in the room are not taken for a question.
+  async function start({ onLevel = () => {}, onEnd = () => {}, noSpeechMs = NO_SPEECH_MS, speechLevel = SPEECH_LEVEL, minVoiced = 3 } = {}) {
     stop(true);
     const mine = ++attempt;
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -42,15 +44,15 @@ window.JudithRecorder = (() => {
       onLevel(Math.min(1, level * 12));
 
       const now = performance.now();
-      if (level > SPEECH_LEVEL) {
+      if (level > speechLevel) {
         spokeAt ??= now;
         lastVoiceAt = now;
         voiced += 1;
       }
       const silentTooLong = spokeAt !== null && now - lastVoiceAt > END_SILENCE_MS;
       const nobodySpoke = spokeAt === null && now - startedAt > noSpeechMs;
-      // At least ~0.4 s of real voice (frames of 2048 samples = 128 ms).
-      if (silentTooLong || nobodySpoke || now - startedAt > MAX_MS) finish(voiced >= 3);
+      // Enough real voice (frames of 2048 samples = 128 ms).
+      if (silentTooLong || nobodySpoke || now - startedAt > MAX_MS) finish(voiced >= minVoiced);
     };
     source.connect(processor);
     processor.connect(context.destination);

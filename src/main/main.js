@@ -13,7 +13,7 @@ import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } f
 import { toPixels } from '../core/annotations.js';
 import { CHANGED, markRect, regionDiff, STALE } from '../core/pixels.js';
 import { createScriptReader } from '../core/script.js';
-import { isGhost } from '../core/hallucinations.js';
+import { isEcho, isGhost } from '../core/hallucinations.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -81,7 +81,9 @@ async function summon() {
   bubble.show();
   bubble.focus();
   const ears = liveEars();
-  send(bubble, 'focus', { listen: config.voiceInput && (speechReady || Boolean(ears)), conversation: config.conversation, stt: ears });
+  // No conversation in demo mode: nobody is there to answer.
+  const conversation = config.conversation && !process.env.JUDITH_DEMO;
+  send(bubble, 'focus', { listen: config.voiceInput && (speechReady || Boolean(ears)), conversation, stt: ears });
 }
 
 // ----- voice in, cloud: Deepgram live listening (the user's own key) -----
@@ -570,6 +572,13 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('judith:ask', (_e, question) => (lastAsk = ask(String(question))));
   ipcMain.handle('judith:transcribe', (_e, audio) => transcribe(audio));
+  ipcMain.handle('judith:filter-heard', (_e, text, spoken) => {
+    if (isGhost(text) || isEcho(text, spoken)) {
+      console.log(`[judith] ignored what the mic heard: "${String(text).slice(0, 60)}"`);
+      return '';
+    }
+    return text;
+  });
   ipcMain.handle('judith:speak', (_e, text) => speak(String(text)));
   ipcMain.on('judith:close', hide);
   ipcMain.on('judith:summon', summon);

@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('judith', {
   ask: (question) => ipcRenderer.invoke('judith:ask', question),
   // audio: Float32Array, mono 16 kHz → text.
   transcribe: (audio) => ipcRenderer.invoke('judith:transcribe', audio),
+  // '' when what was heard is a Whisper phantom or Judith's own echo.
+  filterHeard: (text, spoken) => ipcRenderer.invoke('judith:filter-heard', text, spoken),
   // text → { samples: Float32Array, sampleRate } with the neural voice, or null.
   speak: (text) => ipcRenderer.invoke('judith:speak', text),
   // A drawing or board command whose sentence just started.
