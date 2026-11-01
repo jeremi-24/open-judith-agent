@@ -132,6 +132,24 @@ server.registerTool(
   },
 );
 
+// Sharing is the user's move: Judith prepares the image, the user pastes
+// and presses send.
+server.registerTool(
+  'copy_screenshot',
+  {
+    description:
+      'Take a screenshot of the user screen (or of the zone they drew) and put it in the clipboard; it is also saved as a PNG file. ' +
+      'Use it when the user wants to send, share or keep a screenshot. Then open the app or site they named (open_app, open_url), ' +
+      'look at the screen and mark where to paste: they paste with Ctrl+V and press send themselves. You cannot send messages.',
+    inputSchema: {},
+  },
+  async () => {
+    const shot = await bridge('/copy-shot', {});
+    if (!shot?.path) return text(`The screenshot could not be taken${shot?.error ? `: ${shot.error}` : ''}.`);
+    return text(`Screenshot ${shot.zone ? 'of the selected zone ' : ''}copied to the clipboard (${shot.width}x${shot.height}) and saved to ${shot.path}.`);
+  },
+);
+
 server.registerTool(
   'show_visual',
   {

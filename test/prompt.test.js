@@ -79,3 +79,8 @@ test('creating a document has its own words in the notch', () => {
   assert.equal(describeTool('Artifact', { action: 'open', url: 'https://claude.ai/artifact/x' }), "J'ouvre ta création");
   assert.equal(describeTool('Artifact', { file_path: 'page.html' }), 'Je crée la page');
 });
+
+test('sharing a screenshot: Judith prepares, the user sends', () => {
+  assert.equal(describeTool('mcp__judith__copy_screenshot', {}), 'Je copie ton écran');
+  assert.match(buildSystemPrompt(), /copy_screenshot[\s\S]*you never send messages/);
+});

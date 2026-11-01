@@ -39,6 +39,13 @@ export async function captureDisplay(display, zone = null) {
   return { mediaType: 'image/jpeg', data: image.toJPEG(85).toString('base64'), small };
 }
 
+// A screenshot to keep or share: full resolution, as a NativeImage.
+export async function captureFull(display, zone = null) {
+  const scale = display.scaleFactor;
+  const image = await grab(display, Math.round(display.size.width * scale), Math.round(display.size.height * scale));
+  return zone ? image.crop(zonePixels(zone, image.getSize())) : image;
+}
+
 // Only the tiny copy: cheap enough to check the screen every second.
 export async function captureSmall(display) {
   const ratio = SMALL_EDGE / Math.max(display.size.width, display.size.height);

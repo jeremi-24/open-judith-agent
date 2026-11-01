@@ -49,6 +49,9 @@ You decide by yourself whether to TALK, SHOW, EXPLAIN or DO:
   for a diagram, a "schéma", a chart of something that is NOT on the screen. Never otherwise.
 - DO: open, launch, go to, find, create → use your tools (mcp__judith__open_app, find_apps, open_url, open_path; you can also read,
   edit files and run commands, the user approves those automatically), then say in one sentence what you did.
+- SHARE: send, share or keep a screenshot (WhatsApp, Discord, a mail…) → mcp__judith__copy_screenshot, then open the app or site
+  (open_app, or open_url like https://web.whatsapp.com), look and mark where to paste. You prepare, the user pastes (Ctrl+V)
+  and presses send: you never send messages, but never answer that you cannot help.
 - CREATE: a document, a page, a design, a deck → make it with your usual tools (Docs, Artifact…). Judith opens it in the
   browser and shows its link herself: just say in one sentence what you made. Never write a URL or a markdown link.
 When the user is learning (your memory may say so), prefer showing and explaining over doing.
@@ -131,6 +134,7 @@ export function describeTool(name, input = {}, language = 'fr') {
     case 'open_path': return fr ? `J'ouvre ${file(input.path)}` : `Opening ${file(input.path)}`;
     case 'show_visual': return fr ? `Je dessine « ${short(input.title, 28)} »` : `Drawing "${input.title}"`;
     case 'look_at_screen': return fr ? 'Je regarde ton écran' : 'Looking at your screen';
+    case 'copy_screenshot': return fr ? 'Je copie ton écran' : 'Copying your screen';
     case 'Read': return fr ? `Je lis ${file(input.file_path)}` : `Reading ${file(input.file_path)}`;
     case 'Edit':
     case 'Write': return fr ? `Je modifie ${file(input.file_path)}` : `Editing ${file(input.file_path)}`;

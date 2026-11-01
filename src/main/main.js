@@ -1,12 +1,12 @@
-import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, session as sessions, shell, Tray } from 'electron';
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { app, clipboard, ClipboardItem, globalShortcut, ipcMain, Menu, nativeImage, screen, session as sessions, shell, Tray } from 'electron';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
 import { configPath, loadConfig } from './config.js';
 import { ensureVoice } from './models.js';
-import { captureDisplay, captureSmall } from './capture.js';
+import { captureDisplay, captureFull, captureSmall } from './capture.js';
 import { BOARD_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtection } from './windows.js';
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
 import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../core/prompt.js';
@@ -37,6 +37,7 @@ const ALLOWED_TOOLS = [
   'mcp__judith__open_path',
   'mcp__judith__show_visual',
   'mcp__judith__look_at_screen',
+  'mcp__judith__copy_screenshot',
   'Read',
   'Glob',
   'Grep',
@@ -55,29 +56,53 @@ function send(win, event, data) {
 const cursorDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Without capture protection, Judith steps out of the frame while she looks.
-// The tiny reference copy is taken the same way as the later checks, so
-// only real changes count.
-// With a zone drawn by the user, only that zone is sent: Claude's coordinates
-// are then fractions of the zone (session.frame) until the next look.
-async function look(display) {
-  const zone = session.zone;
-  session.frame = zone;
-  if (config.hideFromScreenRecordings) {
-    const shot = await captureDisplay(display, zone);
-    return { ...shot, small: await captureSmall(display) };
-  }
+// Without capture protection, Judith steps out of the frame for capture().
+async function withoutJudith(capture) {
+  if (config.hideFromScreenRecordings) return capture();
   bubble.setOpacity(0);
   overlay.hide();
   board.setOpacity(0);
   await wait(120);
   try {
-    const shot = await captureDisplay(display, zone);
-    return { ...shot, small: await captureSmall(display) };
+    return await capture();
   } finally {
     bubble.setOpacity(1);
     board.setOpacity(1);
-    if (session.zone) overlay.showInactive();
+    if (session.zone || shownMarks.length) overlay.showInactive();
+  }
+}
+
+// With a zone drawn by the user, only that zone is sent: Claude's coordinates
+// are then fractions of the zone (session.frame) until the next look.
+// The tiny reference copy is taken the same way as the later checks, so
+// only real changes count.
+async function look(display) {
+  const zone = session.zone;
+  session.frame = zone;
+  return withoutJudith(async () => ({ ...(await captureDisplay(display, zone)), small: await captureSmall(display) }));
+}
+
+// The copy_screenshot tool: the screen (or the zone the user drew) goes to
+// the clipboard, ready to paste in WhatsApp, Discord, a mail…, and is saved
+// as a PNG in Pictures\Judith. Judith never sends it herself.
+async function copyScreenshot() {
+  const display = session.display ?? cursorDisplay();
+  try {
+    const image = await withoutJudith(() => captureFull(display, session.zone));
+    const png = image.toPNG();
+    // Electron 44's clipboard follows the web API: items of Blobs, async.
+    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]);
+    const folder = join(app.getPath('pictures'), 'Judith');
+    mkdirSync(folder, { recursive: true });
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
+    const path = join(folder, `judith-${stamp}.png`);
+    writeFileSync(path, png);
+    const { width, height } = image.getSize();
+    console.log(`[judith] screenshot copied (${width}x${height}) and saved to ${path}`);
+    return { path, width, height, zone: Boolean(session.zone) };
+  } catch (error) {
+    console.error('[judith] copy screenshot failed:', error.message);
+    return { error: error.message };
   }
 }
 
@@ -182,7 +207,7 @@ function creationsIn(text) {
 
 // ----- voice in, cloud: Deepgram live listening (the user's own key) -----
 // Words Judith should hear right, whatever the accent.
-const KEYTERMS = ['Judith', 'Claude Code', 'GitHub', 'VS Code', 'VLC', 'CapCut', 'Blender', 'pull request'];
+const KEYTERMS = ['Judith', 'Claude Code', 'GitHub', 'VS Code', 'VLC', 'CapCut', 'Blender', 'pull request', "capture d'écran", 'WhatsApp', 'Discord'];
 function liveEars() {
   const key = config.deepgramKey || process.env.DEEPGRAM_API_KEY;
   if (config.speechInput !== 'deepgram' || !key) return null;
@@ -775,6 +800,7 @@ app.whenReady().then(async () => {
   const bridge = await startBridge({
     onApprove: requestApproval,
     onLook: lookForJudith,
+    onCopyShot: copyScreenshot,
     onVisual: (title, html) => {
       showBoard();
       send(board, 'visual', { title, html });

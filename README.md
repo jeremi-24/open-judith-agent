@@ -42,6 +42,9 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
 - **She makes things**: ask for a document, a page or a design; Claude Code creates it with
   your own tools (Docs, Artifacts…), Judith opens it in your browser and leaves a card in
   the notch. She never reads a link aloud.
+- **She prepares, you send**: "take a screenshot and send it on WhatsApp" → she copies the
+  screen (or your zone) to the clipboard, saves it in Pictures\Judith, opens WhatsApp and shows
+  where to paste. You press Ctrl + V and send: she never sends messages for you.
 - **Session mode** *(planned)*: give her a goal, she guides you step by step, quizzes
   you and tracks what you have learned.
 
