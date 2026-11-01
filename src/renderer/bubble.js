@@ -37,6 +37,7 @@ function resetAnswer() {
   spoken = [];
   lastSay = null;
   textBox.innerHTML = '';
+  textBox.dataset.stale = '';
   textBox.classList.remove('error');
   steps.replaceChildren();
   notch.classList.remove('talking');
@@ -64,6 +65,8 @@ function run(command) {
 
 window.judith.on('cmd', (command) => {
   if (command.type === 'say') {
+    // Never listen while Judith talks: the mic would hear her.
+    recorder.cancel();
     const item = { actions: [], started: false };
     lastSay = item;
     voice.say(command.text, () => {
@@ -78,17 +81,43 @@ window.judith.on('cmd', (command) => {
   else run(command);
 });
 
-voice.onIdle(() => notch.classList.remove('talking'));
+// ----- conversation: when Judith has finished, she listens again -----
+let canListen = false; // voice input ready (sent with 'focus')
+let conversation = false;
+let answerDone = false;
+
+function maybeListenAgain() {
+  if (!answerDone || voice.speaking || !approval.hidden) return;
+  answerDone = false;
+  if (conversation && canListen && notch.dataset.state !== 'none') listen({ followUp: true });
+}
+
+voice.onIdle(() => {
+  notch.classList.remove('talking');
+  maybeListenAgain();
+});
 
 window.judith.on('answer', () => {
-  if (!spoken.length && !lastSay) setState('none');
   question.value = '';
+  answerDone = true;
+  if (!spoken.length && !lastSay) {
+    if (!conversation || !canListen) setState('none');
+  }
+  maybeListenAgain();
 });
 
 window.judith.on('error', (message) => {
   setState('speaking');
   textBox.innerHTML = render(message);
   textBox.classList.add('error');
+});
+
+// A mark was not drawn: the screen changed since Judith looked at it.
+window.judith.on('stale', () => {
+  if (textBox.dataset.stale === '1') return;
+  textBox.dataset.stale = '1';
+  setState('speaking');
+  textBox.innerHTML = "L'écran a bougé depuis que j'ai regardé : redemande-moi et je regarde à nouveau.";
 });
 
 window.judith.on('tool', (text) => {
@@ -101,8 +130,9 @@ window.judith.on('tool', (text) => {
 function askJudith(text) {
   if (!text) return;
   resetAnswer();
+  answerDone = false;
   setState('thinking');
-  doing.textContent = 'Je regarde ton écran';
+  doing.textContent = 'Je réfléchis à ta demande';
   window.judith.ask(text);
 }
 
@@ -120,26 +150,31 @@ question.addEventListener('input', () => {
 
 // ----- listening -----
 const bars = document.querySelector('.bars');
-async function listen() {
+// followUp: the short listening after an answer; silence just ends the
+// conversation, and the marks stay on screen.
+async function listen({ followUp = false } = {}) {
   if (recorder.listening) return;
-  resetAnswer();
+  if (!followUp) resetAnswer();
   setState('listening');
   question.value = '';
+  question.placeholder = followUp ? 'Autre chose ? Je t’écoute…' : 'Parle, ou écris ta question…';
   question.focus();
   try {
     await recorder.start({
       onLevel: (level) => bars.style.setProperty('--level', level.toFixed(2)),
-      onEnd: heard,
+      onEnd: (audio) => heard(audio, followUp),
+      noSpeechMs: followUp ? 5000 : 6000,
     });
   } catch (error) {
     question.placeholder = `Micro indisponible : ${error.message}. Écris ta question.`;
   }
 }
 
-async function heard(audio) {
+async function heard(audio, followUp = false) {
   bars.style.setProperty('--level', '0');
   if (!audio) {
-    question.placeholder = "Je n'ai rien entendu. Parle, ou écris ta question…";
+    if (followUp) setState('none');
+    else question.placeholder = "Je n'ai rien entendu. Parle, ou écris ta question…";
     return;
   }
   setState('thinking');
@@ -182,7 +217,9 @@ pauseButton.addEventListener('click', () => {
 
 // Summoned (shortcut): listen right away. Summoned again while listening:
 // the user is done talking.
-window.judith.on('focus', ({ listen: shouldListen } = {}) => {
+window.judith.on('focus', ({ listen: shouldListen, conversation: keepTalking } = {}) => {
+  canListen = Boolean(shouldListen);
+  conversation = Boolean(keepTalking);
   if (recorder.listening) return recorder.finish();
   if (shouldListen) listen();
   else {
@@ -191,7 +228,10 @@ window.judith.on('focus', ({ listen: shouldListen } = {}) => {
     question.focus();
   }
 });
-window.judith.on('idle', () => setState('none'));
+window.judith.on('idle', () => {
+  recorder.cancel();
+  setState('none');
+});
 // A question sent by the app itself (demo mode).
 window.judith.on('ask', (text) => {
   recorder.cancel();

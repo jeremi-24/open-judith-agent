@@ -6,11 +6,12 @@ import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
 import { configPath, loadConfig } from './config.js';
 import { ensureVoice } from './models.js';
-import { captureDisplay } from './capture.js';
+import { captureDisplay, captureSmall } from './capture.js';
 import { BOARD_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtection } from './windows.js';
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
 import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
+import { CHANGED, markRect, regionDiff, STALE } from '../core/pixels.js';
 import { createScriptReader } from '../core/script.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -28,6 +29,7 @@ const ALLOWED_TOOLS = [
   'mcp__judith__open_url',
   'mcp__judith__open_path',
   'mcp__judith__show_visual',
+  'mcp__judith__look_at_screen',
   'Read',
   'Glob',
   'Grep',
@@ -35,8 +37,9 @@ const ALLOWED_TOOLS = [
   'WebFetch',
 ];
 
-// The screenshot taken when Judith is summoned, before her notch wakes up.
-let session = { display: null, image: null };
+// The display Judith works on, and a tiny copy of the screen as she last saw
+// it (to notice when it changes under her marks).
+let session = { display: null, reference: null };
 
 function send(win, event, data) {
   if (win && !win.isDestroyed()) win.webContents.send(`judith:${event}`, data);
@@ -46,35 +49,37 @@ const cursorDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreen
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Without capture protection, Judith steps out of the frame while she looks.
+// The tiny reference copy is taken the same way as the later checks, so
+// only real changes count.
 async function look(display) {
-  if (config.hideFromScreenRecordings) return captureDisplay(display);
+  if (config.hideFromScreenRecordings) {
+    const shot = await captureDisplay(display);
+    return { ...shot, small: await captureSmall(display) };
+  }
   bubble.setOpacity(0);
   overlay.hide();
   board.setOpacity(0);
   await wait(120);
   try {
-    return await captureDisplay(display);
+    const shot = await captureDisplay(display);
+    return { ...shot, small: await captureSmall(display) };
   } finally {
     bubble.setOpacity(1);
     board.setOpacity(1);
   }
 }
 
+// Summoning is instant: Judith looks at the screen only if the question needs
+// it (look_at_screen tool), not every time.
 async function summon() {
   const display = cursorDisplay();
   clearMarks();
-  let image = null;
-  try {
-    image = await look(display);
-  } catch (error) {
-    send(bubble, 'error', `Je n'arrive pas à voir ton écran : ${error.message}`);
-  }
-  session = { display, image };
+  session = { display, reference: null };
 
   placeBubble(display, bubble.getBounds());
   bubble.show();
   bubble.focus();
-  send(bubble, 'focus', { listen: config.voiceInput && speechReady });
+  send(bubble, 'focus', { listen: config.voiceInput && speechReady, conversation: config.conversation });
 }
 
 // ----- voice in: Whisper, in a worker thread -----
@@ -170,22 +175,99 @@ function placeBubble(display, { width, height }) {
 // Back to the small idle notch.
 function hide() {
   send(bubble, 'idle');
+  scanning = false;
   send(overlay, 'scan', false);
   clearMarks();
 }
 
-// ----- marks on the screen -----
-function drawMark(mark) {
+// ----- marks on the screen, and their life cycle -----
+// A mark is only true for the screen Judith looked at. It is not drawn if
+// that part of the screen already changed (scroll, click, other window), and
+// it disappears as soon as what is under it changes, or after a minute.
+const MARK_LIFETIME_MS = 60_000;
+const WATCH_EVERY_MS = 800;
+let shownMarks = [];
+let watcher = null;
+let lastSmall = null; // { at, shot }: one tiny capture serves several marks
+let scanning = false;
+
+async function screenNow(display) {
+  if (lastSmall && Date.now() - lastSmall.at < 400) return lastSmall.shot;
+  const shot = await captureSmall(display);
+  lastSmall = { at: Date.now(), shot };
+  return shot;
+}
+
+// Judith's own windows move and change: never compare what is under them.
+function ownAreas(display) {
+  const { x, y, width, height } = display.bounds;
+  return [bubble, board]
+    .filter((w) => w.isVisible())
+    .map((w) => w.getBounds())
+    .map((b) => ({ x1: (b.x - x) / width, y1: (b.y - y) / height, x2: (b.x + b.width - x) / width, y2: (b.y + b.height - y) / height }));
+}
+
+async function drawMark(mark) {
   const display = session.display ?? cursorDisplay();
   const { bounds } = display;
+  if (scanning) {
+    // The scan animation would look like a change: stop it first.
+    scanning = false;
+    send(overlay, 'scan', false);
+    await wait(150);
+  }
+  if (session.reference) {
+    const now = await screenNow(display).catch(() => null);
+    const diff = now ? regionDiff(session.reference, now, markRect(mark), ownAreas(display)) : 0;
+    if (diff > STALE) {
+      console.log(`[judith] mark dropped: the screen changed since Judith looked (${diff.toFixed(1)})`);
+      if (process.env.JUDITH_DEBUG_DIR) {
+        const save = (img, name) => writeFileSync(join(process.env.JUDITH_DEBUG_DIR, name), nativeImage.createFromBitmap(Buffer.from(img.data), { width: img.width, height: img.height }).toPNG());
+        save(session.reference, 'reference.png');
+        save(now, 'now.png');
+        console.log('[judith] rect', JSON.stringify(markRect(mark)), 'own', JSON.stringify(ownAreas(display)));
+      }
+      send(bubble, 'stale');
+      return;
+    }
+  }
   if (!overlay.isVisible()) {
     overlay.setBounds(bounds);
     overlay.showInactive();
   }
   send(overlay, 'mark', toPixels(mark, bounds));
+  shownMarks.push(mark);
+  watchMarks(display);
+}
+
+function watchMarks(display) {
+  stopWatching();
+  const startedAt = Date.now();
+  let baseline = null;
+  // Wait for the drawing animation to settle, then take the baseline.
+  watcher = setTimeout(async function tick() {
+    if (!shownMarks.length) return;
+    if (Date.now() - startedAt > MARK_LIFETIME_MS) return clearMarks();
+    try {
+      const now = await captureSmall(display);
+      if (!baseline) baseline = now;
+      else if (shownMarks.some((m) => regionDiff(baseline, now, markRect(m), ownAreas(display)) > CHANGED)) {
+        console.log('[judith] marks cleared: the screen changed under them');
+        return clearMarks();
+      }
+    } catch {}
+    if (shownMarks.length) watcher = setTimeout(tick, WATCH_EVERY_MS);
+  }, 1200);
+}
+
+function stopWatching() {
+  clearTimeout(watcher);
+  watcher = null;
 }
 
 function clearMarks() {
+  stopWatching();
+  shownMarks = [];
   send(overlay, 'clear');
   overlay?.hide();
 }
@@ -242,7 +324,7 @@ function show(command) {
 }
 
 // Every action Claude Code takes appears on the board.
-const QUIET_TOOLS = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'mcp__judith__find_apps', 'mcp__judith__approve']);
+const QUIET_TOOLS = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'mcp__judith__find_apps', 'mcp__judith__approve', 'mcp__judith__look_at_screen']);
 const actions = new Map();
 function trackTool({ id, name, input }) {
   if (QUIET_TOOLS.has(name)) return;
@@ -270,17 +352,35 @@ function trackResult({ id, output, isError }) {
 // ----- asking -----
 let currentReader = null;
 let lastAsk = null;
+// The look_at_screen tool: capture, then a dashed scan while Judith reads it.
+async function lookForJudith() {
+  const display = session.display ?? cursorDisplay();
+  try {
+    const shot = await look(display);
+    session.reference = shot.small;
+    overlay.setBounds(display.bounds);
+    overlay.showInactive();
+    scanning = true;
+    send(overlay, 'scan', true);
+    return { data: shot.data, mediaType: shot.mediaType };
+  } catch (error) {
+    console.error('[judith] look failed:', error.message);
+    return {};
+  }
+}
+
 async function ask(question) {
   await warmingUp;
   const display = session.display ?? cursorDisplay();
-  // The first question uses the summon screenshot; follow-ups look again.
-  const image = session.image ?? (await look(display).catch(() => null));
-  session = { display, image: null };
-
+  session.display = display;
   clearMarks();
-  overlay.setBounds(display.bounds);
-  overlay.showInactive();
-  send(overlay, 'scan', true);
+  // alwaysLook: the old behaviour, a screenshot with every question.
+  let image = null;
+  if (config.alwaysLook) {
+    const shot = await look(display).catch(() => null);
+    session.reference = shot?.small ?? null;
+    image = shot;
+  }
 
   // Script lines go to the notch as soon as they are complete.
   let commands = 0;
@@ -290,13 +390,14 @@ async function ask(question) {
   });
   currentReader = reader;
   try {
-    const result = await engine.ask(buildUserContent({ question, image }));
+    const result = await engine.ask(buildUserContent({ question, image: image && { mediaType: image.mediaType, data: image.data } }));
     reader.finish(result.streamed || result.text);
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
   } catch (error) {
     send(bubble, 'error', error.message);
   } finally {
     currentReader = null;
+    scanning = false;
     send(overlay, 'scan', false);
     send(bubble, 'answer');
   }
@@ -360,6 +461,7 @@ app.whenReady().then(async () => {
   // itself runs it as plain Node, so no separate Node install is needed.
   const bridge = await startBridge({
     onApprove: requestApproval,
+    onLook: lookForJudith,
     onVisual: (title, html) => {
       showBoard();
       send(board, 'visual', { title, html });
@@ -383,7 +485,7 @@ app.whenReady().then(async () => {
     claudePath: config.claudePath,
     cwd: config.workingDirectory,
     model: config.model,
-    systemPrompt: buildSystemPrompt({ language: config.language }),
+    systemPrompt: buildSystemPrompt({ language: config.language, annotations: config.annotations }),
     extraArgs: [
       '--mcp-config', mcpConfig,
       '--allowedTools', ALLOWED_TOOLS.join(','),

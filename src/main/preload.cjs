@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const EVENTS = [
   // notch
-  'focus', 'idle', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved',
+  'focus', 'idle', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale',
   // overlay
   'mark', 'clear', 'scan',
   // board

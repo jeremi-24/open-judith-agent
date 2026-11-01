@@ -8,12 +8,20 @@ window.JudithRecorder = (() => {
   const MAX_MS = 15000;
 
   let session = null;
+  let attempt = 0; // a cancel during getUserMedia must win over the late start
 
-  async function start({ onLevel = () => {}, onEnd = () => {} } = {}) {
+  // noSpeechMs: give up after this long if nobody talks (shorter for the
+  // "anything else?" listening after an answer).
+  async function start({ onLevel = () => {}, onEnd = () => {}, noSpeechMs = NO_SPEECH_MS } = {}) {
     stop(true);
+    const mine = ++attempt;
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
+    if (mine !== attempt) {
+      stream.getTracks().forEach((t) => t.stop());
+      return false;
+    }
     const context = new AudioContext({ sampleRate: RATE });
     const source = context.createMediaStreamSource(stream);
     const processor = context.createScriptProcessor(2048, 1, 1);
@@ -38,11 +46,12 @@ window.JudithRecorder = (() => {
         lastVoiceAt = now;
       }
       const silentTooLong = spokeAt !== null && now - lastVoiceAt > END_SILENCE_MS;
-      const nobodySpoke = spokeAt === null && now - startedAt > NO_SPEECH_MS;
+      const nobodySpoke = spokeAt === null && now - startedAt > noSpeechMs;
       if (silentTooLong || nobodySpoke || now - startedAt > MAX_MS) finish(spokeAt !== null);
     };
     source.connect(processor);
     processor.connect(context.destination);
+    return true;
   }
 
   function collect() {
@@ -78,7 +87,11 @@ window.JudithRecorder = (() => {
   return {
     start,
     finish: () => finish(true),
-    cancel: () => stop(true),
+    cancel() {
+      attempt += 1;
+      stop(true);
+    },
+    // Opening, or open and not finished.
     get listening() {
       return session !== null && !session.done;
     },
