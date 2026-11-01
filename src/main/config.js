@@ -10,6 +10,8 @@ export const DEFAULTS = {
   language: 'fr',
   shortcut: 'Control+Alt+J',
   mode: 'show',
+  // false = Judith shows up in screen recordings (handy to film demos).
+  hideFromScreenRecordings: true,
 };
 
 export const configPath = () => join(app.getPath('userData'), 'config.json');
@@ -23,7 +25,9 @@ export function loadConfig() {
   }
   try {
     return { ...DEFAULTS, ...JSON.parse(readFileSync(path, 'utf8')) };
-  } catch {
+  } catch (error) {
+    // A common cause on Windows: single backslashes in paths (use \\ or /).
+    console.error(`[judith] ${path} is not valid JSON, using defaults: ${error.message}`);
     return { ...DEFAULTS };
   }
 }

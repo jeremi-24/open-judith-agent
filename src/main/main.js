@@ -1,8 +1,9 @@
 import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { configPath, loadConfig } from './config.js';
 import { captureDisplay } from './capture.js';
-import { BUBBLE_WIDTH, createBubble, createOverlay } from './windows.js';
+import { BUBBLE_WIDTH, createBubble, createOverlay, setCaptureProtection } from './windows.js';
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
 import { buildSystemPrompt, buildUserContent } from '../core/prompt.js';
 import { extractAnnotations, toPixels, visibleText } from '../core/annotations.js';
@@ -21,13 +22,27 @@ function send(win, event, data) {
 }
 
 const cursorDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Without capture protection, Judith steps out of the frame while she looks.
+async function look(display) {
+  if (config.hideFromScreenRecordings) return captureDisplay(display);
+  bubble.setOpacity(0);
+  overlay.hide();
+  await wait(120);
+  try {
+    return await captureDisplay(display);
+  } finally {
+    bubble.setOpacity(1);
+  }
+}
 
 async function summon() {
   const display = cursorDisplay();
   clearMarks();
   let image = null;
   try {
-    image = await captureDisplay(display);
+    image = await look(display);
   } catch (error) {
     send(bubble, 'error', `Je n'arrive pas à voir ton écran : ${error.message}`);
   }
@@ -68,7 +83,7 @@ async function ask(question) {
   const display = session.display ?? cursorDisplay();
   // The first question uses the summon screenshot; follow-ups look again
   // (Judith's own windows are excluded from captures).
-  const image = session.image ?? (await captureDisplay(display).catch(() => null));
+  const image = session.image ?? (await look(display).catch(() => null));
   session = { display, image: null };
 
   clearMarks();
@@ -76,6 +91,7 @@ async function ask(question) {
   try {
     const result = await engine.ask(buildUserContent({ question, image }));
     const { text, steps, marks } = extractAnnotations(result.text);
+    console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${marks.length} mark(s)`);
     send(bubble, 'answer', { text, steps, durationMs: result.durationMs });
     drawMarks(marks);
   } catch (error) {
@@ -112,6 +128,7 @@ function buildTrayMenu() {
 }
 
 app.whenReady().then(() => {
+  setCaptureProtection(config.hideFromScreenRecordings);
   bubble = createBubble();
   overlay = createOverlay();
 
@@ -145,6 +162,21 @@ app.whenReady().then(() => {
     bubble.setSize(BUBBLE_WIDTH, Math.min(640, Math.max(120, Math.ceil(height))));
   });
   bubble.webContents.on('did-finish-load', () => send(bubble, 'mode', config.mode));
+
+  // Dev: JUDITH_DEMO="question" summons Judith and asks it at launch.
+  // With JUDITH_DEMO_SHOT=file.png it also saves a screenshot and quits.
+  if (process.env.JUDITH_DEMO) {
+    warmingUp.then(async () => {
+      await summon();
+      await ask(process.env.JUDITH_DEMO);
+      const shot = process.env.JUDITH_DEMO_SHOT;
+      if (!shot) return;
+      await wait(1500);
+      const image = await captureDisplay(session.display ?? cursorDisplay());
+      writeFileSync(shot, Buffer.from(image.data, 'base64'));
+      app.quit();
+    });
+  }
 });
 
 app.on('second-instance', summon);

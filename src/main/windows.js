@@ -12,9 +12,15 @@ const secure = {
   nodeIntegration: false,
 };
 
-// Judith's own windows never appear in her screenshots.
+// With protection on, Judith's windows are invisible to every capture: hers,
+// but also screen recorders (OBS, Snipping Tool). Turn it off to film demos.
+let protect = true;
+export function setCaptureProtection(on) {
+  protect = on;
+}
+
 function hideFromCaptures(win) {
-  win.setContentProtection(true);
+  win.setContentProtection(protect);
   win.setAlwaysOnTop(true, 'screen-saver');
 }
 
