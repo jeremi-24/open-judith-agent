@@ -36,6 +36,12 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
 - **She decides whether to show or to do**: "where is the export button?" → she circles it.
   "open VLC" → she opens it. Opening apps, sites and folders is instant; editing a file
   or running a command asks you first, right in the notch.
+- **Show her a zone**: press **Ctrl + Alt + Shift + J** (or the frame button in the notch)
+  and draw a rectangle around what you want to understand. Only that zone is sent, and
+  she annotates it. Escape or a simple click cancels.
+- **She makes things**: ask for a document, a page or a design; Claude Code creates it with
+  your own tools (Docs, Artifacts…), Judith opens it in your browser and leaves a card in
+  the notch. She never reads a link aloud.
 - **Session mode** *(planned)*: give her a goal, she guides you step by step, quizzes
   you and tracks what you have learned.
 
@@ -83,6 +89,8 @@ Judith reads `config.json` in her user data folder
 - `hideFromScreenRecordings`: keep `true` for privacy; set `false` to film demos with OBS.
 - `alwaysLook` (default `false`): Judith takes a screenshot only when the question needs it
   (her `look_at_screen` tool). `true` sends one with every question, slower.
+- `zoneShortcut` (default `Control+Alt+Shift+J`): summon Judith and draw the zone to explain.
+- `openCreations` (default `true`): open what Claude creates (document, page, design) in the browser.
 - `conversation` (default `true`): after answering, Judith listens for 5 more seconds.
 - `annotations`: `helpful` (default, draws only when it saves you searching), `none`, `always`.
 

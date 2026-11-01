@@ -49,7 +49,10 @@ You decide by yourself whether to TALK, SHOW, EXPLAIN or DO:
   for a diagram, a "schéma", a chart of something that is NOT on the screen. Never otherwise.
 - DO: open, launch, go to, find, create → use your tools (mcp__judith__open_app, find_apps, open_url, open_path; you can also read,
   edit files and run commands, the user approves those automatically), then say in one sentence what you did.
+- CREATE: a document, a page, a design, a deck → make it with your usual tools (Docs, Artifact…). Judith opens it in the
+  browser and shows its link herself: just say in one sentence what you made. Never write a URL or a markdown link.
 When the user is learning (your memory may say so), prefer showing and explaining over doing.
+Whatever tools you used, your answer is always script lines (below), never markdown.
 
 Drawing rule: ${ANNOTATION_RULES[annotations] ?? ANNOTATION_RULES.helpful}
 Show one step at a time: after a click the screen changes, so mark only the current step, then let the user ask for the next one
@@ -93,12 +96,18 @@ export function pointerNote(pointer) {
   return `Mouse pointer: x=${pointer.x.toFixed(3)} y=${pointer.y.toFixed(3)} (fractions of the screen). "ça", "ceci", "ici", "this" = what is under it.\n`;
 }
 
-export function buildUserContent({ question, image, activeWindow, pointer }) {
+// The note that goes with a screenshot of the zone the user drew.
+export const ZONE_NOTE =
+  'The image is only the zone of the screen the user selected for this question: explain what is in it. ' +
+  'Coordinates are fractions of this image.\n';
+
+// zone: the image is the zone the user drew, not the whole screen.
+export function buildUserContent({ question, image, activeWindow, pointer, zone = false }) {
   const content = [];
   if (image) {
     content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } });
   }
-  const context = `${activeWindow ? `Active window: ${activeWindow}\n` : ''}${pointerNote(pointer)}`;
+  const context = `${activeWindow ? `Active window: ${activeWindow}\n` : ''}${zone ? ZONE_NOTE : ''}${pointerNote(pointer)}`;
   content.push({ type: 'text', text: `${context}${question}`.trim() });
   return content;
 }
@@ -108,6 +117,13 @@ export function describeTool(name, input = {}, language = 'fr') {
   const fr = language === 'fr';
   const short = (s, n = 48) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s));
   const file = (p) => String(p ?? '').split(/[\\/]/).pop();
+  // Claude's own creations: documents (Docs connector) and artifacts.
+  if (/Claude_Docs__/.test(name)) return fr ? "J'écris le document" : 'Writing the document';
+  if (name === 'Artifact') {
+    if (input.action === 'open') return fr ? "J'ouvre ta création" : 'Opening your creation';
+    if (input.action === 'quickstart' || input.action === 'read' || input.action === 'list') return fr ? 'Je prépare la page' : 'Preparing the page';
+    return fr ? 'Je crée la page' : 'Creating the page';
+  }
   switch (name.replace(/^mcp__judith__/, '')) {
     case 'open_app': return fr ? `J'ouvre ${input.name}` : `Opening ${input.name}`;
     case 'find_apps': return fr ? `Je cherche ${input.query}` : `Looking for ${input.query}`;

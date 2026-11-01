@@ -77,3 +77,23 @@ html, body {
 .scan-pill { left: 24px; top: 20px; padding: 6px 13px; }
 .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--iris); animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.45; } }
+
+/* Choosing the zone: the screen dims, the zone drawn stays clear. */
+body.selecting { pointer-events: auto; cursor: crosshair; background: rgb(20 17 29 / 0.28); }
+body.selecting.dragging { background: transparent; }
+.zone-frame {
+  position: absolute;
+  border: 2px dashed var(--iris);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+.zone-frame[hidden], .select-hint[hidden] { display: none; }
+body.selecting .zone-frame { border-style: solid; box-shadow: 0 0 0 100vmax rgb(20 17 29 / 0.28); }
+.zone-tag {
+  position: absolute; left: -2px; top: -26px;
+  padding: 3px 9px; border-radius: 6px 6px 6px 0;
+  background: var(--iris); color: #fff;
+  font: 700 11.5px var(--font-ui); white-space: nowrap;
+}
+body.selecting .zone-tag { display: none; }
+.select-hint { left: 50%; top: 96px; transform: translateX(-50%); padding: 7px 14px; }

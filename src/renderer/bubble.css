@@ -178,3 +178,22 @@ html, body {
 .approval-actions button { border: 0; border-radius: 999px; padding: 8px 18px; font: 700 13px var(--font-ui); cursor: pointer; }
 .approval .deny { background: rgb(255 255 255 / 0.1); color: #e6e1fb; }
 .approval .allow { background: var(--signature); color: #fff; }
+
+/* Zone: draw the part of the screen to explain (lit while a zone is shared). */
+.notch[data-state="listening"] .zone { display: flex; width: 36px; height: 36px; background: rgb(255 255 255 / 0.06); }
+.zone svg { width: 15px; height: 15px; fill: none; stroke: #c9c0ff; stroke-width: 1.6; stroke-linecap: round; }
+.notch[data-state] .zone[aria-pressed="true"] { background: rgb(143 124 255 / 0.3); }
+.zone[aria-pressed="true"] svg { stroke: #fff; }
+
+/* What Claude made or mentioned: a document, a page, a site. */
+.links { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.links:empty { display: none; }
+.link {
+  display: flex; align-items: center; gap: 8px; max-width: 100%;
+  padding: 7px 13px 7px 9px; border: 0; border-radius: 999px; cursor: pointer;
+  background: rgb(143 124 255 / 0.2); color: #f1eefc;
+  font: 600 13px var(--font-ui);
+}
+.link:hover { background: rgb(143 124 255 / 0.32); }
+.link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link svg { width: 14px; height: 14px; flex: none; fill: none; stroke: #c9c0ff; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }

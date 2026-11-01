@@ -67,3 +67,15 @@ test('the notes board is only offered when it is turned on', () => {
   assert.match(buildSystemPrompt({ board: true }), /^board </m);
   assert.match(buildSystemPrompt(), /annotate the real thing, never redraw it/);
 });
+
+test('a zone screenshot says it is only a zone', () => {
+  const content = buildUserContent({ question: "C'est quoi ?", image: { mediaType: 'image/jpeg', data: 'AAAA' }, zone: true });
+  assert.match(content[1].text, /zone of the screen the user selected/);
+  assert.doesNotMatch(buildUserContent({ question: 'Salut' })[0].text, /zone/);
+});
+
+test('creating a document has its own words in the notch', () => {
+  assert.equal(describeTool('mcp__claude_ai_Claude_Docs__batch', {}), "J'écris le document");
+  assert.equal(describeTool('Artifact', { action: 'open', url: 'https://claude.ai/artifact/x' }), "J'ouvre ta création");
+  assert.equal(describeTool('Artifact', { file_path: 'page.html' }), 'Je crée la page');
+});

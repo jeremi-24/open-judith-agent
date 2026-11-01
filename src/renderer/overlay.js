@@ -4,6 +4,7 @@
 // dark on light backgrounds and light on dark ones. Marks are drawn one
 // after the other, never at the same time.
 import { handStroke, outlinePoints } from '../core/ink.js';
+import { zoneFrom } from '../core/zone.js';
 
 const canvas = document.getElementById('canvas');
 const labels = document.getElementById('labels');
@@ -181,10 +182,70 @@ function clear() {
   penAt = null;
 }
 
+// With a zone, Judith scans only the zone.
 function scan(on) {
-  document.getElementById('scan').hidden = !on;
+  const frame = document.getElementById('scan');
+  frame.hidden = !on;
   document.getElementById('scan-pill').hidden = !on;
+  if (zone) place(frame, zone);
+  else frame.removeAttribute('style');
 }
+
+// ----- the zone the user draws -----
+// While choosing, the overlay catches the mouse: the user drags a rectangle,
+// Escape (or a simple click) cancels. Then only the dashed frame stays.
+const zoneFrame = document.getElementById('zone');
+const hint = document.getElementById('select-hint');
+let zone = null; // fractions of the screen
+let dragFrom = null;
+
+function place(node, z) {
+  node.style.inset = 'auto'; // first: it would reset left and top
+  Object.assign(node.style, {
+    left: `${z.x1 * innerWidth}px`,
+    top: `${z.y1 * innerHeight}px`,
+    width: `${(z.x2 - z.x1) * innerWidth}px`,
+    height: `${(z.y2 - z.y1) * innerHeight}px`,
+  });
+}
+const at = (event) => ({ x: event.clientX / innerWidth, y: event.clientY / innerHeight });
+
+function showZone(z) {
+  zone = z;
+  zoneFrame.hidden = !z;
+  if (z) place(zoneFrame, z);
+}
+
+window.judith.on('select', (on) => {
+  document.body.classList.toggle('selecting', on);
+  document.body.classList.remove('dragging');
+  hint.hidden = !on;
+  dragFrom = null;
+  if (on) showZone(null);
+});
+window.judith.on('zone', showZone);
+
+addEventListener('pointerdown', (event) => {
+  if (!document.body.classList.contains('selecting') || event.button !== 0) return;
+  dragFrom = at(event);
+  document.body.classList.add('dragging');
+  hint.hidden = true;
+  showZone({ x1: dragFrom.x, y1: dragFrom.y, x2: dragFrom.x, y2: dragFrom.y });
+});
+addEventListener('pointermove', (event) => {
+  if (!dragFrom) return;
+  const p = at(event);
+  showZone({ x1: Math.min(dragFrom.x, p.x), y1: Math.min(dragFrom.y, p.y), x2: Math.max(dragFrom.x, p.x), y2: Math.max(dragFrom.y, p.y) });
+});
+addEventListener('pointerup', (event) => {
+  if (!dragFrom) return;
+  const picked = zoneFrom(dragFrom, at(event));
+  dragFrom = null;
+  window.judith.zoneSelected(picked);
+});
+addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && document.body.classList.contains('selecting')) window.judith.zoneSelected(null);
+});
 
 window.judith.on('clear', clear);
 window.judith.on('scan', scan);

@@ -18,6 +18,8 @@ import { isEcho, isGhost } from '../core/hallucinations.js';
 import { decodeWav } from '../core/audio.js';
 import { stripEmotions } from '../core/emotions.js';
 import { needsScreen } from '../core/needs-screen.js';
+import { findLinks, isCreation, speakable } from '../core/links.js';
+import { fromZone, toZone } from '../core/zone.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -56,9 +58,13 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Without capture protection, Judith steps out of the frame while she looks.
 // The tiny reference copy is taken the same way as the later checks, so
 // only real changes count.
+// With a zone drawn by the user, only that zone is sent: Claude's coordinates
+// are then fractions of the zone (session.frame) until the next look.
 async function look(display) {
+  const zone = session.zone;
+  session.frame = zone;
   if (config.hideFromScreenRecordings) {
-    const shot = await captureDisplay(display);
+    const shot = await captureDisplay(display, zone);
     return { ...shot, small: await captureSmall(display) };
   }
   bubble.setOpacity(0);
@@ -66,11 +72,12 @@ async function look(display) {
   board.setOpacity(0);
   await wait(120);
   try {
-    const shot = await captureDisplay(display);
+    const shot = await captureDisplay(display, zone);
     return { ...shot, small: await captureSmall(display) };
   } finally {
     bubble.setOpacity(1);
     board.setOpacity(1);
+    if (session.zone) overlay.showInactive();
   }
 }
 
@@ -83,7 +90,8 @@ async function summon() {
   const cursor = screen.getCursorScreenPoint();
   const { x, y, width, height } = display.bounds;
   const pointer = { x: (cursor.x - x) / width, y: (cursor.y - y) / height };
-  session = { display, reference: null, pointer };
+  session = { display, reference: null, pointer, zone: null, frame: null };
+  send(overlay, 'zone', null);
 
   placeBubble(display, bubble.getBounds());
   bubble.show();
@@ -92,6 +100,84 @@ async function summon() {
   // No conversation in demo mode: nobody is there to answer.
   const conversation = config.conversation && !process.env.JUDITH_DEMO;
   send(bubble, 'focus', { conversation, interruptions: config.interruptions, stt: ears });
+}
+
+// ----- the zone: the user draws the part of the screen to explain -----
+// The overlay catches the mouse while the user drags a rectangle (Escape or
+// a simple click cancels); then it only shows the zone's frame. Judith keeps
+// listening meanwhile: "c'est quoi ça ?" can be said while drawing.
+let zonePicking = null;
+let settleZone = null;
+function pickZone() {
+  if (zonePicking) return zonePicking;
+  const display = session.display ?? cursorDisplay();
+  session.display = display;
+  overlay.setBounds(display.bounds);
+  overlay.setIgnoreMouseEvents(false);
+  overlay.setFocusable(true);
+  overlay.show();
+  overlay.focus();
+  bubble.moveTop(); // the notch (and its X) stays above the veil
+  send(overlay, 'select', true);
+  zonePicking = new Promise((resolve) => {
+    settleZone = (zone) => {
+      settleZone = null;
+      zonePicking = null;
+      overlay.setIgnoreMouseEvents(true);
+      overlay.setFocusable(false);
+      send(overlay, 'select', false);
+      session.zone = zone;
+      send(overlay, 'zone', zone);
+      send(bubble, 'zone', Boolean(zone));
+      if (!zone && !shownMarks.length) overlay.hide();
+      if (zone) console.log(`[judith] zone ${JSON.stringify(Object.values(zone).map((v) => +v.toFixed(3)))}`);
+      bubble.focus();
+      resolve(zone);
+    };
+  });
+  return zonePicking;
+}
+
+// The conversation is over (or cancelled): the zone goes, the marks stay.
+function dropZone() {
+  if (settleZone) return settleZone(null);
+  if (!session.zone) return;
+  session.zone = null;
+  send(overlay, 'zone', null);
+  send(bubble, 'zone', false);
+  if (!shownMarks.length) overlay.hide();
+}
+
+function summonWithZone() {
+  summon();
+  pickZone();
+}
+
+// ----- what Claude creates: documents, artifacts, designs, pages -----
+// Claude Code would show them in its own app; Judith has no such pane, so
+// she shows a card in the notch and opens creations in the browser.
+let turnLinks = new Map();
+let openedCreation = false;
+// titled: the title comes from the answer ("[Mon doc](…)"), better than the
+// default one found in a tool result.
+function addLink(link, { titled = true } = {}) {
+  if (!/^https?:\/\//i.test(link.url)) return;
+  const known = turnLinks.get(link.url);
+  if (known && (!titled || known.title === link.title)) return;
+  turnLinks.set(link.url, link);
+  send(bubble, 'link', { turn: activeTurn, ...link });
+}
+function openCreation(url) {
+  if (openedCreation || !config.openCreations) return;
+  openedCreation = true;
+  console.log(`[judith] opening ${url}`);
+  shell.openExternal(url);
+}
+// Creations named in a tool call or its result (Artifact publish/open, Docs…).
+function creationsIn(text) {
+  for (const link of findLinks(text, config.language)) {
+    if (link.creation) addLink(link, { titled: false });
+  }
 }
 
 // ----- voice in, cloud: Deepgram live listening (the user's own key) -----
@@ -257,7 +343,9 @@ function streamVoice(text) {
           push(chunk);
         });
         if (process.env.JUDITH_DEMO) console.log('[judith] says (cloud)', JSON.stringify(text.slice(0, 90)));
-        return push({ done: true });
+        if (sent) return push({ done: true });
+        // No audio at all: Judith's local voice, not a stranger's.
+        console.error('[judith] cloud voice sent no audio, local voice instead');
       } catch (error) {
         // A bad key or no credit: say it once, then use the local voice.
         cloudVoiceFailed = true;
@@ -294,6 +382,7 @@ function hide() {
   send(bubble, 'idle');
   scanning = false;
   send(overlay, 'scan', false);
+  dropZone();
   clearMarks();
 }
 
@@ -417,7 +506,8 @@ function clearMarks() {
   stopWatching();
   shownMarks = [];
   send(overlay, 'clear');
-  overlay?.hide();
+  // The frame of the zone the user drew stays.
+  if (!session.zone && !zonePicking) overlay?.hide();
 }
 
 // ----- the board: notes, visuals and what Claude Code did -----
@@ -518,7 +608,8 @@ async function lookForJudith() {
     overlay.showInactive();
     scanning = true;
     send(overlay, 'scan', true);
-    return { data: shot.data, mediaType: shot.mediaType, pointer: session.pointer };
+    const zone = Boolean(session.frame);
+    return { data: shot.data, mediaType: shot.mediaType, pointer: toZone(session.pointer, session.frame), zone };
   } catch (error) {
     console.error('[judith] look failed:', error.message);
     return {};
@@ -555,15 +646,19 @@ async function ask(question, turn) {
   activeTurn = turn;
   entry = { at: Date.now(), question, spoken: Boolean(lastHeardAt && Date.now() - lastHeardAt < 15000), tools: [], marks: 0 };
   timeline = { ask: Date.now(), heard: lastHeardAt };
+  turnLinks = new Map();
+  openedCreation = false;
   await warmingUp;
+  // The user may still be drawing the zone the question is about.
+  if (zonePicking) await zonePicking;
   const display = session.display ?? cursorDisplay();
   session.display = display;
   clearMarks();
-  // The question is about the screen ("explique ça", "où est…"): the
-  // screenshot goes with it, one round trip less than look_at_screen.
-  // alwaysLook: the old behaviour, a screenshot with every question.
+  // The question is about the screen ("explique ça", "où est…") or a zone
+  // was drawn: the screenshot goes with it, one round trip less than
+  // look_at_screen. alwaysLook: the old behaviour, a screenshot every time.
   let image = null;
-  if (config.alwaysLook || needsScreen(question)) {
+  if (config.alwaysLook || session.zone || needsScreen(question)) {
     const shot = await lookForJudith();
     if (shot.data) image = shot;
   }
@@ -571,14 +666,32 @@ async function ask(question, turn) {
   // Script lines go to the notch as soon as they are complete.
   let commands = 0;
   const reader = createScriptReader((command) => {
+    if (command.type === 'say') {
+      // Links become cards; the voice says their title, never the URL.
+      for (const link of findLinks(command.text, config.language)) addLink(link);
+      command = { ...command, text: speakable(command.text, config.language) };
+      if (!command.text) return;
+    }
+    // Coordinates of a zone screenshot → coordinates of the display.
+    if (command.type === 'mark') command = fromZone(command, session.frame);
     commands += 1;
     mark('firstLine');
     send(bubble, 'cmd', { ...command, turn });
   });
   currentReader = reader;
   try {
-    const result = await engine.ask(buildUserContent({ question, image: image && { mediaType: image.mediaType, data: image.data }, pointer: session.pointer }));
+    const result = await engine.ask(
+      buildUserContent({
+        question,
+        image: image && { mediaType: image.mediaType, data: image.data },
+        pointer: toZone(session.pointer, image ? session.frame : null),
+        zone: Boolean(image && session.frame),
+      }),
+    );
     reader.finish(result.streamed || result.text);
+    // A document or page was made but not opened: open the first one.
+    const creation = [...turnLinks.values()].find((link) => link.creation);
+    if (creation) openCreation(creation.url);
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
     journal({ outcome: 'answered', commands, firstVoiceMs: timeline?.voice ? timeline.voice - timeline.ask : null });
   } catch (error) {
@@ -706,8 +819,14 @@ app.whenReady().then(async () => {
     console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
     send(bubble, 'tool', { turn: activeTurn, label: describeTool(tool.name, tool.input, config.language) });
     trackTool(tool);
+    creationsIn(JSON.stringify(tool.input ?? {}));
+    // Claude Code "opens" a creation in its own app: Judith opens the browser.
+    if (tool.name === 'Artifact' && tool.input?.action === 'open' && isCreation(String(tool.input.url))) openCreation(tool.input.url);
   });
-  engine.on('tool-result', trackResult);
+  engine.on('tool-result', (result) => {
+    trackResult(result);
+    creationsIn(result.output);
+  });
   engine.on('log', (text) => console.error('[claude]', text.trim()));
   // Starts Claude Code and loads its context now, so the first real question is fast.
   warmingUp = engine
@@ -728,10 +847,14 @@ app.whenReady().then(async () => {
   if (!globalShortcut.register(config.shortcut, summon)) {
     console.error(`[judith] shortcut ${config.shortcut} is already taken`);
   }
+  if (config.zoneShortcut && !globalShortcut.register(config.zoneShortcut, summonWithZone)) {
+    console.error(`[judith] shortcut ${config.zoneShortcut} is already taken`);
+  }
 
   ipcMain.handle('judith:ask', (_e, question, turn) => (lastAsk = ask(String(question), Number(turn))));
   ipcMain.on('judith:cancel', (_e, turn) => cancelTurn(Number(turn)));
   ipcMain.on('judith:clear-screen', () => {
+    dropZone();
     clearMarks();
     scanning = false;
     send(overlay, 'scan', false);
@@ -746,6 +869,10 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('judith:speak-start', (_e, text) => streamVoice(String(text)));
   ipcMain.on('judith:close', hide);
+  ipcMain.on('judith:pick-zone', () => pickZone());
+  ipcMain.on('judith:zone-selected', (_e, zone) => settleZone?.(zone && ['x1', 'y1', 'x2', 'y2'].every((k) => Number.isFinite(zone[k])) ? zone : null));
+  ipcMain.on('judith:drop-zone', dropZone);
+  ipcMain.on('judith:open-link', (_e, url) => /^https?:\/\//i.test(String(url)) && shell.openExternal(String(url)));
   ipcMain.on('judith:summon', summon);
   ipcMain.on('judith:show', (_e, command) => show(command));
   ipcMain.on('judith:marked', () => send(bubble, 'marked'));

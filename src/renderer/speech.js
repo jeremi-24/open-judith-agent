@@ -5,7 +5,8 @@
 // Windows voices are the fallback when no audio comes.
 window.JudithVoice = (() => {
   const synth = window.speechSynthesis;
-  const PREFERRED = ['Julie', 'Hortense', 'Denise', 'Paul'];
+  // Female voices only: Judith keeps one voice, whatever happens.
+  const PREFERRED = ['Julie', 'Hortense', 'Denise'];
   let windowsVoice = null;
   let enabled = true;
   let onIdle = () => {};
@@ -21,7 +22,7 @@ window.JudithVoice = (() => {
 
   function pickWindowsVoice(lang) {
     const voices = synth.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
-    windowsVoice = PREFERRED.map((name) => voices.find((v) => v.name.includes(name))).find(Boolean) ?? voices[0] ?? null;
+    windowsVoice = PREFERRED.map((name) => voices.find((v) => v.name.includes(name))).find(Boolean) ?? voices.find((v) => !/Paul|Henri|Claude/.test(v.name)) ?? null;
   }
   pickWindowsVoice('fr');
   synth.addEventListener('voiceschanged', () => pickWindowsVoice('fr'));

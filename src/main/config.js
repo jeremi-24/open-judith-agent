@@ -11,6 +11,10 @@ export const DEFAULTS = {
   effort: 'low',
   language: 'fr',
   shortcut: 'Control+Alt+J',
+  // Summon Judith and draw the zone of the screen to explain first.
+  zoneShortcut: 'Control+Alt+Shift+J',
+  // Open what Claude creates (a document, a page, a design) in the browser.
+  openCreations: true,
   // false: Judith takes a screenshot only when the question needs it.
   alwaysLook: false,
   // After answering, listen again for a few seconds (a real conversation).

@@ -1,4 +1,5 @@
 import { desktopCapturer } from 'electron';
+import { zonePixels } from '../core/zone.js';
 
 // Long edge sent to the model. Bigger costs more tokens without helping the
 // model point more precisely (coordinates are fractions anyway).
@@ -23,11 +24,13 @@ function toSmall(image) {
 
 // Screenshot of one display, as base64 JPEG, plus a tiny raw copy to compare
 // with later. Never written to disk.
-export async function captureDisplay(display) {
+// zone: only that part of the display is sent (the tiny copy stays whole).
+export async function captureDisplay(display, zone = null) {
   const { width, height } = display.size;
   const scale = display.scaleFactor;
   let image = await grab(display, Math.round(width * scale), Math.round(height * scale));
   const small = toSmall(image);
+  if (zone) image = image.crop(zonePixels(zone, image.getSize()));
   const size = image.getSize();
   const ratio = MAX_EDGE / Math.max(size.width, size.height);
   if (ratio < 1) {

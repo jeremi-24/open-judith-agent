@@ -13,6 +13,8 @@ const question = document.getElementById('question');
 const bars = document.querySelector('.bars');
 const pauseButton = document.getElementById('pause');
 const approval = document.getElementById('approval');
+const links = document.getElementById('links');
+const zoneButton = document.getElementById('zone');
 const voice = window.JudithVoice;
 const api = window.judith;
 
@@ -53,7 +55,11 @@ function showState(state, info = {}) {
     textBox.classList.toggle('error', Boolean(info.error));
     messageTimer = setTimeout(() => notch.dataset.state === 'speaking' && conversation.state === 'idle' && showState('idle'), 4000);
   }
-  if (state === 'idle' && !message) ears.close();
+  if (state === 'idle') {
+    // The conversation is over: the zone the user drew goes with it.
+    api.dropZone();
+    if (!message) ears.close();
+  }
 }
 
 // ----- the answer: spoken sentences, steps and drawings -----
@@ -87,6 +93,21 @@ function resetAnswer() {
   textBox.innerHTML = '';
   textBox.classList.remove('error');
   steps.replaceChildren();
+}
+
+// A card for what Claude made (opened in the browser) or a site it mentions.
+// The same link again only updates its title.
+const LINK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2h5v5M14 2L7.5 8.5M12 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3.5"/></svg>';
+function showLink({ title, url }) {
+  let card = [...links.children].find((c) => c.dataset.url === url);
+  if (!card) {
+    card = Object.assign(document.createElement('button'), { type: 'button', className: 'link', title: url });
+    card.dataset.url = url;
+    card.innerHTML = `${LINK_ICON}<span></span>`;
+    card.addEventListener('click', () => api.openLink(url));
+    links.append(card);
+  }
+  card.querySelector('span').textContent = title;
 }
 
 function addStep(text) {
@@ -126,6 +147,7 @@ const conversation = createConversation({
   stopListening: () => ears.cancel(),
   ask: (text, turn) => {
     resetAnswer();
+    links.replaceChildren();
     spokenNow.length = 0;
     api.ask(text, turn);
   },
@@ -168,6 +190,10 @@ api.on('cmd', ({ turn, ...command }) => {
   run(command);
 });
 
+api.on('link', ({ turn, ...link }) => {
+  if (turn === conversation.turn) showLink(link);
+});
+api.on('zone', (on) => zoneButton.setAttribute('aria-pressed', String(Boolean(on))));
 api.on('answer', ({ turn }) => conversation.answered(turn));
 api.on('error', ({ turn, message }) => conversation.failed(turn, message));
 api.on('tool', ({ turn, label: text }) => {
@@ -198,6 +224,7 @@ question.addEventListener('input', (event) => {
 });
 
 document.getElementById('stop').addEventListener('click', () => ears.finish());
+zoneButton.addEventListener('click', () => api.pickZone());
 document.getElementById('close').addEventListener('click', () => conversation.cancel());
 document.getElementById('summon').addEventListener('click', () => api.summon());
 document.addEventListener('keydown', (event) => {

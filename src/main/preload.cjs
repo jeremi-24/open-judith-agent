@@ -3,9 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const EVENTS = [
   // notch
-  'focus', 'idle', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale', 'marked', 'speech',
-  // overlay
-  'mark', 'clear', 'scan', 'shift',
+  'focus', 'idle', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale', 'marked', 'speech', 'link',
+  // overlay (and the notch, for 'zone')
+  'mark', 'clear', 'scan', 'shift', 'select', 'zone',
   // board
   'board', 'note', 'visual', 'activity', 'clear-board',
 ];
@@ -30,6 +30,13 @@ contextBridge.exposeInMainWorld('judith', {
   close: () => ipcRenderer.send('judith:close'),
   approve: (id, allow) => ipcRenderer.send('judith:approve', { id, allow }),
   resize: (size) => ipcRenderer.send('judith:resize', size),
+  // The zone of the screen to explain: start drawing it, the drawn zone
+  // (fractions of the display, or null), forget it.
+  pickZone: () => ipcRenderer.send('judith:pick-zone'),
+  zoneSelected: (zone) => ipcRenderer.send('judith:zone-selected', zone),
+  dropZone: () => ipcRenderer.send('judith:drop-zone'),
+  // A document, page or site Judith made or mentioned.
+  openLink: (url) => ipcRenderer.send('judith:open-link', url),
   // board
   openPath: (path) => ipcRenderer.send('judith:open-path', path),
   preview: (path) => ipcRenderer.send('judith:preview', path),
