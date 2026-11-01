@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:">
+<title>Judith</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="bubble.css">
+<script src="bubble.js" defer></script>
+</head>
+<body>
+<main class="card" data-state="idle">
+  <header>
+    <svg class="avatar" viewBox="0 0 64 64" role="img" aria-label="Judith">
+      <defs><linearGradient id="sig" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8f7cff"/><stop offset="1" stop-color="#5cb8ff"/></linearGradient></defs>
+      <rect width="64" height="64" rx="18" fill="url(#sig)"/>
+      <path d="M6 64C6 40 18 26 32 26S58 40 58 64Z" fill="#faf9ff"/>
+      <g fill="none" stroke="#24203a" stroke-width="3.2"><circle cx="23" cy="44" r="7"/><circle cx="41" cy="44" r="7"/><path d="M30 44h4M16 43l-5-2M48 43l5-2"/></g>
+      <circle class="eye" cx="23" cy="44" r="2" fill="#24203a"/><circle class="eye" cx="41" cy="44" r="2" fill="#24203a"/>
+    </svg>
+    <div class="who">
+      <span class="name">Judith</span>
+      <span class="status" id="status">Je t'écoute</span>
+    </div>
+    <div class="mode" role="group" aria-label="Mode">
+      <button type="button" data-mode="show" aria-pressed="true">Montrer</button>
+      <button type="button" data-mode="act" aria-pressed="false">Agir</button>
+    </div>
+    <button type="button" class="close" id="close" aria-label="Fermer">
+      <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1L1 9"/></svg>
+    </button>
+  </header>
+
+  <section class="answer" id="answer" aria-live="polite" hidden></section>
+  <ol class="steps" id="steps" hidden></ol>
+
+  <form id="form">
+    <label class="sr-only" for="question">Ta question</label>
+    <textarea id="question" rows="1" placeholder="Demande-moi ce que tu vois à l'écran…"></textarea>
+    <button type="submit" class="send" aria-label="Envoyer">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/></svg>
+    </button>
+  </form>
+</main>
+</body>
+</html>

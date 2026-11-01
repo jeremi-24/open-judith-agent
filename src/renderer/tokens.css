@@ -1,0 +1,20 @@
+/* Judith brand tokens (docs: "Judith Agent Identity", direction 3 · Bulle) */
+:root {
+  --iris: #8f7cff;
+  --sky: #5cb8ff;
+  --deep-iris: #6b57e8;
+  --blush: #ff8fb8;
+  --mint: #3ddc97;
+  --lemon: #ffd84d;
+  --pearl: #faf9ff;
+  --lilac: #f0edff;
+  --cloud: #eaf5ff;
+  --line: #e7e4f5;
+  --dusk: #6a6585;
+  --ink: #24203a;
+  --signature: linear-gradient(135deg, var(--iris), var(--sky));
+
+  --font-title: 'Outfit', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --font-ui: 'Plus Jakarta Sans', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+}

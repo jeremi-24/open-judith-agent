@@ -1,0 +1,155 @@
+import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron';
+import { join } from 'node:path';
+import { configPath, loadConfig } from './config.js';
+import { captureDisplay } from './capture.js';
+import { BUBBLE_WIDTH, createBubble, createOverlay } from './windows.js';
+import { ClaudeCodeEngine } from '../engine/claude-code.js';
+import { buildSystemPrompt, buildUserContent } from '../core/prompt.js';
+import { extractAnnotations, toPixels, visibleText } from '../core/annotations.js';
+
+if (!app.requestSingleInstanceLock()) app.quit();
+
+const config = loadConfig();
+const iconPath = join(import.meta.dirname, '..', '..', 'assets', 'icon.png');
+let bubble, overlay, tray, engine, warmingUp;
+
+// The screenshot taken when Judith is summoned, before her bubble appears.
+let session = { display: null, image: null };
+
+function send(win, event, data) {
+  if (win && !win.isDestroyed()) win.webContents.send(`judith:${event}`, data);
+}
+
+const cursorDisplay = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+
+async function summon() {
+  const display = cursorDisplay();
+  clearMarks();
+  let image = null;
+  try {
+    image = await captureDisplay(display);
+  } catch (error) {
+    send(bubble, 'error', `Je n'arrive pas à voir ton écran : ${error.message}`);
+  }
+  session = { display, image };
+
+  const { x, y, width } = display.workArea;
+  bubble.setPosition(Math.round(x + (width - BUBBLE_WIDTH) / 2), y + 12);
+  bubble.show();
+  bubble.focus();
+  send(bubble, 'focus');
+}
+
+function hide() {
+  bubble.hide();
+  clearMarks();
+}
+
+function drawMarks(marks) {
+  const { display } = session;
+  if (!marks.length || !display) return;
+  const { bounds } = display;
+  const b = bubble.getBounds();
+  overlay.setBounds(bounds);
+  send(overlay, 'marks', {
+    marks: marks.map((m) => toPixels(m, bounds)),
+    anchor: { x: b.x - bounds.x + b.width / 2, y: b.y - bounds.y + b.height - 16 },
+  });
+  overlay.showInactive();
+}
+
+function clearMarks() {
+  send(overlay, 'clear');
+  overlay?.hide();
+}
+
+async function ask(question) {
+  await warmingUp;
+  const display = session.display ?? cursorDisplay();
+  // The first question uses the summon screenshot; follow-ups look again
+  // (Judith's own windows are excluded from captures).
+  const image = session.image ?? (await captureDisplay(display).catch(() => null));
+  session = { display, image: null };
+
+  clearMarks();
+  send(bubble, 'state', 'thinking');
+  try {
+    const result = await engine.ask(buildUserContent({ question, image }));
+    const { text, steps, marks } = extractAnnotations(result.text);
+    send(bubble, 'answer', { text, steps, durationMs: result.durationMs });
+    drawMarks(marks);
+  } catch (error) {
+    send(bubble, 'error', error.message);
+  }
+}
+
+function setMode(mode) {
+  config.mode = mode;
+  engine.setMode(mode);
+  send(bubble, 'mode', mode);
+  buildTrayMenu();
+}
+
+function newConversation() {
+  engine.restart();
+  hide();
+}
+
+function buildTrayMenu() {
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: `Demander à Judith (${config.shortcut})`, click: summon },
+      { type: 'separator' },
+      { label: 'Montrer seulement', type: 'radio', checked: config.mode === 'show', click: () => setMode('show') },
+      { label: 'Montrer et agir', type: 'radio', checked: config.mode === 'act', click: () => setMode('act') },
+      { type: 'separator' },
+      { label: 'Nouvelle conversation', click: newConversation },
+      { label: 'Ouvrir la configuration', click: () => shell.openPath(configPath()) },
+      { type: 'separator' },
+      { label: 'Quitter', role: 'quit' },
+    ]),
+  );
+}
+
+app.whenReady().then(() => {
+  bubble = createBubble();
+  overlay = createOverlay();
+
+  engine = new ClaudeCodeEngine({
+    claudePath: config.claudePath,
+    cwd: config.workingDirectory,
+    model: config.model,
+    mode: config.mode,
+    systemPrompt: buildSystemPrompt({ language: config.language }),
+  });
+  engine.on('delta', (text) => send(bubble, 'delta', visibleText(text)));
+  engine.on('log', (text) => console.error('[claude]', text.trim()));
+  // Starts Claude Code and loads its context now, so the first real question is fast.
+  warmingUp = engine.ask([{ type: 'text', text: 'Réponds seulement : prête.' }]).catch((error) => {
+    console.error('[judith] warm-up failed:', error.message);
+  });
+
+  tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }));
+  tray.setToolTip('Judith');
+  tray.on('click', summon);
+  buildTrayMenu();
+
+  if (!globalShortcut.register(config.shortcut, summon)) {
+    console.error(`[judith] shortcut ${config.shortcut} is already taken`);
+  }
+
+  ipcMain.handle('judith:ask', (_e, question) => ask(String(question)));
+  ipcMain.on('judith:close', hide);
+  ipcMain.on('judith:mode', (_e, mode) => setMode(mode));
+  ipcMain.on('judith:resize', (_e, height) => {
+    bubble.setSize(BUBBLE_WIDTH, Math.min(640, Math.max(120, Math.ceil(height))));
+  });
+  bubble.webContents.on('did-finish-load', () => send(bubble, 'mode', config.mode));
+});
+
+app.on('second-instance', summon);
+app.on('window-all-closed', () => {}); // lives in the tray
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  engine?.stop();
+});
