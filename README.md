@@ -31,7 +31,8 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
 ```
 
 - **Talk to her**: the shortcut opens the notch and listens. Stop talking and she
-  answers out loud. Speech-to-text runs locally (Whisper), so does her voice (Windows voices).
+  answers out loud. Speech-to-text runs locally (Whisper), and so does her neural voice
+  (Piper "Siwis"): no cloud, no API key.
 - **She decides whether to show or to do**: "where is the export button?" → she circles it.
   "open VLC" → she opens it. Opening apps, sites and folders is instant; editing a file
   or running a command asks you first, right in the notch.
@@ -77,6 +78,8 @@ Judith reads `config.json` in her user data folder
   so point it where you usually run `claude`. In JSON, write paths with `/` or `\\`.
 - `voiceInput`: listen as soon as Judith is summoned. The Whisper model (~80 MB) is
   downloaded once on first launch, then everything stays offline.
+- `voice`: `siwis` (local neural voice, ~65 MB downloaded once) or `windows`
+  (the system voices, more robotic). `voiceSpeed`: 1 = normal.
 - `hideFromScreenRecordings`: keep `true` for privacy; set `false` to film demos with OBS.
 
 ### How Judith acts
@@ -114,6 +117,14 @@ JUDITH_DEMO="Où est le bouton Démarrer ?" JUDITH_DEMO_SHOT=shot.jpg npm start
 Screenshots are taken only when you press the shortcut, are sent to Claude through
 your own Claude Code, and are never written to disk. Judith's own windows are excluded
 from captures.
+
+## Credits
+
+- Voice: [Piper](https://github.com/rhasspy/piper) `fr_FR-siwis-medium`, trained on the
+  [SIWIS French Speech Synthesis Database](https://datashare.is.ed.ac.uk/handle/10283/2353)
+  (CC BY 4.0), run with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0).
+- Speech recognition: [Whisper](https://github.com/openai/whisper) through
+  [Transformers.js](https://github.com/huggingface/transformers.js).
 
 ## License
 

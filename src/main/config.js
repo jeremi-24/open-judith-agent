@@ -12,6 +12,9 @@ export const DEFAULTS = {
   // Listen to the microphone as soon as Judith is summoned.
   voiceInput: true,
   speechModel: 'onnx-community/whisper-base',
+  // Judith's voice: a local neural voice, or "windows" for the system voices.
+  voice: 'siwis',
+  voiceSpeed: 1.05,
   // false = Judith shows up in screen recordings (handy to film demos).
   hideFromScreenRecordings: true,
 };

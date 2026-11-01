@@ -1,9 +1,11 @@
 import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, session as sessions, shell, Tray } from 'electron';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fork } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
 import { configPath, loadConfig } from './config.js';
+import { ensureVoice } from './models.js';
 import { captureDisplay } from './capture.js';
 import { BUBBLE_WIDTH, createBubble, createOverlay, setCaptureProtection } from './windows.js';
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
@@ -94,6 +96,56 @@ function startSpeech() {
     else job?.resolve(message.text);
   });
   speech.on('error', (error) => console.error('[judith] speech worker:', error.message));
+}
+
+// Judith's neural voice, in its own process (see tts-process.js).
+let tts = null;
+let ttsReady = false;
+let ttsJob = 0;
+const ttsJobs = new Map();
+async function startVoice() {
+  if (!config.voice || config.voice === 'windows') return;
+  try {
+    const voice = await ensureVoice(config.voice, join(app.getPath('userData'), 'models'));
+    tts = fork(join(import.meta.dirname, 'tts-process.js'), [], {
+      serialization: 'advanced', // typed arrays cross the pipe as they are
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        JUDITH_VOICE: JSON.stringify({ path: voice.path, model: voice.model, speed: config.voiceSpeed }),
+      },
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+      windowsHide: true,
+    });
+    tts.on('message', (message) => {
+      if (message.ready) {
+        ttsReady = true;
+        console.log(`[judith] voice ${config.voice} ready`);
+        return;
+      }
+      const job = ttsJobs.get(message.id);
+      ttsJobs.delete(message.id);
+      if (message.error) job?.reject(new Error(message.error));
+      // Copy: Electron's IPC refuses the externally backed array we receive.
+      else job?.resolve({ samples: new Float32Array(message.samples), sampleRate: message.sampleRate });
+    });
+    tts.on('exit', (code) => {
+      ttsReady = false;
+      if (code) console.error(`[judith] voice process stopped (${code}), using Windows voices`);
+    });
+  } catch (error) {
+    console.error(`[judith] voice ${config.voice} unavailable, using Windows voices: ${error.message}`);
+  }
+}
+
+function speak(text) {
+  if (!tts || !ttsReady) return Promise.resolve(null); // the notch falls back to Windows voices
+  const id = ++ttsJob;
+  if (process.env.JUDITH_DEMO) console.log('[judith] says', JSON.stringify(text.slice(0, 50)));
+  return new Promise((resolve, reject) => {
+    ttsJobs.set(id, { resolve, reject });
+    tts.send({ id, text });
+  });
 }
 
 function transcribe(audio) {
@@ -223,6 +275,7 @@ app.whenReady().then(async () => {
   sessions.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowMedia(permission)));
   sessions.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
   startSpeech();
+  startVoice();
 
   setCaptureProtection(config.hideFromScreenRecordings);
   bubble = createBubble();
@@ -256,16 +309,21 @@ app.whenReady().then(async () => {
       '--permission-prompt-tool', 'mcp__judith__approve',
     ],
   });
-  engine.on('delta', (text) => send(bubble, 'delta', visibleText(text)));
+  // The warm-up answer stays silent: it never reaches the notch.
+  let warm = false;
+  engine.on('delta', (text) => warm && send(bubble, 'delta', visibleText(text)));
   engine.on('tool', ({ name, input }) => {
     console.log(`[judith] tool ${name} ${JSON.stringify(input).slice(0, 120)}`);
     send(bubble, 'tool', describeTool(name, input, config.language));
   });
   engine.on('log', (text) => console.error('[claude]', text.trim()));
   // Starts Claude Code and loads its context now, so the first real question is fast.
-  warmingUp = engine.ask([{ type: 'text', text: 'Réponds seulement : prête.' }]).catch((error) => {
-    console.error('[judith] warm-up failed:', error.message);
-  });
+  warmingUp = engine
+    .ask([{ type: 'text', text: 'Réponds seulement : prête.' }])
+    .catch((error) => console.error('[judith] warm-up failed:', error.message))
+    .finally(() => {
+      warm = true;
+    });
 
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }));
   tray.setToolTip('Judith');
@@ -278,6 +336,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('judith:ask', (_e, question) => ask(String(question)));
   ipcMain.handle('judith:transcribe', (_e, audio) => transcribe(audio));
+  ipcMain.handle('judith:speak', (_e, text) => speak(String(text)));
   ipcMain.on('judith:close', hide);
   ipcMain.on('judith:approve', (_e, { id, allow }) => settleApproval(id, allow === true));
   ipcMain.on('judith:resize', (_e, size) => {
@@ -323,4 +382,5 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   engine?.stop();
   speech?.terminate();
+  tts?.kill();
 });
