@@ -9,7 +9,6 @@ export const DEFAULTS = {
   model: 'haiku',
   language: 'fr',
   shortcut: 'Control+Alt+J',
-  mode: 'show',
   // false = Judith shows up in screen recordings (handy to film demos).
   hideFromScreenRecordings: true,
 };

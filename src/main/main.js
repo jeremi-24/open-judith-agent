@@ -1,20 +1,36 @@
 import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { startBridge } from './bridge.js';
 import { configPath, loadConfig } from './config.js';
 import { captureDisplay } from './capture.js';
 import { BUBBLE_WIDTH, createBubble, createOverlay, setCaptureProtection } from './windows.js';
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
-import { buildSystemPrompt, buildUserContent } from '../core/prompt.js';
+import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../core/prompt.js';
 import { extractAnnotations, toPixels, visibleText } from '../core/annotations.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const config = loadConfig();
-const iconPath = join(import.meta.dirname, '..', '..', 'assets', 'icon.png');
+const root = join(import.meta.dirname, '..', '..');
+const iconPath = join(root, 'assets', 'icon.png');
 let bubble, overlay, tray, engine, warmingUp;
 
-// The screenshot taken when Judith is summoned, before her bubble appears.
+// Tools Judith may use without asking: opening things and reading.
+// Everything else (editing files, running commands) goes through the notch.
+const ALLOWED_TOOLS = [
+  'mcp__judith__open_app',
+  'mcp__judith__find_apps',
+  'mcp__judith__open_url',
+  'mcp__judith__open_path',
+  'Read',
+  'Glob',
+  'Grep',
+  'WebSearch',
+  'WebFetch',
+];
+
+// The screenshot taken when Judith is summoned, before her notch appears.
 let session = { display: null, image: null };
 
 function send(win, event, data) {
@@ -104,8 +120,7 @@ function clearMarks() {
 async function ask(question) {
   await warmingUp;
   const display = session.display ?? cursorDisplay();
-  // The first question uses the summon screenshot; follow-ups look again
-  // (Judith's own windows are excluded from captures).
+  // The first question uses the summon screenshot; follow-ups look again.
   const image = session.image ?? (await look(display).catch(() => null));
   session = { display, image: null };
 
@@ -122,11 +137,32 @@ async function ask(question) {
   }
 }
 
-function setMode(mode) {
-  config.mode = mode;
-  engine.setMode(mode);
-  send(bubble, 'mode', mode);
-  buildTrayMenu();
+// Claude Code wants to edit a file or run a command: the notch asks the user.
+const approvals = new Map();
+let approvalId = 0;
+function requestApproval(tool, input) {
+  const id = ++approvalId;
+  console.log(`[judith] asks permission for ${tool}`);
+  if (!bubble.isVisible()) {
+    placeBubble(session.display ?? cursorDisplay(), bubble.getBounds());
+    bubble.showInactive();
+  }
+  send(bubble, 'approval', { id, ...describeApproval(tool, input, config.language) });
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => settleApproval(id, false), 120_000);
+    approvals.set(id, { resolve, timer });
+    const demo = process.env.JUDITH_DEMO_APPROVE;
+    if (demo) setTimeout(() => settleApproval(id, demo === 'yes'), 2500);
+  });
+}
+
+function settleApproval(id, allow) {
+  const pending = approvals.get(id);
+  if (!pending) return;
+  approvals.delete(id);
+  clearTimeout(pending.timer);
+  pending.resolve(allow);
+  send(bubble, 'approved', { id, allow });
 }
 
 function newConversation() {
@@ -138,10 +174,6 @@ function buildTrayMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: `Demander à Judith (${config.shortcut})`, click: summon },
-      { type: 'separator' },
-      { label: 'Montrer seulement', type: 'radio', checked: config.mode === 'show', click: () => setMode('show') },
-      { label: 'Montrer et agir', type: 'radio', checked: config.mode === 'act', click: () => setMode('act') },
-      { type: 'separator' },
       { label: 'Nouvelle conversation', click: newConversation },
       { label: 'Ouvrir la configuration', click: () => shell.openPath(configPath()) },
       { type: 'separator' },
@@ -150,19 +182,44 @@ function buildTrayMenu() {
   );
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   setCaptureProtection(config.hideFromScreenRecordings);
   bubble = createBubble();
   overlay = createOverlay();
+
+  // Judith's tools run in an MCP server that Claude Code starts. Electron
+  // itself runs it as plain Node, so no separate Node install is needed.
+  const bridge = await startBridge({ onApprove: requestApproval });
+  const mcpConfig = join(app.getPath('userData'), 'mcp.json');
+  writeFileSync(
+    mcpConfig,
+    JSON.stringify({
+      mcpServers: {
+        judith: {
+          command: process.execPath,
+          args: [join(root, 'src', 'mcp', 'server.js')],
+          env: { ELECTRON_RUN_AS_NODE: '1', JUDITH_BRIDGE: bridge.url, JUDITH_TOKEN: bridge.token },
+        },
+      },
+    }),
+  );
 
   engine = new ClaudeCodeEngine({
     claudePath: config.claudePath,
     cwd: config.workingDirectory,
     model: config.model,
-    mode: config.mode,
     systemPrompt: buildSystemPrompt({ language: config.language }),
+    extraArgs: [
+      '--mcp-config', mcpConfig,
+      '--allowedTools', ALLOWED_TOOLS.join(','),
+      '--permission-prompt-tool', 'mcp__judith__approve',
+    ],
   });
   engine.on('delta', (text) => send(bubble, 'delta', visibleText(text)));
+  engine.on('tool', ({ name, input }) => {
+    console.log(`[judith] tool ${name} ${JSON.stringify(input).slice(0, 120)}`);
+    send(bubble, 'tool', describeTool(name, input, config.language));
+  });
   engine.on('log', (text) => console.error('[claude]', text.trim()));
   // Starts Claude Code and loads its context now, so the first real question is fast.
   warmingUp = engine.ask([{ type: 'text', text: 'Réponds seulement : prête.' }]).catch((error) => {
@@ -180,19 +237,19 @@ app.whenReady().then(() => {
 
   ipcMain.handle('judith:ask', (_e, question) => ask(String(question)));
   ipcMain.on('judith:close', hide);
-  ipcMain.on('judith:mode', (_e, mode) => setMode(mode));
+  ipcMain.on('judith:approve', (_e, { id, allow }) => settleApproval(id, allow === true));
   ipcMain.on('judith:resize', (_e, size) => {
     const width = Math.min(600, Math.max(BUBBLE_WIDTH, Math.ceil(size?.width ?? 0)));
     const height = Math.min(400, Math.max(48, Math.ceil(size?.height ?? 0)));
     placeBubble(session.display ?? cursorDisplay(), { width, height });
   });
-  bubble.webContents.on('did-finish-load', () => send(bubble, 'mode', config.mode));
   bubble.webContents.on('console-message', (event) => {
     if (event.level === 'error' || event.level === 'warning') console.error('[bubble]', event.message);
   });
 
   // Dev: JUDITH_DEMO="question" summons Judith and asks it at launch.
-  // With JUDITH_DEMO_SHOT=file.png it also saves a screenshot and quits.
+  // With JUDITH_DEMO_SHOT=file.jpg it also saves a screenshot and quits.
+  // JUDITH_DEMO_APPROVE=yes|no answers permission requests automatically.
   if (process.env.JUDITH_DEMO) {
     warmingUp.then(async () => {
       await summon();

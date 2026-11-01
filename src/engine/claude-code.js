@@ -14,18 +14,11 @@ export function findClaude(configured) {
   return existsSync(native) ? native : 'claude';
 }
 
-// "show": read-only (in -p mode, tools that need approval are refused).
-// "act": Claude Code may also edit files.
-const PERMISSIONS = {
-  show: ['--permission-mode', 'default'],
-  act: ['--permission-mode', 'acceptEdits'],
-};
-
 export class ClaudeCodeEngine extends EventEmitter {
-  constructor({ claudePath, cwd, model, systemPrompt, mode = 'show' }) {
+  // extraArgs: more Claude Code flags (MCP servers, allowed tools…).
+  constructor({ claudePath, cwd, model, systemPrompt, extraArgs = [] }) {
     super();
-    this.options = { claudePath: findClaude(claudePath), cwd, model, systemPrompt };
-    this.mode = mode;
+    this.options = { claudePath: findClaude(claudePath), cwd, model, systemPrompt, extraArgs };
     this.proc = null;
     this.pending = null;
   }
@@ -36,16 +29,16 @@ export class ClaudeCodeEngine extends EventEmitter {
 
   start() {
     if (this.proc) return;
-    const { claudePath, cwd, model, systemPrompt } = this.options;
+    const { claudePath, cwd, model, systemPrompt, extraArgs } = this.options;
     const args = [
       '-p',
       '--input-format', 'stream-json',
       '--output-format', 'stream-json',
       '--verbose',
       '--include-partial-messages',
-      ...PERMISSIONS[this.mode],
       ...(model ? ['--model', model] : []),
       ...(systemPrompt ? ['--append-system-prompt', systemPrompt] : []),
+      ...extraArgs,
     ];
 
     const proc = spawn(claudePath, args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -71,12 +64,6 @@ export class ClaudeCodeEngine extends EventEmitter {
     });
   }
 
-  setMode(mode) {
-    if (!PERMISSIONS[mode] || mode === this.mode) return;
-    this.mode = mode;
-    this.restart();
-  }
-
   // A new process is also a new conversation.
   restart() {
     this.stop();
@@ -96,10 +83,16 @@ export class ClaudeCodeEngine extends EventEmitter {
     if (event.type === 'stream_event' && event.event?.type === 'content_block_delta' && event.event.delta?.type === 'text_delta') {
       pending.text += event.event.delta.text;
       this.emit('delta', pending.text);
-    } else if (event.type === 'assistant' && !pending.text) {
-      // Fallback when partial messages are not streamed.
-      pending.text = (event.message?.content ?? []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-      this.emit('delta', pending.text);
+    } else if (event.type === 'assistant') {
+      const blocks = event.message?.content ?? [];
+      for (const block of blocks) {
+        if (block.type === 'tool_use') this.emit('tool', { name: block.name, input: block.input ?? {} });
+      }
+      if (!pending.text) {
+        // Fallback when partial messages are not streamed.
+        pending.text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('');
+        if (pending.text) this.emit('delta', pending.text);
+      }
     } else if (event.type === 'result') {
       this.pending = null;
       if (event.is_error) {

@@ -99,9 +99,37 @@ document.getElementById('close').addEventListener('click', () => {
 voiceButton.addEventListener('click', () => setVoice(!voice.enabled));
 caption.addEventListener('click', () => answerText && showCaption(answerText, { full: true }));
 
-for (const button of document.querySelectorAll('.mode button')) {
-  button.addEventListener('click', () => window.judith.setMode(button.dataset.mode));
+// Approval card: Judith wants to edit a file or run a command.
+const approval = document.getElementById('approval');
+let approvalId = null;
+function answerApproval(allow) {
+  if (approvalId === null) return;
+  window.judith.approve(approvalId, allow);
+  approvalId = null;
+  approval.hidden = true;
 }
+document.getElementById('allow').addEventListener('click', () => answerApproval(true));
+document.getElementById('deny').addEventListener('click', () => answerApproval(false));
+window.judith.on('approval', ({ id, title, detail }) => {
+  approvalId = id;
+  document.getElementById('approval-title').textContent = `${title} ?`;
+  document.getElementById('approval-detail').textContent = detail;
+  approval.hidden = false;
+  if (voice.enabled) voice.feed(`${title} ?`, true);
+  document.getElementById('allow').focus();
+});
+window.judith.on('approved', ({ id }) => {
+  if (id === approvalId) {
+    approvalId = null;
+    approval.hidden = true;
+  }
+});
+
+// While Judith uses a tool, the status says what she is doing.
+window.judith.on('tool', (label) => {
+  setState('thinking');
+  status.textContent = `${label}…`;
+});
 
 window.judith.on('focus', () => {
   setState('idle');
@@ -125,11 +153,6 @@ window.judith.on('answer', ({ text, steps: list }) => {
 window.judith.on('error', (message) => {
   setState('idle');
   showCaption(message, { error: true, full: true });
-});
-window.judith.on('mode', (mode) => {
-  for (const button of document.querySelectorAll('.mode button')) {
-    button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
-  }
 });
 
 try {
