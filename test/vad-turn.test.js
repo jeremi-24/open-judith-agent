@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createVad } from '../src/core/vad.js';
-import { isIncomplete } from '../src/core/turn.js';
+import { isGoodbye, isIncomplete } from '../src/core/turn.js';
 
 // Feeds a sequence of [level, durationMs] and returns the events.
 function run(vad, steps, frameMs = 64) {
@@ -46,5 +46,14 @@ test('an unfinished sentence waits for the rest', () => {
   }
   for (const t of ['Ouvre VLC.', 'Où est le bouton Exporter ?', 'Ouvre VLC', 'Merci Judith', '']) {
     assert.ok(!isIncomplete(t), t);
+  }
+});
+
+test('a goodbye ends the conversation, a request does not', () => {
+  for (const bye of ['Arrête.', 'Allez, salut.', 'Bonsoir. Bonsoir.', "Merci, c'est bon.", 'Stop', "C'est tout pour aujourd'hui", 'À plus Judith !', 'Ça suffit, merci.', "Non, c'est bon, j'ai fini."]) {
+    assert.ok(isGoodbye(bye), bye);
+  }
+  for (const ask of ['Arrête de regarder en boucle.', 'Ok merci.', "Explique-moi ça", "C'est quoi ça ?", 'Salut Judith, ouvre VLC', 'Non, je veux dire éteins l\'écoute en temps réel']) {
+    assert.ok(!isGoodbye(ask), ask);
   }
 });

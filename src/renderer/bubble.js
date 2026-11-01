@@ -223,10 +223,16 @@ question.addEventListener('input', (event) => {
   if (event.isTrusted && conversation.state === 'listening') ears.cancel();
 });
 
-document.getElementById('stop').addEventListener('click', () => ears.finish());
+// Stop: the conversation is over, Judith goes back to rest.
+document.getElementById('stop').addEventListener('click', () => conversation.cancel());
 zoneButton.addEventListener('click', () => api.pickZone());
 document.getElementById('close').addEventListener('click', () => conversation.cancel());
-document.getElementById('summon').addEventListener('click', () => api.summon());
+// At rest, the whole pill summons Judith; its zone button summons her with a zone.
+notch.addEventListener('click', (event) => {
+  if (notch.dataset.state !== 'none') return;
+  if (event.target.closest('#idle-zone')) api.summonZone();
+  else api.summon();
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') conversation.cancel();
 });
@@ -262,7 +268,9 @@ api.on('approved', ({ id }) => {
 });
 
 // The window hugs the notch: transparent pixels around it would catch clicks.
+// At rest it is a pill a little below the top edge, with a tighter margin.
 new ResizeObserver(() => {
-  api.resize({ width: notch.offsetWidth + 40, height: notch.offsetHeight + 22 });
+  const atRest = notch.dataset.state === 'none';
+  api.resize({ width: notch.offsetWidth + (atRest ? 16 : 40), height: notch.offsetHeight + (atRest ? 12 : 22), atRest });
 }).observe(notch);
 showState('idle');

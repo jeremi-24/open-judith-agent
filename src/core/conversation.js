@@ -10,7 +10,7 @@
 // anything: they report events here and execute the effects they are given.
 // Each question gets a turn number; late events from a cancelled turn are
 // ignored. That is what prevents loops, double answers and mic/voice fights.
-import { isIncomplete } from './turn.js';
+import { isGoodbye, isIncomplete } from './turn.js';
 
 // fx = {
 //   listen({ followUp, continuation, bargeIn }) / finishListening() / stopListening()
@@ -108,12 +108,19 @@ export function createConversation(fx, options = {}) {
     },
 
     // The ears finished: text heard ('' when nothing).
-    heard(text, { followUp = false } = {}) {
+    heard(text, { followUp = false, bargeIn = false } = {}) {
       if (state !== 'listening') return;
       const full = [prefix, String(text ?? '').trim()].filter(Boolean).join(' ');
       if (!text) {
         if (prefix) return think(prefix);
         return set('idle', followUp ? {} : { message: "Je n'ai rien entendu." });
+      }
+      // "Arrête.", "Allez, salut." after an answer or over Judith's voice: the
+      // conversation is over, nothing to ask. (Right after the shortcut,
+      // "Salut" is a hello.)
+      if ((followUp || bargeIn) && isGoodbye(full)) {
+        fx.clearScreen();
+        return set('idle', { message: 'À plus !' });
       }
       // A pause in the middle of a sentence: keep listening for the rest, once.
       if (isIncomplete(full) && !prefix) {

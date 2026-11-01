@@ -40,26 +40,38 @@ html, body {
 .notch[data-mood="think"] .m-think,
 .notch[data-mood="explain"] .m-explain { display: inline; }
 
-/* ----- idle: "Judith ●" ----- */
-.idle { display: none; }
+/* ----- at rest: a small pill, away from the top edge (it hides as little
+   as possible); hovered, it opens to "Judith ●" and the zone button ----- */
+.idle, .idle-zone { display: none; }
 .notch[data-state="none"] {
-  width: 150px;
-  min-height: 40px;
-  height: 40px;
-  padding: 0 14px;
-  border-radius: 0 0 20px 20px;
+  width: 58px;
+  min-height: 34px;
+  height: 34px;
+  margin-bottom: 12px;
+  padding: 0 10px 0 6px;
+  border-radius: 999px;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   cursor: pointer;
-  box-shadow: 0 10px 26px -10px rgb(0 0 0 / 0.6);
+  box-shadow: 0 6px 16px -8px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.06);
 }
-.notch[data-state="none"] .avatar { width: 26px; height: 26px; margin: 0; border-radius: 7px; }
+.notch[data-state="none"]:hover { width: 168px; }
+.notch[data-state="none"] .avatar { width: 24px; height: 24px; margin: 0; border-radius: 50%; }
 .notch[data-state="none"] .idle {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
   border: 0; background: transparent; padding: 0; color: #f4f2ff; cursor: pointer;
-  font: 700 15px var(--font-title);
+  font: 700 14px var(--font-title);
 }
+.idle-name { display: none; }
+.notch[data-state="none"]:hover .idle-name { display: inline; }
 .idle-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+.notch[data-state="none"]:hover .idle-zone {
+  display: flex; align-items: center; justify-content: center; flex: none;
+  width: 26px; height: 26px; margin-left: auto; padding: 0;
+  border: 0; border-radius: 50%; background: rgb(255 255 255 / 0.08); cursor: pointer;
+}
+.idle-zone svg { width: 13px; height: 13px; fill: none; stroke: #c9c0ff; stroke-width: 1.6; stroke-linecap: round; }
+.idle-zone:hover { background: rgb(143 124 255 / 0.3); }
 .notch[data-state="none"] .body, .notch[data-state="none"] .progress { display: none; }
 
 /* ----- body ----- */
@@ -106,8 +118,8 @@ html, body {
   align-items: center; justify-content: center; gap: 4px;
 }
 .notch[data-state="listening"] .stop { display: flex; background: rgb(92 184 255 / 0.16); }
-/* X: cancel the conversation from anywhere, whoever is talking. */
-.notch[data-state="listening"] .close,
+/* X: cancel the conversation while Judith thinks or talks. Listening, the
+   stop button does it (one button, one meaning: the conversation is over). */
 .notch[data-state="thinking"] .close { display: flex; width: 36px; height: 36px; }
 .stop span { width: 14px; height: 14px; border-radius: 4px; background: var(--sky); }
 

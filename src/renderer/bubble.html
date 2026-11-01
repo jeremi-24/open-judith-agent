@@ -47,9 +47,12 @@
     <g class="m m-explain"><path d="M196 30Q198 44 212 46Q198 48 196 62Q194 48 180 46Q194 44 196 30Z" fill="#FFFFFF"/></g>
   </svg>
 
-  <!-- Idle: a small "Judith ●" tab, click to summon -->
-  <button type="button" class="idle" id="summon" aria-label="Appeler Judith">
+  <!-- At rest: a small pill; hovered, "Judith ●" and the zone button. Click to summon. -->
+  <button type="button" class="idle" id="summon" aria-label="Appeler Judith" title="Parler à Judith (Ctrl+Alt+J)">
     <span class="idle-name">Judith</span><span class="idle-dot" aria-hidden="true"></span>
+  </button>
+  <button type="button" class="idle-zone" id="idle-zone" aria-label="Montrer une zone à Judith" title="Montrer une zone (Ctrl+Alt+Maj+J)">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 5V2.5A1.5 1.5 0 0 1 2.5 1H5M11 1h2.5A1.5 1.5 0 0 1 15 2.5V5M15 11v2.5a1.5 1.5 0 0 1-1.5 1.5H11M5 15H2.5A1.5 1.5 0 0 1 1 13.5V11"/></svg>
   </button>
 
   <div class="body">
@@ -68,7 +71,7 @@
       <button type="button" class="round zone" id="zone" aria-label="Choisir la zone à expliquer" title="Choisir la zone à expliquer (Ctrl+Alt+Maj+J)" aria-pressed="false">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 5V2.5A1.5 1.5 0 0 1 2.5 1H5M11 1h2.5A1.5 1.5 0 0 1 15 2.5V5M15 11v2.5a1.5 1.5 0 0 1-1.5 1.5H11M5 15H2.5A1.5 1.5 0 0 1 1 13.5V11"/></svg>
       </button>
-      <button type="button" class="round stop" id="stop" aria-label="J'ai fini de parler"><span></span></button>
+      <button type="button" class="round stop" id="stop" aria-label="Arrêter la conversation" title="Arrêter la conversation"><span></span></button>
       <button type="button" class="round pause" id="pause" aria-label="Pause" aria-pressed="false"><span></span><span></span></button>
       <button type="button" class="round close" id="close" aria-label="Fermer">
         <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1L9 9M9 1L1 9"/></svg>

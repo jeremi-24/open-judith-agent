@@ -32,7 +32,7 @@ export function createBubble() {
   const win = new BrowserWindow({
     width: BUBBLE_WIDTH,
     height: 120,
-    minWidth: 100,
+    minWidth: 60,
     minHeight: 40,
     show: false,
     frame: false,

@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('judith', {
   marked: () => ipcRenderer.send('judith:marked'),
   timing: (step) => ipcRenderer.send('judith:timing', step),
   summon: () => ipcRenderer.send('judith:summon'),
+  summonZone: () => ipcRenderer.send('judith:summon-zone'),
   close: () => ipcRenderer.send('judith:close'),
   approve: (id, allow) => ipcRenderer.send('judith:approve', { id, allow }),
   resize: (size) => ipcRenderer.send('judith:resize', size),

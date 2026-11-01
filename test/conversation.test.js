@@ -151,3 +151,20 @@ test('an error ends the turn without blocking the next one', () => {
   c.summon();
   assert.equal(c.state, 'listening');
 });
+
+test('a goodbye puts Judith to rest without asking Claude', () => {
+  const { c, did } = setup();
+  c.summon();
+  c.heard('Allez, salut.', { followUp: true });
+  assert.equal(c.state, 'idle');
+  assert.equal(did('ask').length, 0);
+  assert.equal(did('clearScreen').length, 1);
+});
+
+test('right after the shortcut, "Salut" is a hello, not a goodbye', () => {
+  const { c, did } = setup();
+  c.summon();
+  c.heard('Salut');
+  assert.equal(c.state, 'thinking');
+  assert.equal(did('ask').length, 1);
+});

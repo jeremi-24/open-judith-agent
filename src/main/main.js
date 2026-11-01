@@ -118,6 +118,7 @@ async function summon() {
   session = { display, reference: null, pointer, zone: null, frame: null };
   send(overlay, 'zone', null);
 
+  bubbleAtRest = false; // the open notch is glued to the top edge
   placeBubble(display, bubble.getBounds());
   bubble.show();
   bubble.focus();
@@ -397,9 +398,13 @@ function speakLocal(text) {
 
 // ----- the notch -----
 // Glued to the very top of the screen, always centered.
+// At rest, a pill a few pixels below the top edge: what is right under
+// the edge (tabs, title bars) stays clickable.
+const REST_GAP = 6;
+let bubbleAtRest = true;
 function placeBubble(display, { width, height }) {
   const { x, y, width: screenWidth } = display.bounds;
-  bubble.setBounds({ x: Math.round(x + (screenWidth - width) / 2), y, width, height });
+  bubble.setBounds({ x: Math.round(x + (screenWidth - width) / 2), y: y + (bubbleAtRest ? REST_GAP : 0), width, height });
 }
 
 // Back to the small idle notch.
@@ -900,14 +905,16 @@ app.whenReady().then(async () => {
   ipcMain.on('judith:drop-zone', dropZone);
   ipcMain.on('judith:open-link', (_e, url) => /^https?:\/\//i.test(String(url)) && shell.openExternal(String(url)));
   ipcMain.on('judith:summon', summon);
+  ipcMain.on('judith:summon-zone', summonWithZone);
   ipcMain.on('judith:show', (_e, command) => show(command));
   ipcMain.on('judith:marked', () => send(bubble, 'marked'));
   // The notch reports the end of speech and the first spoken sentence.
   ipcMain.on('judith:timing', (_e, step) => (step === 'heard' ? (lastHeardAt = Date.now()) : mark(step)));
   ipcMain.on('judith:approve', (_e, { id, allow }) => settleApproval(id, allow === true));
   ipcMain.on('judith:resize', (_e, size) => {
-    const width = Math.min(720, Math.max(120, Math.ceil(size?.width ?? 0)));
+    const width = Math.min(720, Math.max(60, Math.ceil(size?.width ?? 0)));
     const height = Math.min(480, Math.max(40, Math.ceil(size?.height ?? 0)));
+    bubbleAtRest = size?.atRest === true;
     placeBubble(session.display ?? cursorDisplay(), { width, height });
   });
   ipcMain.on('judith:open-path', (_e, path) => existsSync(path) && shell.openPath(path));
