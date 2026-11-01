@@ -38,6 +38,18 @@ function drawRing(m) {
     const n = Object.assign(document.createElement('span'), { className: 'n', textContent: String(m.step) });
     label.append(n, document.createTextNode(m.label));
     labels.append(label);
+    avoidOverlap(label);
+  }
+}
+
+// Two marks close together would stack their labels: push the new one down.
+function avoidOverlap(label) {
+  const others = [...labels.children].filter((l) => l !== label);
+  for (let tries = 0; tries < 6; tries++) {
+    const r = label.getBoundingClientRect();
+    const hit = others.map((o) => o.getBoundingClientRect()).find((o) => r.left < o.right && o.left < r.right && r.top < o.bottom && o.top < r.bottom);
+    if (!hit) return;
+    label.style.top = `${hit.bottom + 6}px`;
   }
 }
 

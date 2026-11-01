@@ -48,11 +48,16 @@ async function summon() {
   }
   session = { display, image };
 
-  const { x, y, width } = display.workArea;
-  bubble.setPosition(Math.round(x + (width - BUBBLE_WIDTH) / 2), y + 12);
+  placeBubble(display, bubble.getBounds());
   bubble.show();
   bubble.focus();
   send(bubble, 'focus');
+}
+
+// The notch is glued to the very top of the screen, centered.
+function placeBubble(display, { width, height }) {
+  const { x, y, width: screenWidth } = display.bounds;
+  bubble.setBounds({ x: Math.round(x + (screenWidth - width) / 2), y, width, height });
 }
 
 function hide() {
@@ -68,7 +73,7 @@ function drawMarks(marks) {
   overlay.setBounds(bounds);
   send(overlay, 'marks', {
     marks: marks.map((m) => toPixels(m, bounds)),
-    anchor: { x: b.x - bounds.x + b.width / 2, y: b.y - bounds.y + b.height - 16 },
+    anchor: { x: b.x - bounds.x + b.width / 2, y: b.y - bounds.y + b.height - 20 },
   });
   overlay.showInactive();
 }
@@ -158,10 +163,15 @@ app.whenReady().then(() => {
   ipcMain.handle('judith:ask', (_e, question) => ask(String(question)));
   ipcMain.on('judith:close', hide);
   ipcMain.on('judith:mode', (_e, mode) => setMode(mode));
-  ipcMain.on('judith:resize', (_e, height) => {
-    bubble.setSize(BUBBLE_WIDTH, Math.min(640, Math.max(120, Math.ceil(height))));
+  ipcMain.on('judith:resize', (_e, size) => {
+    const width = Math.min(600, Math.max(BUBBLE_WIDTH, Math.ceil(size?.width ?? 0)));
+    const height = Math.min(400, Math.max(48, Math.ceil(size?.height ?? 0)));
+    placeBubble(session.display ?? cursorDisplay(), { width, height });
   });
   bubble.webContents.on('did-finish-load', () => send(bubble, 'mode', config.mode));
+  bubble.webContents.on('console-message', (event) => {
+    if (event.level === 'error' || event.level === 'warning') console.error('[bubble]', event.message);
+  });
 
   // Dev: JUDITH_DEMO="question" summons Judith and asks it at launch.
   // With JUDITH_DEMO_SHOT=file.png it also saves a screenshot and quits.
@@ -172,6 +182,7 @@ app.whenReady().then(() => {
       const shot = process.env.JUDITH_DEMO_SHOT;
       if (!shot) return;
       await wait(1500);
+      console.log('[judith] bubble', JSON.stringify(bubble.getBounds()));
       const image = await captureDisplay(session.display ?? cursorDisplay());
       writeFileSync(shot, Buffer.from(image.data, 'base64'));
       app.quit();

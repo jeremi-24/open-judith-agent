@@ -3,7 +3,8 @@ import { join } from 'node:path';
 
 const here = import.meta.dirname;
 const renderer = (file) => join(here, '..', 'renderer', file);
-export const BUBBLE_WIDTH = 440;
+// The compact notch (360 px) plus its two shoulders; it grows from there.
+export const BUBBLE_WIDTH = 388;
 
 const secure = {
   preload: join(here, 'preload.cjs'),
@@ -27,11 +28,14 @@ function hideFromCaptures(win) {
 export function createBubble() {
   const win = new BrowserWindow({
     width: BUBBLE_WIDTH,
-    height: 200,
+    height: 120,
+    minWidth: 100,
+    minHeight: 40,
     show: false,
     frame: false,
     transparent: true,
-    resizable: false,
+    // Must stay resizable, or Windows ignores setBounds; there is no frame to drag.
+    resizable: true,
     skipTaskbar: true,
     hasShadow: false,
     webPreferences: secure,

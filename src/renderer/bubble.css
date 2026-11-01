@@ -4,87 +4,130 @@ html, body {
   margin: 0;
   background: transparent;
   font-family: var(--font-ui);
-  color: var(--ink);
+  color: #fff;
   overflow: hidden;
   user-select: none;
 }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-/* Margin leaves room for the shadow inside the transparent window. */
-.card {
-  margin: 8px 12px 20px;
-  background: var(--pearl);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  box-shadow: 0 18px 40px -16px rgb(36 32 58 / 0.35), 0 2px 6px rgb(36 32 58 / 0.08);
-  padding: 12px 14px 14px;
+/* A real notch: glued to the top edge, square on top, round at the bottom,
+   with concave "shoulders" that melt into the edge of the screen. */
+.notch {
+  --notch: #14111d;
+  --shoulder: 14px;
+  position: relative;
+  width: 360px;
+  margin: 0 auto 12px;
+  padding: 10px 14px 12px;
+  background: var(--notch);
+  border-radius: 0 0 26px 26px;
+  box-shadow: 0 8px 14px -8px rgb(0 0 0 / 0.5);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  transition: width 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
+.notch::before,
+.notch::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: var(--shoulder);
+  height: var(--shoulder);
+}
+.notch::before { left: calc(-1 * var(--shoulder)); background: radial-gradient(circle at 0 100%, transparent var(--shoulder), var(--notch) calc(var(--shoulder) + 0.5px)); }
+.notch::after { right: calc(-1 * var(--shoulder)); background: radial-gradient(circle at 100% 100%, transparent var(--shoulder), var(--notch) calc(var(--shoulder) + 0.5px)); }
+.notch[data-state="thinking"], .notch[data-state="speaking"] { width: 420px; }
 
-header { display: flex; align-items: center; gap: 10px; }
-.avatar { width: 36px; height: 36px; flex: none; }
-.who { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-.name { font-family: var(--font-title); font-weight: 700; font-size: 16px; line-height: 20px; }
+header { display: flex; align-items: center; gap: 8px; height: 30px; }
+.avatar { width: 28px; height: 28px; flex: none; }
 .status {
+  flex: 1;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--deep-iris);
+  color: #c9c0ff;
+  white-space: nowrap;
 }
 
-.mode { display: flex; background: var(--lilac); border-radius: 999px; padding: 3px; }
+/* Voice wave, visible while Judith speaks. */
+.wave { display: none; align-items: center; gap: 3px; height: 16px; }
+.wave i { width: 3px; height: 6px; border-radius: 2px; background: var(--signature); animation: wave 0.9s ease-in-out infinite; }
+.wave i:nth-child(2) { animation-delay: 0.15s; }
+.wave i:nth-child(3) { animation-delay: 0.3s; }
+.wave i:nth-child(4) { animation-delay: 0.45s; }
+.wave i:nth-child(5) { animation-delay: 0.6s; }
+.notch.talking .wave { display: flex; }
+@keyframes wave { 50% { height: 16px; } }
+
+.mode { display: flex; background: rgb(255 255 255 / 0.08); border-radius: 999px; padding: 2px; }
 .mode button {
   border: 0;
   background: transparent;
-  font: 600 12px var(--font-ui);
-  color: var(--dusk);
-  padding: 5px 10px;
+  font: 600 11px var(--font-ui);
+  color: #a9a3c4;
+  padding: 4px 9px;
   border-radius: 999px;
   cursor: pointer;
 }
-.mode button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgb(36 32 58 / 0.15); }
+.mode button[aria-pressed="true"] { background: rgb(255 255 255 / 0.16); color: #fff; }
 
-.close {
-  width: 28px; height: 28px;
+.icon {
+  width: 28px; height: 28px; flex: none;
   border: 0; border-radius: 50%;
   background: transparent;
   cursor: pointer;
   display: grid; place-items: center;
 }
-.close:hover { background: var(--lilac); }
-.close svg { width: 10px; height: 10px; stroke: var(--dusk); stroke-width: 1.5; stroke-linecap: round; }
+.icon:hover { background: rgb(255 255 255 / 0.1); }
+.icon svg { width: 18px; height: 18px; fill: none; stroke: #a9a3c4; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.icon .spk { fill: #a9a3c4; }
+#voice[aria-pressed="true"] .off, #voice[aria-pressed="false"] .on { display: none; }
 
-.answer {
+/* The caption shows the sentence being spoken: the notch keeps its height. */
+.caption {
+  margin: 0;
   font-size: 14px;
-  line-height: 21px;
+  line-height: 20px;
+  color: #f1eefc;
   user-select: text;
-  max-height: 340px;
-  overflow-y: auto;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-.answer p { margin: 0 0 8px; }
-.answer p:last-child { margin: 0; }
-.answer b { font-weight: 700; }
-.answer code { font-family: var(--font-mono); font-size: 12px; background: var(--lilac); padding: 1px 5px; border-radius: 6px; }
-.answer.error { color: #b3261e; }
+.caption.full { display: block; max-height: 220px; overflow-y: auto; }
+.caption b { color: #fff; font-weight: 700; }
+.caption code { font-family: var(--font-mono); font-size: 12px; background: rgb(255 255 255 / 0.1); padding: 1px 5px; border-radius: 6px; }
+.caption.error { color: #ffb4c8; }
 
-.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; counter-reset: step; }
+/* Steps stay on one line (the voice reads them); hover a chip to read it all. */
+.steps { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; counter-reset: step; overflow: hidden; }
+.steps li:first-child { flex: 0 1 auto; }
 .steps li {
   counter-increment: step;
-  display: flex; align-items: center; gap: 6px;
+  flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
   font-size: 12px; font-weight: 600;
-  padding: 4px 10px 4px 4px;
-  border: 1px solid var(--line);
+  padding: 3px 10px 3px 3px;
   border-radius: 999px;
-  background: #fff;
+  background: rgb(255 255 255 / 0.08);
+  color: #e6e1fb;
 }
+.steps li:not(:first-child) { max-width: 26px; padding-right: 3px; }
 .steps li::before {
   content: counter(step);
   width: 20px; height: 20px; border-radius: 50%;
-  display: grid; place-items: center;
+  display: inline-grid; place-items: center;
+  vertical-align: middle;
+  margin-right: 6px;
   font: 700 11px var(--font-mono);
   color: #fff;
   background: var(--deep-iris);
@@ -92,33 +135,31 @@ header { display: flex; align-items: center; gap: 10px; }
 
 form {
   display: flex; align-items: flex-end; gap: 8px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  padding: 5px 5px 5px 14px;
+  background: rgb(255 255 255 / 0.07);
+  border-radius: 20px;
+  padding: 4px 4px 4px 14px;
 }
-form:focus-within { border-color: var(--iris); }
+form:focus-within { box-shadow: 0 0 0 1px var(--iris); }
 textarea {
   flex: 1;
   border: 0; outline: 0; resize: none;
   font: 400 14px/20px var(--font-ui);
-  color: var(--ink);
+  color: #fff;
   background: transparent;
-  padding: 7px 0;
-  max-height: 120px;
+  padding: 6px 0;
+  max-height: 100px;
 }
-textarea::placeholder { color: var(--dusk); }
+textarea::placeholder { color: #8d87a8; }
 .send {
-  width: 34px; height: 34px; flex: none;
+  width: 32px; height: 32px; flex: none;
   border: 0; border-radius: 50%;
   background: var(--signature);
   cursor: pointer;
   display: grid; place-items: center;
 }
-.send svg { width: 16px; height: 16px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.send:disabled { opacity: 0.5; cursor: default; }
+.send svg { width: 15px; height: 15px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.send:disabled { opacity: 0.4; cursor: default; }
 
-/* Thinking: the glasses' eyes look up and the status pulses. */
-.card[data-state="thinking"] .eye { transform: translateY(-2px); transition: transform 0.3s; }
-.card[data-state="thinking"] .status { animation: pulse 1.2s ease-in-out infinite; }
+.notch[data-state="thinking"] .eye { transform: translateY(-2px); transition: transform 0.3s; }
+.notch[data-state="thinking"] .status { animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.4; } }
