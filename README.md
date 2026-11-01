@@ -95,8 +95,9 @@ quality, the same approach as commercial assistants is available with your own a
 |---|---|
 | `"speechInput": "deepgram"`, `"deepgramKey": "…"` | Live listening with [Deepgram](https://deepgram.com): words appear while you speak and the end of your sentence is detected by the service. Free credit at sign-up. |
 | `"voice": "elevenlabs"`, `"elevenlabsKey": "…"` | Natural voice by [ElevenLabs](https://elevenlabs.io) (`elevenlabsVoice` = voice id). Free tier available. |
+| `"voice": "fish"`, `"fishKey": "…"` | Natural voice by [Fish Audio](https://fish.audio) (`fishVoice` = voice id). The `s2.1-pro-free` model is free (until 30 Nov 2026 at least). |
 
-Keys can also come from the `DEEPGRAM_API_KEY` and `ELEVENLABS_API_KEY` environment variables.
+Keys can also come from the `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY` and `FISH_API_KEY` environment variables.
 If a cloud service fails (bad key, no credit), Judith falls back to the local voice.
 Cloud mode sends your voice (Deepgram) and Judith's sentences (ElevenLabs) to those services.
 

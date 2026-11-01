@@ -14,6 +14,7 @@ import { toPixels } from '../core/annotations.js';
 import { CHANGED, markRect, regionDiff, STALE } from '../core/pixels.js';
 import { createScriptReader } from '../core/script.js';
 import { isEcho, isGhost } from '../core/hallucinations.js';
+import { decodeWav } from '../core/audio.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -138,7 +139,8 @@ async function startVoice() {
   // Siwis also backs up the cloud voice when it fails.
   if (!config.voice || config.voice === 'windows') return;
   try {
-    const local = config.voice === 'elevenlabs' ? 'siwis' : config.voice;
+    // A cloud voice keeps Siwis ready as its backup.
+    const local = config.voice === 'elevenlabs' || config.voice === 'fish' ? 'siwis' : config.voice;
     const voice = await ensureVoice(local, join(app.getPath('userData'), 'models'));
     tts = fork(join(import.meta.dirname, 'tts-process.js'), [], {
       serialization: 'advanced', // typed arrays cross the pipe as they are
@@ -190,11 +192,31 @@ async function speakElevenLabs(text) {
   return { samples, sampleRate: 16000 };
 }
 
+// ----- voice out, cloud: Fish Audio (the user's own key) -----
+// The "s2.1-pro-free" model is free (until 30/11/2026 at least).
+async function speakFish(text) {
+  const key = config.fishKey || process.env.FISH_API_KEY;
+  const response = await fetch('https://api.fish.audio/v1/tts', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json', model: config.fishModel },
+    body: JSON.stringify({ text, format: 'wav', ...(config.fishVoice ? { reference_id: config.fishVoice } : {}) }),
+  });
+  if (!response.ok) throw new Error(`Fish Audio ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  const { samples, rate } = decodeWav(Buffer.from(await response.arrayBuffer()));
+  return { samples, sampleRate: rate };
+}
+
+const CLOUD_VOICES = {
+  elevenlabs: { speak: speakElevenLabs, key: () => config.elevenlabsKey || process.env.ELEVENLABS_API_KEY },
+  fish: { speak: speakFish, key: () => config.fishKey || process.env.FISH_API_KEY },
+};
+
 let cloudVoiceFailed = false;
 async function speak(text) {
-  if (config.voice === 'elevenlabs' && !cloudVoiceFailed && (config.elevenlabsKey || process.env.ELEVENLABS_API_KEY)) {
+  const cloud = CLOUD_VOICES[config.voice];
+  if (cloud && !cloudVoiceFailed && cloud.key()) {
     try {
-      const audio = await speakElevenLabs(text);
+      const audio = await cloud.speak(text);
       if (process.env.JUDITH_DEMO) console.log('[judith] says (cloud)', JSON.stringify(text.slice(0, 50)));
       return audio;
     } catch (error) {
@@ -616,7 +638,6 @@ app.whenReady().then(async () => {
       const wav = process.env.JUDITH_DEMO_AUDIO;
       if (wav) {
         while (!speechReady) await wait(500);
-        const { decodeWav } = await import('../core/audio.js');
         const started = Date.now();
         question = await transcribe(decodeWav(readFileSync(wav)).samples);
         console.log(`[judith] heard "${question}" in ${((Date.now() - started) / 1000).toFixed(1)} s`);

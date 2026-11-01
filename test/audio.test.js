@@ -27,3 +27,17 @@ test('decodeWav reads 16-bit mono PCM', () => {
   assert.equal(rate, 16000);
   assert.deepEqual([...out], [0, 0.5, -1]);
 });
+
+test('decodeWav trusts the bytes when a streamed WAV announces a wrong size', () => {
+  const data = Buffer.alloc(4);
+  data.writeInt16LE(16384, 0);
+  data.writeInt16LE(-16384, 2);
+  const fmt = Buffer.alloc(16);
+  fmt.writeUInt16LE(1, 0); fmt.writeUInt16LE(1, 2); fmt.writeUInt32LE(44100, 4);
+  fmt.writeUInt32LE(88200, 8); fmt.writeUInt16LE(2, 12); fmt.writeUInt16LE(16, 14);
+  const head = (id, size) => Buffer.concat([Buffer.from(id), Buffer.from(new Uint32Array([size]).buffer)]);
+  const wav = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), head('fmt ', 16), fmt, head('data', 0xffffffff), data]);
+  const { samples, rate } = decodeWav(wav);
+  assert.equal(rate, 44100);
+  assert.deepEqual([...samples], [0.5, -0.5]);
+});

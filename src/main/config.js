@@ -29,6 +29,11 @@ export const DEFAULTS = {
   elevenlabsKey: '',
   elevenlabsVoice: '21m00Tcm4TlvDq8ikWAM',
   elevenlabsModel: 'eleven_flash_v2_5',
+  // "fish" = Fish Audio (your own key, https://fish.audio); fishVoice = a voice id
+  // (reference_id) from their library, ideally a French one.
+  fishKey: '',
+  fishVoice: '',
+  fishModel: 's2.1-pro-free',
   voiceSpeed: 1.05,
   // false = Judith shows up in screen recordings (handy to film demos).
   hideFromScreenRecordings: true,
