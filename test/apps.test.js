@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalize, rankApps } from '../src/core/apps.js';
+import { isWindowsLink, mergeApps, normalize, rankApps } from '../src/core/apps.js';
 
 const apps = [
   { name: 'VLC media player', path: 'a' },
@@ -24,4 +24,22 @@ test('the closest app comes first and uninstallers are ignored', () => {
 test('no match gives an empty list', () => {
   assert.deepEqual(rankApps(apps, 'photoshop'), []);
   assert.deepEqual(rankApps(apps, ''), []);
+});
+
+test('Store apps join the shortcuts, a shortcut wins a tie', () => {
+  const merged = mergeApps(
+    [{ name: 'VLC media player', path: 'vlc.lnk' }],
+    [{ name: 'Paramètres', appId: 'windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel' }, { name: 'VLC media player', appId: 'x' }],
+  );
+  assert.deepEqual(merged.map((a) => a.name), ['VLC media player', 'Paramètres']);
+  assert.equal(rankApps(merged, 'parametres')[0].name, 'Paramètres');
+});
+
+test('Windows settings pages open like links, paths and URLs do not', () => {
+  assert.ok(isWindowsLink('ms-settings:bluetooth'));
+  assert.ok(isWindowsLink('ms-settings:connecteddevices'));
+  assert.ok(isWindowsLink('shell:Downloads'));
+  assert.ok(!isWindowsLink('C:\Windows'));
+  assert.ok(!isWindowsLink('https://example.com'));
+  assert.ok(!isWindowsLink('ms-settings:x & calc'));
 });

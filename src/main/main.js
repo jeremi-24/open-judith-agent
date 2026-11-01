@@ -1,4 +1,4 @@
-import { app, clipboard, ClipboardItem, globalShortcut, ipcMain, Menu, nativeImage, screen, session as sessions, shell, Tray } from 'electron';
+import { app, clipboard, ClipboardItem, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, session as sessions, shell, Tray } from 'electron';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
@@ -20,6 +20,7 @@ import { stripEmotions } from '../core/emotions.js';
 import { needsScreen } from '../core/needs-screen.js';
 import { findLinks, isCreation, speakable } from '../core/links.js';
 import { fromZone, toZone } from '../core/zone.js';
+import { addReminder, describeWhen, dueReminders } from '../core/reminders.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -38,6 +39,9 @@ const ALLOWED_TOOLS = [
   'mcp__judith__show_visual',
   'mcp__judith__look_at_screen',
   'mcp__judith__copy_screenshot',
+  'mcp__judith__set_reminder',
+  'mcp__judith__list_reminders',
+  'mcp__judith__cancel_reminder',
   'Read',
   'Glob',
   'Grep',
@@ -104,6 +108,57 @@ async function copyScreenshot() {
     console.error('[judith] copy screenshot failed:', error.message);
     return { error: error.message };
   }
+}
+
+// ----- reminders: Judith says them out loud at their time -----
+// Saved in reminders.json, so a restart loses nothing; one missed while
+// Judith was off is given as soon as she starts again.
+const REMINDER_CHECK_MS = 15_000;
+let reminders = [];
+const remindersPath = () => join(app.getPath('userData'), 'reminders.json');
+function saveReminders() {
+  try {
+    writeFileSync(remindersPath(), JSON.stringify(reminders, null, 2));
+  } catch (error) {
+    console.error('[judith] reminders not saved:', error.message);
+  }
+}
+function startReminders() {
+  try {
+    reminders = JSON.parse(readFileSync(remindersPath(), 'utf8'));
+  } catch {
+    reminders = [];
+  }
+  const check = () => {
+    const { due, rest } = dueReminders(reminders);
+    if (!due.length) return;
+    reminders = rest;
+    saveReminders();
+    for (const reminder of due) {
+      console.log(`[judith] reminder: ${reminder.text}`);
+      new Notification({ title: 'Judith · Rappel', body: reminder.text, icon: iconPath }).show();
+      send(bubble, 'reminder', { text: reminder.text });
+    }
+  };
+  check();
+  setInterval(check, REMINDER_CHECK_MS);
+}
+// The reminder tools (set, list, cancel), through the bridge.
+function reminderTool({ action, when, text, id }) {
+  if (action === 'set') {
+    const result = addReminder(reminders, { when, text });
+    if (result.error) return { error: result.error };
+    reminders = result.list;
+    saveReminders();
+    return { ...result.reminder, said: describeWhen(result.reminder.at) };
+  }
+  if (action === 'cancel') {
+    const before = reminders.length;
+    reminders = reminders.filter((r) => id !== 'all' && r.id !== id);
+    saveReminders();
+    return { cancelled: before - reminders.length };
+  }
+  return { reminders: reminders.map((r) => ({ ...r, said: describeWhen(r.at) })) };
 }
 
 // Summoning is instant: Judith looks at the screen only if the question needs
@@ -792,8 +847,11 @@ app.whenReady().then(async () => {
   const allowMedia = (permission) => permission === 'media';
   sessions.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowMedia(permission)));
   sessions.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
+  // Windows needs it to show Judith's notifications (and to group her windows).
+  app.setAppUserModelId('com.jeremi24.judith');
   startSpeech();
   startVoice();
+  startReminders();
 
   setCaptureProtection(config.hideFromScreenRecordings);
   bubble = createBubble();
@@ -806,6 +864,7 @@ app.whenReady().then(async () => {
     onApprove: requestApproval,
     onLook: lookForJudith,
     onCopyShot: copyScreenshot,
+    onReminder: reminderTool,
     onVisual: (title, html) => {
       showBoard();
       send(board, 'visual', { title, html });
@@ -839,6 +898,9 @@ app.whenReady().then(async () => {
       '--mcp-config', mcpConfig,
       '--allowedTools', ALLOWED_TOOLS.join(','),
       '--permission-prompt-tool', 'mcp__judith__approve',
+      // Claude Code's own scheduled prompts die with its session: reminders
+      // go through Judith (set_reminder), which keeps them on disk.
+      '--disallowedTools', 'CronCreate,CronDelete,CronList',
     ],
   });
   // The warm-up answer stays silent: no reader is listening yet.

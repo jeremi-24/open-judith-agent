@@ -194,6 +194,21 @@ api.on('link', ({ turn, ...link }) => {
   if (turn === conversation.turn) showLink(link);
 });
 api.on('zone', (on) => zoneButton.setAttribute('aria-pressed', String(Boolean(on))));
+// A reminder whose time has come: said out loud and shown, but never over a
+// conversation (it waits for the end of it).
+const waitingReminders = [];
+function giveReminders() {
+  if (conversation.state !== 'idle' || voice.speaking) return;
+  const next = waitingReminders.shift();
+  if (!next) return;
+  showState('idle', { message: `⏰ ${next}` });
+  voice.say(`Rappel : ${next}`);
+}
+api.on('reminder', ({ text }) => {
+  waitingReminders.push(text);
+  giveReminders();
+});
+setInterval(giveReminders, 2000);
 api.on('answer', ({ turn }) => conversation.answered(turn));
 api.on('error', ({ turn, message }) => conversation.failed(turn, message));
 api.on('tool', ({ turn, label: text }) => {

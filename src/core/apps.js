@@ -48,3 +48,15 @@ export function rankApps(apps, query) {
     .filter((app) => app.score > 0)
     .sort((a, b) => b.score - a.score);
 }
+
+// Shortcuts (.lnk) and the Start menu apps Windows lists (Store apps like
+// Settings or WhatsApp have no .lnk): one list, a shortcut wins a tie.
+export function mergeApps(shortcuts, startApps) {
+  const seen = new Set(shortcuts.map((a) => normalize(a.name)));
+  return [...shortcuts, ...startApps.filter((a) => a.name && a.appId && !seen.has(normalize(a.name)))];
+}
+
+// Windows pages that open like links: "ms-settings:bluetooth", "shell:Downloads".
+export function isWindowsLink(target) {
+  return /^(ms-settings|shell):[\w\-.\/ ]*$/i.test(String(target ?? '').trim());
+}

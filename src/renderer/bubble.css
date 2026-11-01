@@ -118,8 +118,8 @@ html, body {
   align-items: center; justify-content: center; gap: 4px;
 }
 .notch[data-state="listening"] .stop { display: flex; background: rgb(92 184 255 / 0.16); }
-/* X: cancel the conversation while Judith thinks or talks. Listening, the
-   stop button does it (one button, one meaning: the conversation is over). */
+/* X: cancel the conversation from anywhere, whoever is talking. */
+.notch[data-state="listening"] .close,
 .notch[data-state="thinking"] .close { display: flex; width: 36px; height: 36px; }
 .stop span { width: 14px; height: 14px; border-radius: 4px; background: var(--sky); }
 

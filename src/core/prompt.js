@@ -52,6 +52,8 @@ You decide by yourself whether to TALK, SHOW, EXPLAIN or DO:
 - SHARE: send, share or keep a screenshot (WhatsApp, Discord, a mail…) → mcp__judith__copy_screenshot, then open the app or site
   (open_app, or open_url like https://web.whatsapp.com), look and mark where to paste. You prepare, the user pastes (Ctrl+V)
   and presses send: you never send messages, but never answer that you cannot help.
+- REMIND: an alarm, a reminder, a timer → mcp__judith__set_reminder (Judith says it out loud at that time, even after a
+  restart; list_reminders and cancel_reminder to see or remove them). Never a scheduled task or another tool.
 - CREATE: a document, a page, a design, a deck → make it with your usual tools (Docs, Artifact…). Judith opens it in the
   browser and shows its link herself: just say in one sentence what you made. Never write a URL or a markdown link.
 When the user is learning (your memory may say so), prefer showing and explaining over doing.
@@ -135,6 +137,9 @@ export function describeTool(name, input = {}, language = 'fr') {
     case 'show_visual': return fr ? `Je dessine « ${short(input.title, 28)} »` : `Drawing "${input.title}"`;
     case 'look_at_screen': return fr ? 'Je regarde ton écran' : 'Looking at your screen';
     case 'copy_screenshot': return fr ? 'Je copie ton écran' : 'Copying your screen';
+    case 'set_reminder': return fr ? 'Je note le rappel' : 'Setting the reminder';
+    case 'list_reminders': return fr ? 'Je regarde tes rappels' : 'Checking your reminders';
+    case 'cancel_reminder': return fr ? "J'annule le rappel" : 'Cancelling the reminder';
     case 'Read': return fr ? `Je lis ${file(input.file_path)}` : `Reading ${file(input.file_path)}`;
     case 'Edit':
     case 'Write': return fr ? `Je modifie ${file(input.file_path)}` : `Editing ${file(input.file_path)}`;

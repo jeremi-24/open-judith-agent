@@ -50,7 +50,7 @@ test('an unfinished sentence waits for the rest', () => {
 });
 
 test('a goodbye ends the conversation, a request does not', () => {
-  for (const bye of ['Arrête.', 'Allez, salut.', 'Bonsoir. Bonsoir.', "Merci, c'est bon.", 'Stop', "C'est tout pour aujourd'hui", 'À plus Judith !', 'Ça suffit, merci.', "Non, c'est bon, j'ai fini."]) {
+  for (const bye of ['Arrête.', 'Allez, salut.', 'Bonsoir. Bonsoir.', "Merci, c'est bon.", 'Stop', "C'est tout pour aujourd'hui", 'À plus Judith !', 'Ça suffit, merci.', "Non, c'est bon, j'ai fini.", "Non, rien d'autre."]) {
     assert.ok(isGoodbye(bye), bye);
   }
   for (const ask of ['Arrête de regarder en boucle.', 'Ok merci.', "Explique-moi ça", "C'est quoi ça ?", 'Salut Judith, ouvre VLC', 'Non, je veux dire éteins l\'écoute en temps réel']) {

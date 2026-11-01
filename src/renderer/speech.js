@@ -72,25 +72,50 @@ window.JudithVoice = (() => {
   }
 
   // ----- playback -----
+  // The audio output can fail (a headset unplugged, Bluetooth switching):
+  // that context is dropped and the next sentence gets a fresh one.
+  function audio() {
+    if (!context || context.state === 'closed') {
+      const fresh = new AudioContext();
+      const drop = () => {
+        if (context !== fresh) return;
+        context = null;
+        fresh.close().catch(() => {});
+      };
+      fresh.addEventListener('error', drop);
+      fresh.addEventListener('statechange', () => fresh.state === 'closed' && drop());
+      context = fresh;
+    }
+    return context;
+  }
+
   async function playStream(stream, first, mine) {
-    context ??= new AudioContext();
-    if (context.state === 'suspended' && !paused) await context.resume();
-    let at = context.currentTime + 0.03;
+    const ctx = audio();
+    if (ctx.state === 'suspended' && !paused) await ctx.resume();
+    let at = ctx.currentTime + 0.03;
     let last = null;
     for (let i = 0, chunk = first; chunk && mine === generation; chunk = await stream.next(++i)) {
-      const buffer = context.createBuffer(1, chunk.samples.length, chunk.sampleRate);
+      const buffer = ctx.createBuffer(1, chunk.samples.length, chunk.sampleRate);
       buffer.copyToChannel(chunk.samples, 0);
-      const source = context.createBufferSource();
+      const source = ctx.createBufferSource();
       source.buffer = buffer;
-      source.connect(context.destination);
+      source.connect(ctx.destination);
       // A chunk that arrives late starts right away; otherwise right after the previous one.
-      at = Math.max(at, context.currentTime);
+      at = Math.max(at, ctx.currentTime);
       source.start(at);
       at += buffer.duration;
       sources.push(source);
       last = source;
     }
-    if (last && mine === generation) await new Promise((resolve) => (last.onended = resolve));
+    if (last && mine === generation) {
+      // A dead device never says "ended": never wait longer than the audio
+      // itself (paused time aside), so Judith does not hang mid-sentence.
+      await new Promise((resolve) => {
+        last.onended = resolve;
+        const guard = () => (paused ? setTimeout(guard, 500) : resolve());
+        setTimeout(guard, (at - ctx.currentTime) * 1000 + 1500);
+      });
+    }
     sources = [];
   }
 
