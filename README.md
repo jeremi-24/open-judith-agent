@@ -101,6 +101,18 @@ Keys can also come from the `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY` and `FISH_A
 If a cloud service fails (bad key, no credit), Judith falls back to the local voice.
 Cloud mode sends your voice (Deepgram) and Judith's sentences (ElevenLabs) to those services.
 
+### How a conversation works
+
+One conversation manager (`src/core/conversation.js`) decides who talks and when; the
+microphone, the transcription, Claude Code and the voice only report events to it.
+
+- **Listening**: a voice detector that learns the room noise. A pause after "et",
+  "parce que", "euh" or a comma waits for the rest of the sentence.
+- **Interrupting**: talk over Judith and she stops to listen (`"interruptions": true`).
+- **Cancelling**: the **X** button (or Esc) stops everything, whoever is talking, including
+  Claude Code in the middle of an answer. The conversation memory is kept.
+- **Follow-up**: after answering, Judith listens a few more seconds (`"conversation": true`).
+
 ### When marks disappear
 
 A mark is only true for the screen Judith looked at. It is not drawn if that part of the
