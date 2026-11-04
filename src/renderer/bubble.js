@@ -65,31 +65,15 @@ function showState(state, info = {}) {
 // ----- the answer: spoken sentences, steps and drawings -----
 let lastSay = null; // the last sentence queued, until it starts
 
-// Draw first, then talk: a sentence waits until the drawings sent before it
-// are on screen (at most 1.6 s, so the voice never hangs).
-let pendingMarks = 0;
-let marksDrawn = [];
-function waitForMarks(maxMs = 1600) {
-  if (!pendingMarks) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, maxMs);
-    marksDrawn.push(() => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
-}
-function markDrawn() {
-  pendingMarks = Math.max(0, pendingMarks - 1);
-  if (!pendingMarks) marksDrawn.splice(0).forEach((done) => done());
-}
-voice.setGate(waitForMarks);
-api.on('marked', markDrawn);
+// She talks and draws at the same time, topic after topic: the drawings
+// written before a sentence belong to it, and her pen traces them the moment
+// she starts saying it. Drawings written after the last sentence go with it
+// (or right away if she is already saying it).
+let heldMarks = [];
 
 function resetAnswer() {
   lastSay = null;
-  pendingMarks = 0;
-  marksDrawn.splice(0).forEach((done) => done());
+  heldMarks = [];
   textBox.innerHTML = '';
   textBox.classList.remove('error');
   steps.replaceChildren();
@@ -117,8 +101,15 @@ function addStep(text) {
 
 function run(command) {
   if (command.type === 'step') return addStep(command.text);
-  if (command.type === 'mark') pendingMarks += 1;
   api.show(command);
+}
+
+// The answer is over: drawings still held go with the last sentence.
+function releaseHeld() {
+  const rest = heldMarks;
+  heldMarks = [];
+  if (lastSay && !lastSay.started) lastSay.marks.push(...rest);
+  else rest.forEach(run);
 }
 
 // ----- the components, driven by the conversation manager -----
@@ -180,12 +171,14 @@ voice.onIdle(() => {
 api.on('cmd', ({ turn, ...command }) => {
   if (turn !== conversation.turn) return; // a cancelled turn
   if (command.type === 'say') {
-    const item = { started: false };
+    const item = { started: false, marks: heldMarks };
+    heldMarks = [];
     lastSay = item;
     voice.say(command.text, () => {
       if (!conversation.sentence(turn)) return;
       api.timing('voice');
       item.started = true;
+      item.marks.splice(0).forEach(run);
       spokenNow.push(command.text);
       notch.classList.add('talking');
       textBox.classList.remove('error');
@@ -193,15 +186,19 @@ api.on('cmd', ({ turn, ...command }) => {
     });
     return;
   }
-  // Drawings start right away: they come before the sentence about them.
-  run(command);
+  // Steps show at once; drawings wait for their sentence.
+  if (command.type === 'step') return run(command);
+  heldMarks.push(command);
 });
 
 api.on('link', ({ turn, ...link }) => {
   if (turn === conversation.turn) showLink(link);
 });
 api.on('zone', (on) => zoneButton.setAttribute('aria-pressed', String(Boolean(on))));
-api.on('answer', ({ turn }) => conversation.answered(turn));
+api.on('answer', ({ turn }) => {
+  if (turn === conversation.turn) releaseHeld();
+  conversation.answered(turn);
+});
 api.on('error', ({ turn, message }) => conversation.failed(turn, message));
 api.on('tool', ({ turn, label: text }) => {
   if (turn === conversation.turn && conversation.state === 'thinking') doing.textContent = `${text}…`;
