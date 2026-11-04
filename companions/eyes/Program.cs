@@ -1,3 +1,4 @@
+using System.IO;
 // judith-eyes: Judith's native companion for Windows UI Automation.
 //
 // One job: say which controls are around a point of the screen, with their
@@ -28,8 +29,10 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
-        Console.InputEncoding = new UTF8Encoding(false);
-        Console.OutputEncoding = new UTF8Encoding(false);
+        // No console window (WinExe): setting Console.InputEncoding would throw
+        // "invalid handle". Open the piped streams in UTF-8 instead.
+        Console.SetIn(new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false)));
+        Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
         string line;
         while ((line = Console.ReadLine()) != null)
         {

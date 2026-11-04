@@ -46,6 +46,8 @@ export function createEyes({ exe, args = [], timeoutMs = 300, spawnImpl = spawn,
       }
     };
     proc.on('error', (error) => gone(error.message));
+    // Writing to a companion that just died (EPIPE) must not crash Judith.
+    proc.stdin.on('error', (error) => log(`stdin: ${error.message}`));
     proc.on('exit', (code) => gone(`exit ${code}`));
     return proc;
   }
