@@ -12,7 +12,6 @@ const form = document.getElementById('form');
 const question = document.getElementById('question');
 const bars = document.querySelector('.bars');
 const pauseButton = document.getElementById('pause');
-const approval = document.getElementById('approval');
 const links = document.getElementById('links');
 const zoneButton = document.getElementById('zone');
 const voice = window.JudithVoice;
@@ -195,21 +194,6 @@ api.on('link', ({ turn, ...link }) => {
   if (turn === conversation.turn) showLink(link);
 });
 api.on('zone', (on) => zoneButton.setAttribute('aria-pressed', String(Boolean(on))));
-// A reminder whose time has come: said out loud and shown, but never over a
-// conversation (it waits for the end of it).
-const waitingReminders = [];
-function giveReminders() {
-  if (conversation.state !== 'idle' || voice.speaking) return;
-  const next = waitingReminders.shift();
-  if (!next) return;
-  showState('idle', { message: `⏰ ${next}` });
-  voice.say(`Rappel : ${next}`);
-}
-api.on('reminder', ({ text }) => {
-  waitingReminders.push(text);
-  giveReminders();
-});
-setInterval(giveReminders, 2000);
 api.on('answer', ({ turn }) => conversation.answered(turn));
 api.on('error', ({ turn, message }) => conversation.failed(turn, message));
 api.on('tool', ({ turn, label: text }) => {
@@ -277,30 +261,6 @@ pauseButton.addEventListener('click', () => {
   pauseButton.setAttribute('aria-pressed', String(voice.paused));
   pauseButton.setAttribute('aria-label', voice.paused ? 'Reprendre' : 'Pause');
   notch.classList.toggle('talking', !voice.paused);
-});
-
-// ----- approvals -----
-let approvalId = null;
-function answerApproval(allow) {
-  if (approvalId === null) return;
-  api.approve(approvalId, allow);
-  approvalId = null;
-  approval.hidden = true;
-}
-document.getElementById('allow').addEventListener('click', () => answerApproval(true));
-document.getElementById('deny').addEventListener('click', () => answerApproval(false));
-api.on('approval', ({ id, title, detail }) => {
-  approvalId = id;
-  document.getElementById('approval-title').textContent = `${title} ?`;
-  document.getElementById('approval-detail').textContent = detail;
-  approval.hidden = false;
-  document.getElementById('allow').focus();
-});
-api.on('approved', ({ id }) => {
-  if (id === approvalId) {
-    approvalId = null;
-    approval.hidden = true;
-  }
 });
 
 // The window is a fixed transparent stage: it takes the clicks only while the
