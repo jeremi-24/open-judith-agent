@@ -14,7 +14,8 @@ function fakeCompanion(body) {
 
 test('around() sends a point and gets the elements back', async () => {
   const script = fakeCompanion(`console.log(JSON.stringify({ id, elements: [{ name: 'Exporter', type: 'Button', x: +x - 5, y: +y - 5, w: 10, h: 10 }] }));`);
-  const eyes = createEyes({ exe: process.execPath, args: [script] });
+  // The stand-in is a real Node process: its start must fit in the timeout, even on a busy PC.
+  const eyes = createEyes({ exe: process.execPath, args: [script], timeoutMs: 5000 });
   const elements = await eyes.around(100.4, 50.6);
   assert.deepEqual(elements, [{ name: 'Exporter', type: 'Button', x: 95, y: 46, w: 10, h: 10 }]);
   eyes.stop();
