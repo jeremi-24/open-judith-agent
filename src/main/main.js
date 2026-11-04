@@ -123,8 +123,11 @@ async function summon() {
   bubble.focus();
   const ears = liveEars();
   // No conversation in demo mode: nobody is there to answer.
-  const conversation = config.conversation && !process.env.JUDITH_DEMO;
-  send(bubble, 'focus', { conversation, interruptions: config.interruptions, stt: ears });
+  // Push to talk: listening ends only on the shortcut (or Stop), so music and
+  // voices around never decide when the question ends; no follow-up listening.
+  const push = config.listenMode === 'push';
+  const conversation = config.conversation && !push && !process.env.JUDITH_DEMO;
+  send(bubble, 'focus', { conversation, interruptions: config.interruptions && !push, stt: ears, push });
 }
 
 // ----- the zone: the user draws the part of the screen to explain -----
@@ -742,7 +745,9 @@ function journal(fields) {
 // ----- agent mode, guided: step, wait for the user to do it, next step -----
 const agent = createAgent({ canAct: () => Boolean(config.agentHands && hands?.available) });
 let agentWatch = null;
-const AGENT_WATCH_EVERY_MS = 700;
+// Often enough that the next step comes soon after the user acts: with the
+// watch's 2 learning and 2 settling frames, 0.8 s each.
+const AGENT_WATCH_EVERY_MS = 400;
 
 function agentState(extra = {}) {
   send(bubble, 'agent', { active: agent.active, step: agent.step, max: agent.maxSteps, ...extra });
@@ -1130,6 +1135,15 @@ function buildTrayMenu() {
       { label: `Demander à Judith (${config.shortcut})`, click: summon },
       { label: 'Nouvelle conversation', click: newConversation },
       { label: 'Ouvrir la configuration', click: () => shell.openPath(configPath()) },
+      {
+        label: 'Appuyer pour parler (lieu bruyant)',
+        type: 'checkbox',
+        checked: config.listenMode === 'push',
+        click: (item) => {
+          config.listenMode = item.checked ? 'push' : 'auto';
+          saveConfig({ listenMode: config.listenMode });
+        },
+      },
       { type: 'separator' },
       ...(app.isPackaged
         ? [

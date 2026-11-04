@@ -124,7 +124,8 @@ function run(command) {
 // ----- the components, driven by the conversation manager -----
 const ears = createEars({
   transcribe: (audio) => api.transcribe(audio),
-  filter: (text, info) => api.filterHeard(text, info.followUp || info.bargeIn ? lastSpoken : ''),
+  // Her echo: what she said last, and while she speaks, what she is saying now.
+  filter: (text, info) => api.filterHeard(text, info.followUp || info.bargeIn ? [lastSpoken, ...spokenNow].join(' ') : ''),
   onLevel: (level) => bars.style.setProperty('--level', Math.min(1, level * 12).toFixed(2)),
   onPartial: (text) => {
     question.value = text;
@@ -137,6 +138,11 @@ const spokenNow = [];
 
 const conversation = createConversation({
   listen: (info) => {
+    // Guided agent mode: between steps the screen moves her on, not the mic
+    // (music, people around). She listens only when she asked a question.
+    if (info.followUp && notch.classList.contains('agent') && !/\?\s*$/.test(spokenNow.at(-1) ?? '')) {
+      return conversation.heard('', info);
+    }
     resetAnswer();
     ears.start(info, (text) => conversation.heard(text, info), () => api.timing('heard')).catch((error) => {
       conversation.cancel();
@@ -206,8 +212,9 @@ api.on('stale', () => {
 });
 
 // ----- summon, type, stop, cancel -----
-api.on('focus', ({ conversation: keepTalking, interruptions, stt } = {}) => {
+api.on('focus', ({ conversation: keepTalking, interruptions, stt, push } = {}) => {
   ears.configure(stt);
+  ears.setPush(push);
   conversation.configure({ conversation: keepTalking, interruptions });
   conversation.summon();
 });
@@ -229,7 +236,28 @@ api.on('agent', ({ active, step, max, done, timeout, limit }) => {
   const message = done ? 'Objectif atteint ✓' : timeout ? 'Je m’arrête là. Rappelle-moi si tu veux continuer.' : limit ? 'On a fait beaucoup d’étapes : je m’arrête là.' : '';
   if (message && conversation.state !== 'thinking' && conversation.state !== 'speaking') showState('idle', { message });
 });
+// A soft two-note "got it" the moment Judith sees the user did the step: the
+// next one takes a few seconds to come, the user knows she is on it.
+function gotIt() {
+  try {
+    const ctx = new AudioContext();
+    [660, 880].forEach((freq, i) => {
+      const tone = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const at = ctx.currentTime + i * 0.09;
+      tone.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, at);
+      gain.gain.exponentialRampToValueAtTime(0.08, at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
+      tone.connect(gain).connect(ctx.destination);
+      tone.start(at);
+      tone.stop(at + 0.18);
+    });
+    setTimeout(() => ctx.close(), 600);
+  } catch {}
+}
 api.on('agent-next', ({ question: next, step, max }) => {
+  gotIt();
   idleName.textContent = `Étape ${step}/${max}`;
   conversation.continueWith(next, `Étape ${step}/${max} : je regarde ce que tu as fait`);
 });

@@ -35,6 +35,9 @@ export const DEFAULTS = {
   conversation: true,
   // Talk over Judith to interrupt her (she stops and listens).
   interruptions: true,
+  // "auto": Judith hears when the question ends. "push": press the shortcut again to
+  // send (noisy places: music, people around). Also in the tray menu.
+  listenMode: 'auto',
   // Drawing on the screen: "helpful" (only when it saves searching), "none", "always".
   annotations: 'helpful',
   // The notes board next to the screen (off: marks on the screen say enough).
