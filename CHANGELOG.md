@@ -18,6 +18,15 @@ Judith now does one thing, well: she looks at your screen and explains it.
   Windows UI Automation companion (`companions/eyes`, .NET Framework 4.8). Built by CI and by
   `npm run dist` when the .NET SDK is installed; optional at run time.
 - **Diagrams on the screen**: hand-drawn arrows (`arrow`) join the parts she explains.
+- **3D explanations** (`show_scene`): a schematic three.js model next to the screen, built by
+  the model with Judith's bricks, explained part by part as she speaks (`scene <n>`), next to
+  the screenshot she looked at. Sandboxed, without network; a broken or hung scene is
+  reported to the model, which then explains with words and marks.
+
+### Fixed
+- HTML visuals (`show_visual`) could not run their scripts: a `srcdoc` frame inherited the
+  board's CSP. Visuals now come from `judith-frame://` with their own CSP (still no network),
+  and the frame fits their height again.
 - The notch window keeps a fixed size: smoother motion, and Stop / X work again in every
   state. The summon shortcut stops her while she thinks or speaks.
 

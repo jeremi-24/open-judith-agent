@@ -7,6 +7,7 @@
 //   say Ensuite, choisis le format MP4.
 //   board Exporter une vidéo | Les réglages qui comptent
 //   note Le MP4 se lit partout
+//   scene 2                (moves the 3D scene to its 2nd step)
 //
 // Coordinates are fractions (0..1) of the screenshot; ring and box take the
 // corners of the element (left top right bottom), or a single point.
@@ -68,6 +69,11 @@ export function parseLine(raw) {
     }
     case 'step':
       return rest.trim() ? { type: 'step', text: rest.trim() } : null;
+    case 'scene': {
+      // The voice reached step n of the 3D scene (1-based).
+      const n = Number(rest.trim());
+      return Number.isInteger(n) && n >= 1 ? { type: 'scene', step: n } : { type: 'say', text: line };
+    }
     case 'board': {
       const [title, subtitle] = splitLabel(rest);
       return title ? { type: 'board', title, subtitle } : null;

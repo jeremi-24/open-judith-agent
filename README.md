@@ -174,6 +174,20 @@ Without the companion, marks keep the model's position. To build it from source:
 To explain how things relate, Judith marks the parts and joins them with hand-drawn arrows
 (`arrow` in her script): "this value comes from there", "this call goes to that function".
 
+### 3D explanations
+
+When the question is how a physical thing works (the engine of a jet in a video, a gearbox, a
+heart), Judith can build a **schematic 3D model** next to the screen and walk through it part
+by part, the model following her voice (`scene <n>` in her script). Next to it, the board
+shows the screenshot she looked at ("Ce que j'ai vu"). If she is not sure what the object is,
+she says so and explains the principle rather than inventing a model name.
+
+The model writes the scene's code (`show_scene`) with Judith's bricks
+(`src/renderer/scene-bricks.js`: assemblies of parts, flows, exploded views, labels, steps)
+on three.js. The code runs in a sandboxed frame served from `judith-frame://` with its own
+CSP: no network, no access to Judith. If it fails or hangs, the tool says so (a hung scene is
+stopped after 5 s) and she explains with words and marks instead.
+
 ### When marks disappear
 
 A mark is only true for the screen Judith looked at. It is not drawn if that part of the
@@ -182,8 +196,8 @@ what is under it changes, or after a minute.
 
 ### What Judith is allowed to do
 
-Claude Code starts Judith's own MCP server (`src/mcp/server.js`) with two tools:
-`look_at_screen` and `show_visual`. Besides them, Judith may only read (`Read`, `Glob`,
+Claude Code starts Judith's own MCP server (`src/mcp/server.js`) with three tools:
+`look_at_screen`, `show_visual` and `show_scene`. Besides them, Judith may only read (`Read`, `Glob`,
 `Grep`, `WebSearch`, `WebFetch`) and make visual explanations with your own tools
 (`Artifact`, Claude Docs). Every tool that changes something on your computer (editing
 files, running commands…) is refused: she explains and points, the user acts.

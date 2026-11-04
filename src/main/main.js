@@ -1,4 +1,4 @@
-import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, session as sessions, shell, Tray } from 'electron';
+import { app, globalShortcut, ipcMain, Menu, nativeImage, protocol, screen, session as sessions, shell, Tray } from 'electron';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
@@ -25,6 +25,7 @@ import { needsScreen } from '../core/needs-screen.js';
 import { findLinks, isCreation, speakable } from '../core/links.js';
 import { fromZone, toZone } from '../core/zone.js';
 import { shortcutAction } from '../core/shortcut.js';
+import { createVisualStore, FRAME_SCHEME, resolveFrame } from './frames.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -41,6 +42,7 @@ let eyes = null;
 const ALLOWED_TOOLS = [
   'mcp__judith__look_at_screen',
   'mcp__judith__show_visual',
+  'mcp__judith__show_scene',
   'Read',
   'Glob',
   'Grep',
@@ -593,12 +595,45 @@ function preview(path) {
       .replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
     html = `<pre style="font:12px/1.5 Consolas,monospace;white-space:pre-wrap;margin:0">${escaped}</pre>`;
   }
+  showVisualFrame(name, html);
+}
+
+// ----- 3D scenes (show_scene) -----
+// The board runs the model's code in a sandboxed frame and says whether it
+// worked; the tool waits for that, so the model can fix its code or explain
+// with words and marks instead. Code that hangs (an endless loop) freezes the
+// board: after SCENE_TIMEOUT its renderer is crashed and reloaded.
+const SCENE_TIMEOUT = 5000;
+let sceneWait = null;
+let sceneCount = 0;
+function showScene(title, code) {
+  sceneWait?.resolve({ ok: false, error: 'replaced by a newer scene' });
+  const id = ++sceneCount;
   showBoard();
-  send(board, 'visual', { title: name, html });
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (sceneWait?.id !== id) return;
+      sceneWait = null;
+      console.warn('[judith] 3D scene timed out: reloading the board');
+      board.webContents.forcefullyCrashRenderer();
+      board.reload();
+      resolve({ ok: false, error: `The scene did not answer within ${SCENE_TIMEOUT / 1000} s (endless loop or too heavy) and was stopped.` });
+    }, SCENE_TIMEOUT);
+    sceneWait = {
+      id,
+      resolve: (result) => {
+        clearTimeout(timer);
+        sceneWait = null;
+        resolve(result);
+      },
+    };
+    send(board, 'scene', { id, title, code, seenImage: lastSeen });
+  });
 }
 
 // What Judith's script asks to show, when its sentence starts.
 function show(command) {
+  if (command.type === 'scene') return send(board, 'scene-step', { step: command.step });
   if (command.type === 'mark') return drawMark(command);
   if (command.type === 'clear') return clearMarks();
   if ((command.type === 'board' || command.type === 'note') && !config.board) return;
@@ -648,12 +683,15 @@ let lastAsk = null;
 // Everything sent to the notch carries it, so a cancelled turn is ignored.
 let activeTurn = 0;
 // The look_at_screen tool: capture, then a dashed scan while Judith reads it.
+// lastSeen: that screenshot, shown as "Ce que j'ai vu" next to a 3D scene.
+let lastSeen = null;
 async function lookForJudith() {
   mark('look');
   const display = session.display ?? cursorDisplay();
   try {
     const shot = await look(display);
     session.reference = shot.small;
+    lastSeen = `data:${shot.mediaType};base64,${shot.data}`;
     overlay.setBounds(display.bounds);
     showOverlay();
     scanning = true;
@@ -922,6 +960,24 @@ function settleInstalledApp() {
   }
 }
 
+// The board's sandboxed frames (visuals, 3D scenes) come from judith-frame://,
+// each with its own CSP (src/main/frames.js). Must be declared before ready.
+protocol.registerSchemesAsPrivileged([{ scheme: FRAME_SCHEME, privileges: { standard: true, secure: true } }]);
+const visuals = createVisualStore();
+function handleFrames() {
+  protocol.handle(FRAME_SCHEME, (request) => {
+    const found = resolveFrame(request.url, { root, visuals });
+    if (found.status !== 200) return new Response('', { status: found.status });
+    const body = found.file ? readFileSync(found.file) : found.body;
+    return new Response(body, { status: 200, headers: { 'content-type': found.type, 'content-security-policy': found.csp } });
+  });
+}
+// An HTML visual in the board's frame.
+function showVisualFrame(title, html) {
+  showBoard();
+  send(board, 'visual', { title, src: visuals.add(html) });
+}
+
 app.whenReady().then(async () => {
   // Judith's own pages may use the microphone; nothing else is granted.
   const allowMedia = (permission) => permission === 'media';
@@ -934,6 +990,7 @@ app.whenReady().then(async () => {
   startVoice();
 
   setCaptureProtection(config.hideFromScreenRecordings);
+  handleFrames();
   bubble = createBubble();
   overlay = createOverlay();
   board = createBoard();
@@ -942,10 +999,8 @@ app.whenReady().then(async () => {
   // itself runs it as plain Node, so no separate Node install is needed.
   const bridge = await startBridge({
     onLook: lookForJudith,
-    onVisual: (title, html) => {
-      showBoard();
-      send(board, 'visual', { title, html });
-    },
+    onVisual: showVisualFrame,
+    onScene: showScene,
   });
   const mcpConfig = join(app.getPath('userData'), 'mcp.json');
   writeFileSync(
@@ -1041,6 +1096,9 @@ app.whenReady().then(async () => {
   });
   ipcMain.on('judith:open-path', (_e, path) => existsSync(path) && shell.openPath(path));
   ipcMain.on('judith:preview', (_e, path) => preview(String(path)));
+  ipcMain.on('judith:scene-result', (_e, result) => {
+    if (sceneWait && result?.id === sceneWait.id) sceneWait.resolve({ ok: Boolean(result.ok), error: result.error });
+  });
   ipcMain.on('judith:close-board', () => {
     board.hide();
     send(board, 'clear-board');
