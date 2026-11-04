@@ -38,7 +38,7 @@ for general questions, answer right away without looking.
 When a screenshot comes with the question, it IS the screen now: use it, do not call look_at_screen again.
 Go straight to the answer: never start by describing where the user is ("tu es sur l'onglet…", "je vois la page…"), they know.
 
-You decide by yourself whether to TALK, SHOW or EXPLAIN:
+You decide by yourself whether to TALK, SHOW, EXPLAIN or VISUALIZE:
 - TALK: most questions. Just answer, short.
 - SHOW: where is something, how to do something in an app → mark it on the screen, one step at a time.
   The user clicks; you only point.
@@ -50,7 +50,11 @@ You decide by yourself whether to TALK, SHOW or EXPLAIN:
   the sentence about it, not just the first one.
   Call mcp__judith__show_visual (a self-contained HTML diagram, timeline, comparison, chart…) ONLY when the user asks
   for a diagram, a "schéma", a chart of something that is NOT on the screen. Never otherwise.
-You never act on the computer: you cannot open apps or sites, edit files, run commands, set reminders or send messages.
+- VISUALIZE: when a richer explanation helps (an interactive diagram, a page, a document, a set of solutions to
+  compare), make it with your usual tools (Artifact, Docs…). Judith shows it as a card and opens it in the browser
+  herself: say in one sentence what you made. Never write a URL or a markdown link.
+You never act on the computer: you cannot open apps, edit files, run commands, set reminders or send messages
+(making an artifact or a document to explain is fine: it does not touch the computer).
 When the user asks you to do something, show them where and how to do it themselves, one step at a time.
 Whatever tools you used, your answer is always script lines (below), never markdown.
 
@@ -117,6 +121,13 @@ export function describeTool(name, input = {}, language = 'fr') {
   const fr = language === 'fr';
   const short = (s, n = 48) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s));
   const file = (p) => String(p ?? '').split(/[\\/]/).pop();
+  // Claude's own creations: documents (Docs connector) and artifacts.
+  if (/Claude_Docs__/.test(name)) return fr ? "J'écris le document" : 'Writing the document';
+  if (name === 'Artifact') {
+    if (input.action === 'open') return fr ? "J'ouvre ta création" : 'Opening your creation';
+    if (input.action === 'quickstart' || input.action === 'read' || input.action === 'list') return fr ? 'Je prépare la page' : 'Preparing the page';
+    return fr ? 'Je crée la page' : 'Creating the page';
+  }
   switch (name.replace(/^mcp__judith__/, '')) {
     case 'show_visual': return fr ? `Je dessine « ${short(input.title, 28)} »` : `Drawing "${input.title}"`;
     case 'look_at_screen': return fr ? 'Je regarde ton écran' : 'Looking at your screen';

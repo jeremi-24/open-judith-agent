@@ -13,6 +13,8 @@ export const DEFAULTS = {
   shortcut: 'Control+Alt+J',
   // Summon Judith and draw the zone of the screen to explain first.
   zoneShortcut: 'Control+Alt+Shift+J',
+  // Open what Claude creates to explain (an artifact, a diagram, a document) in the browser.
+  openCreations: true,
   // false: Judith takes a screenshot only when the question needs it.
   alwaysLook: false,
   // After answering, listen again for a few seconds (a real conversation).

@@ -40,6 +40,9 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
 - **She shows and explains**: "where is the export button?" → she circles it. "c'est quoi ça ?"
   → she marks each part on the screen while explaining it, using the real names and values
   on your screen. She never opens, edits, runs or sends anything.
+- **She builds visual explanations**: when a diagram, an interactive page or a document
+  explains better, Claude Code makes it with your own tools (Artifacts, Docs…) and Judith
+  opens it in your browser, with a card in the notch. She never reads a link aloud.
 - **Show her a zone**: press **Ctrl + Alt + Shift + J** (or the frame button in the notch)
   and draw a rectangle around what you want to understand. Only that zone is sent, and
   she annotates it. Escape or a simple click cancels.
@@ -104,6 +107,7 @@ Judith reads `config.json` in her user data folder
 - `alwaysLook` (default `false`): Judith takes a screenshot only when the question needs it
   (her `look_at_screen` tool). `true` sends one with every question, slower.
 - `zoneShortcut` (default `Control+Alt+Shift+J`): summon Judith and draw the zone to explain.
+- `openCreations` (default `true`): open what Claude makes to explain (artifact, diagram, document) in the browser.
 - `conversation` (default `true`): after answering, Judith listens for 5 more seconds.
 - `annotations`: `helpful` (default, draws only when it saves you searching), `none`, `always`.
 
@@ -144,8 +148,9 @@ what is under it changes, or after a minute.
 
 Claude Code starts Judith's own MCP server (`src/mcp/server.js`) with two tools:
 `look_at_screen` and `show_visual`. Besides them, Judith may only read (`Read`, `Glob`,
-`Grep`, `WebSearch`, `WebFetch`). Every tool that changes something (editing files,
-running commands…) is refused: she explains and points, the user acts.
+`Grep`, `WebSearch`, `WebFetch`) and make visual explanations with your own tools
+(`Artifact`, Claude Docs). Every tool that changes something on your computer (editing
+files, running commands…) is refused: she explains and points, the user acts.
 
 ## Development
 

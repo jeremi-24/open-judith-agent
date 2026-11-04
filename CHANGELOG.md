@@ -6,10 +6,11 @@ Judith now does one thing, well: she looks at your screen and explains it.
 
 ### Changed
 - **She never acts on the computer.** Opening apps, sites and folders, reminders and
-  alarms, copying a screenshot to share, opening Claude's creations in the browser and
-  the "Vas-y / Non" approval card are gone. Every tool that changes something is refused;
+  alarms, copying a screenshot to share and the "Vas-y / Non" approval card are gone. Every tool that changes something is refused;
   she only looks, reads and explains. (They are all in v0.1.0 if they come back one day.)
 - Her examples come from the screen itself: its names, numbers and words.
+- What Claude Code makes to explain (artifacts, diagrams, documents) is still shown: a
+  card in the notch, and the creation opens in the browser.
 - The notch window keeps a fixed size: smoother motion, and Stop / X work again in every
   state. The summon shortcut stops her while she thinks or speaks.
 

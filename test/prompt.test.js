@@ -32,7 +32,7 @@ test('user content puts the image first, then the context and the question', () 
 
 test('Judith talks, shows and explains, but never acts on the computer', () => {
   const prompt = buildSystemPrompt();
-  assert.match(prompt, /TALK, SHOW or EXPLAIN/);
+  assert.match(prompt, /TALK, SHOW, EXPLAIN or VISUALIZE/);
   assert.match(prompt, /You never act on the computer/);
   assert.match(prompt, /Take your examples from the screen itself/);
   for (const tool of ['open_app', 'open_url', 'open_path', 'copy_screenshot', 'set_reminder']) {
@@ -75,4 +75,11 @@ test('a zone screenshot says it is only a zone', () => {
   const content = buildUserContent({ question: "C'est quoi ?", image: { mediaType: 'image/jpeg', data: 'AAAA' }, zone: true });
   assert.match(content[1].text, /zone of the screen the user selected/);
   assert.doesNotMatch(buildUserContent({ question: 'Salut' })[0].text, /zone/);
+});
+
+test('her own creations (artifacts, documents) have their own words in the notch', () => {
+  assert.equal(describeTool('mcp__claude_ai_Claude_Docs__batch', {}), "J'écris le document");
+  assert.equal(describeTool('Artifact', { action: 'open', url: 'https://claude.ai/artifact/x' }), "J'ouvre ta création");
+  assert.equal(describeTool('Artifact', { file_path: 'page.html' }), 'Je crée la page');
+  assert.match(buildSystemPrompt(), /VISUALIZE: [\s\S]*Judith shows it as a card and opens it/);
 });

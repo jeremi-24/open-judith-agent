@@ -18,7 +18,7 @@ import { isEcho, isGhost } from '../core/hallucinations.js';
 import { decodeWav } from '../core/audio.js';
 import { stripEmotions } from '../core/emotions.js';
 import { needsScreen } from '../core/needs-screen.js';
-import { findLinks, speakable } from '../core/links.js';
+import { findLinks, isCreation, speakable } from '../core/links.js';
 import { fromZone, toZone } from '../core/zone.js';
 import { shortcutAction } from '../core/shortcut.js';
 
@@ -32,7 +32,20 @@ let bubble, overlay, board, tray, engine, warmingUp;
 
 // Tools Judith may use without asking: opening things, reading, showing.
 // Everything else (editing files, running commands) goes through the notch.
-const ALLOWED_TOOLS = ['mcp__judith__look_at_screen', 'mcp__judith__show_visual', 'Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'];
+const ALLOWED_TOOLS = [
+  'mcp__judith__look_at_screen',
+  'mcp__judith__show_visual',
+  'Read',
+  'Glob',
+  'Grep',
+  'WebSearch',
+  'WebFetch',
+  // Visual explanations Claude Code makes with the user's own tools: artifacts
+  // (pages, diagrams) and documents. They publish content; they do not touch
+  // the computer. Judith shows them as a card and opens them in the browser.
+  'Artifact',
+  'mcp__claude_ai_Claude_Docs',
+];
 // Judith explains and points; she never acts on the computer. Tools that
 // change something are refused outright (headless Claude Code would refuse
 // any tool not allowed above anyway; this list makes it explicit).
@@ -154,13 +167,32 @@ function summonWithZone() {
   pickZone();
 }
 
-// ----- links: a page or document named in an answer becomes a card -----
-// The voice says its title, never the URL; the user opens it with a click.
+// ----- what Claude creates: artifacts, visuals, documents, pages -----
+// Claude Code would show them in its own app; Judith has no such pane, so
+// she shows a card in the notch and opens the creation in the browser.
+// Links named in an answer become cards too (opened by the user's click).
 let turnLinks = new Map();
-function addLink(link) {
-  if (!/^https?:\/\//i.test(link.url) || turnLinks.has(link.url)) return;
+let openedCreation = false;
+// titled: the title comes from the answer ("[Mon schéma](…)"), better than the
+// default one found in a tool result.
+function addLink(link, { titled = true } = {}) {
+  if (!/^https?:\/\//i.test(link.url)) return;
+  const known = turnLinks.get(link.url);
+  if (known && (!titled || known.title === link.title)) return;
   turnLinks.set(link.url, link);
   send(bubble, 'link', { turn: activeTurn, ...link });
+}
+function openCreation(url) {
+  if (openedCreation || !config.openCreations) return;
+  openedCreation = true;
+  console.log(`[judith] opening ${url}`);
+  shell.openExternal(url);
+}
+// Creations named in a tool call or its result (Artifact publish/open, Docs…).
+function creationsIn(text) {
+  for (const link of findLinks(text, config.language)) {
+    if (link.creation) addLink(link, { titled: false });
+  }
 }
 
 // ----- voice in, cloud: Deepgram live listening (the user's own key) -----
@@ -635,6 +667,7 @@ async function ask(question, turn) {
   entry = { at: Date.now(), question, spoken: Boolean(lastHeardAt && Date.now() - lastHeardAt < 15000), tools: [], marks: 0 };
   timeline = { ask: Date.now(), heard: lastHeardAt };
   turnLinks = new Map();
+  openedCreation = false;
   await warmingUp;
   // The user may still be drawing the zone the question is about.
   if (zonePicking) await zonePicking;
@@ -676,6 +709,9 @@ async function ask(question, turn) {
       }),
     );
     reader.finish(result.streamed || result.text);
+    // A visual or document was made but not opened: open the first one.
+    const creation = [...turnLinks.values()].find((link) => link.creation);
+    if (creation) openCreation(creation.url);
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
     journal({ outcome: 'answered', commands, firstVoiceMs: timeline?.voice ? timeline.voice - timeline.ask : null });
   } catch (error) {
@@ -810,8 +846,14 @@ app.whenReady().then(async () => {
     console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
     send(bubble, 'tool', { turn: activeTurn, label: describeTool(tool.name, tool.input, config.language) });
     trackTool(tool);
+    creationsIn(JSON.stringify(tool.input ?? {}));
+    // Claude Code "opens" a creation in its own app: Judith opens the browser.
+    if (tool.name === 'Artifact' && tool.input?.action === 'open' && isCreation(String(tool.input.url))) openCreation(tool.input.url);
   });
-  engine.on('tool-result', (result) => trackResult(result));
+  engine.on('tool-result', (result) => {
+    trackResult(result);
+    creationsIn(result.output);
+  });
   engine.on('log', (text) => console.error('[claude]', text.trim()));
   // Starts Claude Code and loads its context now, so the first real question is fast.
   warmingUp = engine
