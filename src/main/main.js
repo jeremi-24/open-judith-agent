@@ -15,6 +15,8 @@ import { buildSystemPrompt, buildUserContent, describeTool } from '../core/promp
 import { toPixels } from '../core/annotations.js';
 import { markBox, pickSnap, snapMark } from '../core/snap.js';
 import { createEyes, findEyes } from './eyes.js';
+import { createHands, findHands } from './hands.js';
+import { runActions } from '../core/pilot.js';
 import { averageLuma, bestShift, CHANGED, markCore, markRect, regionDiff, STALE } from '../core/pixels.js';
 import { inkFor } from '../core/ink.js';
 import { createScriptReader } from '../core/script.js';
@@ -434,11 +436,17 @@ async function screenNow(display) {
 }
 
 // Judith's own windows move and change: never compare what is under them.
+// The notch's visible rect inside its (bigger, transparent) window, sent by the
+// notch itself: the rest of that window shows the user's apps.
+let notchBox = null;
 function ownAreas(display) {
   const { x, y, width, height } = display.bounds;
   return [bubble, board]
     .filter((w) => w.isVisible())
-    .map((w) => w.getBounds())
+    .map((w) => {
+      const b = w.getBounds();
+      return w === bubble && notchBox ? { x: b.x + notchBox.x, y: b.y + notchBox.y, width: notchBox.width, height: notchBox.height } : b;
+    })
     .map((b) => ({ x1: (b.x - x) / width, y1: (b.y - y) / height, x2: (b.x + b.width - x) / width, y2: (b.y + b.height - y) / height }));
 }
 
@@ -560,7 +568,7 @@ function clearMarks() {
   shownMarks = [];
   send(overlay, 'clear');
   // The frame of the zone the user drew stays.
-  if (!session.zone && !zonePicking) overlay?.hide();
+  if (!session.zone && !zonePicking && !piloting) overlay?.hide();
 }
 
 // ----- the board: notes, visuals and what Claude Code did -----
@@ -732,7 +740,7 @@ function journal(fields) {
 }
 
 // ----- agent mode, guided: step, wait for the user to do it, next step -----
-const agent = createAgent();
+const agent = createAgent({ canAct: () => Boolean(config.agentHands && hands?.available) });
 let agentWatch = null;
 const AGENT_WATCH_EVERY_MS = 700;
 
@@ -743,6 +751,7 @@ function agentState(extra = {}) {
 function stopAgent(extra = {}) {
   clearTimeout(agentWatch);
   agentWatch = null;
+  endPiloting();
   if (!agent.active) return;
   console.log(`[judith] agent mode ends at step ${agent.step}${extra.done ? ' (goal reached)' : ''}`);
   agent.stop();
@@ -774,6 +783,108 @@ function waitForUser(display) {
   }, AGENT_WATCH_EVERY_MS);
 }
 
+// ----- agent mode, autonomous: Judith acts herself, within the guardrails -----
+// Opt-in (config.agentHands), with the "hands" companion. While she pilots:
+// a frame around the screen and a banner say so; Ctrl+Alt+Escape, X, Esc or
+// moving the mouse stop her at once; sensitive actions wait for "Vas-y".
+let hands = null;
+const STOP_SHORTCUT = 'Control+Alt+Escape';
+let piloting = false;
+let pilotAborted = false;
+let pilot = { count: 0, lastControl: null };
+let lastActPoint = null;
+
+function startPiloting() {
+  if (piloting) return;
+  piloting = true;
+  pilotAborted = false;
+  pilot = { count: 0, lastControl: null };
+  hands.reset();
+  globalShortcut.register(STOP_SHORTCUT, () => {
+    console.log('[judith] pilot stopped by the shortcut');
+    send(bubble, 'cancel-all');
+    stopAgent({ stopped: true });
+  });
+  const display = session.display ?? cursorDisplay();
+  overlay.setBounds(display.bounds);
+  showOverlay();
+  send(overlay, 'piloting', true);
+}
+
+function endPiloting() {
+  if (!piloting) return;
+  piloting = false;
+  pilotAborted = true; // an action still running is the last one
+  answerConfirm?.(false);
+  globalShortcut.unregister(STOP_SHORTCUT);
+  send(overlay, 'piloting', false);
+  if (!shownMarks.length && !session.zone && !zonePicking) overlay.hide();
+}
+
+// The notch asks "Vas-y / Non" for a sensitive action (30 s, then no).
+let answerConfirm = null;
+function askConfirmation(reason) {
+  answerConfirm?.(false);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => done(false), 30_000);
+    const done = (yes) => {
+      clearTimeout(timer);
+      answerConfirm = null;
+      send(bubble, 'confirm', null);
+      resolve(Boolean(yes) && !pilotAborted);
+    };
+    answerConfirm = done;
+    send(bubble, 'confirm', { reason });
+  });
+}
+
+// A point of the model's screenshot → display fractions and physical pixels.
+function actPoint(action, display) {
+  const p = fromZone({ x: action.x, y: action.y, w: 0, h: 0 }, session.frame);
+  const { bounds } = display;
+  const dip = { x: Math.round(bounds.x + p.x * bounds.width), y: Math.round(bounds.y + p.y * bounds.height) };
+  return { fraction: p, physical: process.platform === 'win32' ? screen.dipToScreenPoint(dip) : dip };
+}
+
+async function runPilot(actions, display) {
+  startPiloting();
+  const result = await runActions(
+    actions,
+    {
+      async locate(action) {
+        if (action.action === 'click' || action.action === 'scroll') {
+          const { fraction, physical } = actPoint(action, display);
+          const onJudith = ownAreas(display).some((r) => fraction.x >= r.x1 && fraction.x <= r.x2 && fraction.y >= r.y1 && fraction.y <= r.y2);
+          const [app, elements] = await Promise.all([hands.at(physical.x, physical.y), eyes?.available ? eyes.around(physical.x, physical.y) : null]);
+          return { app: app.error ? null : app, control: elements?.[0] ?? null, onJudith, point: physical, fraction };
+        }
+        // Keys and text go to the app in the foreground.
+        const app = await hands.foreground();
+        return { app: app.error ? null : app, control: null, onJudith: false };
+      },
+      confirm: (reason) => askConfirmation(reason),
+      async show(action, target) {
+        if (!target.fraction) return;
+        // Where she is about to click: the user sees it coming.
+        send(overlay, 'mark', { ...toPixels({ type: 'mark', shape: 'ring', x: target.fraction.x, y: target.fraction.y, w: 0.028, h: 0.045, label: action.label ?? '' }, display.bounds), ink: 'dark', seed: pilot.count + 1 });
+        await wait(450);
+      },
+      async perform(action, target) {
+        if (pilotAborted) return { error: 'user' };
+        console.log(`[judith] act ${action.action} ${action.label ?? action.combo ?? ''}`.trim());
+        if (action.action === 'click') lastActPoint = target.point;
+        if (action.action === 'click') return hands.click(target.point.x, target.point.y, action.button);
+        if (action.action === 'scroll') return hands.scroll(target.point.x, target.point.y, action.notches);
+        if (action.action === 'type') return hands.type(action.text);
+        return hands.key(action.combo);
+      },
+    },
+    pilot,
+  );
+  send(overlay, 'clear');
+  return result;
+}
+
 async function ask(question, turn) {
   activeTurn = turn;
   clearTimeout(agentWatch);
@@ -788,6 +899,7 @@ async function ask(question, turn) {
   const inAgent = agent.active;
   if (inAgent) agentState();
   let goalReached = false;
+  const actions = [];
   entry = { at: Date.now(), question, spoken: Boolean(lastHeardAt && Date.now() - lastHeardAt < 15000), tools: [], marks: 0 };
   timeline = { ask: Date.now(), heard: lastHeardAt };
   turnLinks = new Map();
@@ -811,6 +923,11 @@ async function ask(question, turn) {
   // Script lines go to the notch as soon as they are complete.
   let commands = 0;
   const reader = createScriptReader((command) => {
+    if (command.type === 'act') {
+      // Only in autonomous agent mode; otherwise an action is never done.
+      if (agent.autonomous) actions.push(command);
+      return;
+    }
     if (command.type === 'done') {
       goalReached = true;
       if (!command.text) return;
@@ -845,7 +962,15 @@ async function ask(question, turn) {
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
     journal({ outcome: 'answered', commands, firstVoiceMs: timeline?.voice ? timeline.voice - timeline.ask : null });
     if (inAgent && goalReached) stopAgent({ done: true });
-    else if (inAgent) waitForUser(display);
+    else if (inAgent && agent.autonomous && actions.length && turn === activeTurn) {
+      const result = await runPilot(actions, display);
+      if (result.stopped) stopAgent({ stopped: true, reason: result.reason });
+      else if (agent.active) {
+        // Let the screen react, then the next step.
+        await wait(1200);
+        if (agent.active && turn === activeTurn) send(bubble, 'agent-next', { question: AGENT_NEXT, step: agent.step + 1, max: agent.maxSteps });
+      }
+    } else if (inAgent) waitForUser(display);
   } catch (error) {
     if (!error.cancelled) {
       send(bubble, 'error', { turn, message: error.message });
@@ -934,6 +1059,8 @@ function engineSettings() {
     apiProvider: config.apiProvider,
     apiModel: config.apiModel,
     agentModel: config.agentModel,
+    agentHands: config.agentHands,
+    handsAvailable: Boolean(hands?.available),
   };
 }
 
@@ -943,6 +1070,7 @@ function pickSettings(input = {}) {
   for (const key of SETTING_KEYS) if (typeof input[key] === 'string') out[key] = input[key].trim();
   if (out.engine && out.engine !== 'auto' && !ENGINES[out.engine]) throw new Error(`Unknown engine: ${out.engine}`);
   if (out.apiProvider && !PROVIDERS[out.apiProvider]) throw new Error(`Unknown provider: ${out.apiProvider}`);
+  if (typeof input.agentHands === 'boolean') out.agentHands = input.agentHands;
   return out;
 }
 
@@ -1084,6 +1212,8 @@ app.whenReady().then(async () => {
 
   eyes = createEyes({ exe: process.platform === 'win32' ? findEyes(root) : null, log: (text) => console.log(`[eyes] ${text}`) });
   console.log(`[judith] eyes (UI Automation): ${eyes.available ? 'on' : 'off, marks keep the model position'}`);
+  hands = createHands({ exe: process.platform === 'win32' ? findHands(root) : null, log: (text) => console.log(`[hands] ${text}`) });
+  console.log(`[judith] hands (autonomous agent mode): ${hands.available ? (config.agentHands ? 'on' : 'installed, off in the settings') : 'not installed'}`);
   claudeArgs = [
     ...(config.effort ? ['--effort', config.effort] : []),
     '--mcp-config', mcpConfig,
@@ -1164,6 +1294,11 @@ app.whenReady().then(async () => {
   });
   ipcMain.on('judith:open-path', (_e, path) => existsSync(path) && shell.openPath(path));
   ipcMain.on('judith:preview', (_e, path) => preview(String(path)));
+  ipcMain.on('judith:confirm-answer', (_e, yes) => answerConfirm?.(yes === true));
+  ipcMain.on('judith:notch-box', (_e, box) => {
+    const ok = box && ['x', 'y', 'width', 'height'].every((k) => Number.isFinite(box[k]));
+    notchBox = ok ? box : null;
+  });
   ipcMain.on('judith:scene-result', (_e, result) => {
     if (sceneWait && result?.id === sceneWait.id) sceneWait.resolve({ ok: Boolean(result.ok), error: result.error });
   });
@@ -1220,6 +1355,7 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   engine?.stop();
   eyes?.stop();
+  hands?.stop();
   speech?.terminate();
   tts?.kill();
 });

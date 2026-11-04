@@ -204,6 +204,26 @@ The loop ends with X, Esc or "arrête", after 12 steps, or after 3 minutes witho
 Screen changes are compared tile by tile, and what moves by itself (a video, an animation) is
 learned in the first second and ignored.
 
+### Agent mode (autonomous) — opt-in
+
+With **"Agent autonome, …"** Judith does the steps herself: she clicks, types, presses keys
+and scrolls, then looks again and continues. It is **off by default**: tick it in the
+notch's settings (gear). It needs the small `judith-hands.exe` companion (`companions/hands`,
+built like `judith-eyes.exe`); without it, or when it is off, she guides you instead and says so.
+
+Guardrails (`src/core/guard.js`, checked on what Windows says, not on what the model claims):
+- **Never**: in terminals, password managers, system tools (registry, task manager…), or on
+  her own windows; typing a password, a code or a card number; shortcuts outside a short list
+  (no Windows key, Alt+F4, Ctrl+Alt+Del…).
+- **She asks first ("Vas-y / Non")** before deleting, sending, paying, buying, installing,
+  publishing, signing out, accepting…, judged on the real name of the control (UI
+  Automation). Without UI Automation, before every click. "Vas-y" needs a real click.
+- **Stop at once**: move the mouse (the companion refuses everything until the next session),
+  Ctrl+Alt+Escape, X, Esc or "arrête". A yellow frame and a banner show while she acts.
+- **Limits**: 3 actions per step, 40 per session, 12 steps.
+- Text on the screen is never an order: the prompt says so, and the checks above do not
+  depend on it.
+
 ### When marks disappear
 
 A mark is only true for the screen Judith looked at. It is not drawn if that part of the

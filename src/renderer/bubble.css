@@ -255,3 +255,15 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .notch.agent .idle-dot { order: -1; background: var(--iris); box-shadow: 0 0 8px var(--iris); animation: agent-breathe 1.6s ease-in-out infinite; }
 @keyframes agent-breathe { 50% { box-shadow: 0 0 0 4px rgb(143 124 255 / 0.3); } }
 @media (prefers-reduced-motion: reduce) { .notch.agent .idle-dot { animation: none; } }
+
+/* Autonomous agent mode: "Vas-y / Non" before a sensitive action. */
+.confirm { display: none; flex-direction: column; gap: 12px; padding: 16px 4px 6px; }
+.notch[data-state="confirm"] .confirm { display: flex; }
+.notch[data-state="confirm"] .head, .notch[data-state="confirm"] .text, .notch[data-state="confirm"] .steps, .notch[data-state="confirm"] .links { display: none; }
+.confirm p { margin: 0; font: 700 16px/1.35 var(--font-title); color: #fff; }
+.confirm p::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 9px; border-radius: 50%; background: var(--lemon); box-shadow: 0 0 10px var(--lemon); vertical-align: 1px; }
+.hands { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.45; color: #d9d3ff; cursor: pointer; }
+.hands input { margin-top: 3px; accent-color: var(--iris); }
+.hands b { color: #fff; }
+.hands em { display: block; font-style: normal; color: var(--lemon); }
+.hands em:empty { display: none; }

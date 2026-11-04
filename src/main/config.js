@@ -15,6 +15,9 @@ export const DEFAULTS = {
   apiBaseUrl: '',
   // With "codex" or "cursor": the model to ask for (empty = the agent's default).
   agentModel: '',
+  // Agent mode, autonomous ("Agent autonome, …"): Judith may click and type
+  // herself, within the guardrails (src/core/guard.js). Off by default.
+  agentHands: false,
   workingDirectory: homedir(),
   claudePath: null,
   model: 'haiku',

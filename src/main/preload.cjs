@@ -3,9 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const EVENTS = [
   // notch
-  'focus', 'idle', 'cancel-all', 'agent', 'agent-next', 'ask', 'cmd', 'answer', 'error', 'tool', 'stale', 'marked', 'speech', 'link',
+  'focus', 'idle', 'cancel-all', 'agent', 'agent-next', 'confirm', 'ask', 'cmd', 'answer', 'error', 'tool', 'stale', 'marked', 'speech', 'link',
   // overlay (and the notch, for 'zone')
-  'mark', 'clear', 'scan', 'shift', 'select', 'zone',
+  'mark', 'clear', 'scan', 'shift', 'select', 'zone', 'piloting',
   // board
   'board', 'note', 'visual', 'scene', 'scene-step', 'activity', 'clear-board',
 ];
@@ -34,6 +34,10 @@ contextBridge.exposeInMainWorld('judith', {
   // The state the notch shows; the summon shortcut depends on it.
   notchState: (state) => ipcRenderer.send('judith:notch-state', state),
   log: (text) => ipcRenderer.send('judith:log', text),
+  // Autonomous agent mode: the user's answer to "Vas-y / Non".
+  confirmAnswer: (yes) => ipcRenderer.send('judith:confirm-answer', yes === true),
+  // Where the notch really is inside its transparent window.
+  notchBox: (box) => ipcRenderer.send('judith:notch-box', box),
   // The settings panel: which engine answers (Claude Code, Codex, Cursor, an API key).
   settings: {
     get: () => ipcRenderer.invoke('judith:settings-get'),

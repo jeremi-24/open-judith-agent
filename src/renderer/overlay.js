@@ -276,3 +276,8 @@ window.judith.on('mark', (m) => {
   queue = queue.then(() => (mine === generation ? drawMark(intoLayer(m), mine) : null)).catch(() => {});
 });
 window.judith.on('shift', ({ dx, dy }) => moveAll(dx, dy));
+
+// Autonomous agent mode: a frame around the screen and a banner while Judith acts.
+window.judith.on('piloting', (on) => {
+  document.getElementById('piloting').hidden = !on;
+});

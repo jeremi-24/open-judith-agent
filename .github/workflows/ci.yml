@@ -44,3 +44,28 @@ jobs:
         with:
           name: judith-eyes
           path: companions/eyes/bin/Release/net48/judith-eyes.exe
+
+  # Judith's hands (companions/hands), for the autonomous agent mode: built,
+  # and checked that it answers and refuses an unknown command. It is never
+  # asked to click in CI.
+  hands:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet build companions/hands -c Release
+      - name: Smoke test (ping, the foreground app, an unknown command)
+        shell: pwsh
+        run: |
+          $exe = "companions/hands/bin/Release/net48/judith-hands.exe"
+          $out = "ping 0`nfg 1`nfly 2`n" | & $exe | Out-String
+          Write-Output $out
+          if ($out -notmatch '"id":"0","ok":true') { throw "no answer to ping" }
+          if ($out -notmatch '"id":"1","process"') { throw "no answer to fg" }
+          if ($out -notmatch '"id":"2","error"') { throw "unknown command not refused" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: judith-hands
+          path: companions/hands/bin/Release/net48/judith-hands.exe

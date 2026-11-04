@@ -73,3 +73,16 @@ test('done ends agent mode, with an optional last sentence', () => {
   assert.deepEqual(parseLine('done'), { type: 'done', text: '' });
   assert.deepEqual(parseLine('done Ta vidéo est exportée !'), { type: 'done', text: 'Ta vidéo est exportée !' });
 });
+
+test('act: the actions of autonomous agent mode', () => {
+  assert.deepEqual(parseLine('act click 0.42 0.18 | Exporter'), { type: 'act', action: 'click', x: 0.42, y: 0.18, button: 'left', label: 'Exporter' });
+  assert.equal(parseLine('act click 0.5 0.5 right | Fichier').button, 'right');
+  assert.deepEqual(parseLine('act type chat mignon | Recherche'), { type: 'act', action: 'type', text: 'chat mignon', label: 'Recherche' });
+  assert.deepEqual(parseLine('act key Ctrl + S'), { type: 'act', action: 'key', combo: 'ctrl+s' });
+  assert.deepEqual(parseLine('act scroll 0.5 0.6 -40'), { type: 'act', action: 'scroll', x: 0.5, y: 0.6, notches: -15 });
+  // Malformed: spoken, never executed.
+  assert.equal(parseLine('act click ici').type, 'say');
+  assert.equal(parseLine('act format c:').type, 'say');
+  // An English sentence starting with "Type" stays a sentence.
+  assert.equal(parseLine('Type your name in the box.').type, 'say');
+});
