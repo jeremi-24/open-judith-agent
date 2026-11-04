@@ -12,6 +12,8 @@ import { captureDisplay, captureSmall, captureThumb, captureZones } from './capt
 import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOnboarding, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
 import { chooseEngine, createEngine, ENGINES, PROVIDERS } from '../engine/engines.js';
 import { cleanKey } from '../engine/api-errors.js';
+import { defaultModel } from '../engine/api.js';
+import { createModelsService } from './models-service.js';
 import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
 import { markBox, pickSnap, snapMark } from '../core/snap.js';
@@ -1159,11 +1161,21 @@ function pickSettings(input = {}) {
 
 // A 1x1 white PNG: the test checks that the engine answers AND accepts an image.
 const TEST_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
+// The model lists of the settings (asked on demand, cached, never fatal) and what
+// the test calls proved about each model.
+let modelsSvc = null;
+const models = () => (modelsSvc ??= createModelsService({ dir: app.getPath('userData'), getKey }));
+
 async function testEngine(input) {
   const settings = pickSettings(input);
   const kind = settings.engine && settings.engine !== 'auto' ? settings.engine : engineKind;
   const apiKey = typeof input?.apiKey === 'string' ? cleanKey(input.apiKey) : '';
   const probe = createEngine(kind, engineOptions(kind, { ...settings, apiKey }));
+  // A test of an API model settles what its list could not say (vision, streaming).
+  const provider = settings.apiProvider || config.apiProvider;
+  const model = settings.apiModel ?? config.apiModel ?? '';
+  const custom = (settings.apiBaseUrl ?? config.apiBaseUrl) || '';
+  const verified = (outcome) => kind === 'api' && !custom && models().recordVerification(provider, model || defaultModel(provider), outcome);
   const startedAt = Date.now();
   const timer = setTimeout(() => probe.cancel(), 45000);
   try {
@@ -1171,9 +1183,11 @@ async function testEngine(input) {
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: TEST_IMAGE } },
       { type: 'text', text: 'Test de connexion. Réponds seulement : say ok' },
     ]);
+    verified({ ok: true });
     return { ok: true, ms: Date.now() - startedAt };
   } catch (error) {
-    return { ok: false, error: error.cancelled ? 'Pas de réponse en 45 s.' : error.message };
+    verified({ ok: false, kind: error.kind });
+    return { ok: false, error: error.cancelled ? 'Pas de réponse en 45 s.' : error.message, kind: error.kind };
   } finally {
     clearTimeout(timer);
     probe.stop();
@@ -1446,6 +1460,14 @@ app.whenReady().then(async () => {
   ipcMain.handle('judith:settings-get', async () => {
     available = await detectEngines(config.claudePath); // something may have been installed since
     return engineSettings();
+  });
+  // A provider's models: { provider, refresh, apiKey (typed, not saved yet) } → { ok, models, source, fetchedAt, stale?, error? }
+  ipcMain.handle('judith:models-list', (_e, input = {}) => {
+    const provider = typeof input.provider === 'string' ? input.provider : config.apiProvider;
+    const baseUrl = provider === config.apiProvider ? config.apiBaseUrl || '' : '';
+    return models()
+      .list({ provider, baseUrl, key: typeof input.apiKey === 'string' ? cleanKey(input.apiKey) : '', refresh: input.refresh === true })
+      .catch(() => ({ ok: false, models: [], source: 'builtin', fetchedAt: null, error: { kind: 'http', message: 'La liste des modèles est indisponible. Saisis le modèle à la main.' } }));
   });
   ipcMain.handle('judith:settings-test', (_e, input) => testEngine(input).catch((error) => ({ ok: false, error: error.message })));
   ipcMain.handle('judith:settings-save', (_e, input) => {

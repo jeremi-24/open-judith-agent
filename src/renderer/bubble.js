@@ -2,6 +2,7 @@
 // conversation manager, which alone decides what happens next.
 import { createConversation } from '../core/conversation.js';
 import { createEars } from './ears.js';
+import { createModelPicker } from './model-picker.js';
 
 const notch = document.querySelector('.notch');
 const label = document.getElementById('label');
@@ -354,6 +355,8 @@ const apiKey = document.getElementById('api-key');
 const agentModel = document.getElementById('agent-model');
 const agentHands = document.getElementById('agent-hands');
 let settingsData = null;
+// The provider's models, asked on demand; the typed id (apiModel) always stays.
+const modelPicker = createModelPicker({ mount: document.getElementById('model-picker'), input: apiModel, api, provider: () => providerSelect.value, key: () => apiKey.value });
 
 function setStatus(text, kind = '') {
   settingsStatus.textContent = text;
@@ -372,14 +375,6 @@ function refreshFields() {
   const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
   apiModel.placeholder = provider?.model ? `par défaut : ${provider.model}` : 'nom du modèle';
   apiKey.placeholder = provider?.hasKey ? 'clé enregistrée (laisser vide pour la garder)' : provider?.keyPrefix ? `colle ta clé (${provider.keyPrefix}…)` : 'colle ta clé ici';
-  document.getElementById('api-models').replaceChildren(
-    ...(provider?.models ?? []).map((m) => {
-      const option = document.createElement('option');
-      option.value = m.id;
-      option.label = m.label;
-      return option;
-    }),
-  );
   const hint = document.getElementById('api-hint');
   hint.replaceChildren();
   if (provider?.free) {
@@ -403,7 +398,10 @@ function renderSettings(data) {
       input.value = engine.id;
       input.checked = engine.id === data.configured;
       input.disabled = !engine.installed;
-      input.addEventListener('change', refreshFields);
+      input.addEventListener('change', () => {
+        refreshFields();
+        if (chosenEngine() === 'api') modelPicker.load();
+      });
       const name = document.createElement('span');
       name.textContent = engine.label;
       const note = document.createElement('span');
@@ -434,6 +432,7 @@ function renderSettings(data) {
   agentModel.value = data.agentModel ?? '';
   apiKey.value = '';
   refreshFields();
+  if (chosenEngine() === 'api') modelPicker.load();
 }
 
 function formSettings() {
@@ -456,7 +455,10 @@ providerSelect.addEventListener('change', () => {
   // A model name belongs to one provider.
   apiModel.value = '';
   refreshFields();
+  modelPicker.load();
 });
+// A key pasted: the provider may now list its models.
+apiKey.addEventListener('change', () => modelPicker.load());
 document.getElementById('api-key-link').addEventListener('click', () => {
   const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
   if (provider?.keyUrl) api.openLink(provider.keyUrl);
@@ -471,6 +473,8 @@ document.getElementById('settings-test').addEventListener('click', async (event)
   button.disabled = false;
   if (result.ok) setStatus(`Ça marche : réponse en ${(result.ms / 1000).toFixed(1)} s.`, 'ok');
   else setStatus(result.error, 'error');
+  // The test may have proved (or ruled out) vision for this model.
+  if (chosenEngine() === 'api') modelPicker.load();
 });
 // A short confirmation under the notch.
 const toastBox = document.getElementById('toast');

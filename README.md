@@ -280,6 +280,9 @@ from captures.
   (CC BY 4.0), run with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0).
 - Speech recognition: [Whisper](https://github.com/openai/whisper) through
   [Transformers.js](https://github.com/huggingface/transformers.js).
+- Model capabilities (images, tools, open weights, limits): the [models.dev](https://models.dev)
+  catalog (MIT, © models.dev), trimmed into `src/engine/catalog.snapshot.json`. See
+  [docs/MODELS.md](docs/MODELS.md).
 
 ## License
 

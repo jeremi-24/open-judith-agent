@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="onboarding.css">
+<link rel="stylesheet" href="model-picker.css">
 <script type="module" src="onboarding.js"></script>
 </head>
 <body>
@@ -95,6 +96,11 @@
       <button type="button" class="link" id="engine-test">Tester</button>
       <button type="button" class="link" id="get-provider-key">Obtenir une clé</button>
     </div>
+    <details class="models-more" id="models-more" hidden>
+      <summary>Choisir le modèle</summary>
+      <div id="model-picker"></div>
+      <input id="api-model" placeholder="ou saisis son identifiant exact" autocomplete="off" spellcheck="false" aria-label="Identifiant du modèle">
+    </details>
     <div class="api" id="none" hidden>
       <button type="button" class="link" id="get-claude">Installer Claude Code</button>
       <button type="button" class="link" id="get-key">Clé gratuite NVIDIA</button>

@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('judith', {
     get: () => ipcRenderer.invoke('judith:settings-get'),
     test: (input) => ipcRenderer.invoke('judith:settings-test', input),
     save: (input) => ipcRenderer.invoke('judith:settings-save', input),
+    // The models of a provider: { provider, refresh, apiKey } → { ok, models, source, fetchedAt, stale, error }
+    models: (input) => ipcRenderer.invoke('judith:models-list', input),
   },
   // The welcome window: status, settings to save, done (tryNow: summon her).
   onboarding: {

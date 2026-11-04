@@ -142,6 +142,9 @@ figure { margin: 0; display: grid; justify-items: center; gap: 0; }
 .option b { flex: 1; font-weight: 700; }
 .tag-pill { font: 500 11px var(--font-mono); color: var(--muted); }
 .tag-pill.ok { color: var(--mint); }
+.models-more { width: 100%; max-width: 440px; text-align: left; }
+.models-more summary { cursor: pointer; color: var(--sky); font-weight: 600; padding: 6px 4px; }
+.models-more #api-model { width: 100%; margin-top: 8px; font: 14px var(--font-ui); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
 .api { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; width: 100%; max-width: 440px; }
 .api[hidden] { display: none; }
 input[type="password"], select { font: 14px var(--font-ui); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }

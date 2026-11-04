@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="bubble.css">
+<link rel="stylesheet" href="model-picker.css">
 <script src="speech.js" defer></script>
 <script type="module" src="bubble.js"></script>
 </head>
@@ -126,8 +127,8 @@
         <select id="api-provider"></select>
         <p class="api-hint" id="api-hint"></p>
         <label for="api-model">Modèle <span>(il doit lire les images)</span></label>
-        <input id="api-model" list="api-models" autocomplete="off" spellcheck="false">
-        <datalist id="api-models"></datalist>
+        <div id="model-picker"></div>
+        <input id="api-model" placeholder="ou saisis son identifiant exact" autocomplete="off" spellcheck="false">
         <label for="api-key">Clé API <span>(chiffrée sur ce PC)</span></label>
         <input id="api-key" type="password" autocomplete="off" spellcheck="false">
         <button type="button" class="api-link" id="api-key-link">Obtenir une clé</button>

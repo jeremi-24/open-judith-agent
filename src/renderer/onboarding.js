@@ -2,6 +2,7 @@
 // screens save as the user moves on (the AI through the notch's own settings,
 // the shortcut through onboarding.save); listening keeps its defaults (they
 // are in the notch's settings). Every key is optional.
+import { createModelPicker } from './model-picker.js';
 const api = window.judith;
 const $ = (id) => document.getElementById(id);
 const screens = [...document.querySelectorAll('.screen')];
@@ -84,16 +85,33 @@ function renderEngines() {
   syncEngine();
 }
 const provider = () => engines.providers.find((p) => p.id === $('api-provider').value);
+// The models of the chosen provider, on demand; a provider with no default model
+// (OpenRouter) opens the list, since the test needs one.
+const modelPicker = createModelPicker({ mount: $('model-picker'), input: $('api-model'), api, provider: () => $('api-provider').value, key: () => $('api-key').value });
+let pickerFor = null;
+function loadModels() {
+  const p = provider();
+  if (!p || chosenEngine() !== 'api') return;
+  if (pickerFor !== p.id) $('api-model').value = p.id === engines.apiProvider ? engines.apiModel ?? '' : '';
+  pickerFor = p.id;
+  $('models-more').hidden = false;
+  if (!p.model) $('models-more').open = true;
+  modelPicker.load();
+}
+$('models-more').addEventListener('toggle', () => $('models-more').open && modelPicker.load());
+$('api-key').addEventListener('change', () => chosenEngine() === 'api' && modelPicker.load());
 function syncProvider() {
   const p = provider();
   $('api-key').placeholder = p?.keyPrefix ? `Colle ta clé (${p.keyPrefix}…)` : 'Colle ta clé';
   $('get-provider-key').hidden = !p?.keyUrl;
   setStatus('engine-status', p?.free ? `Gratuit : ${p.freeNote}.` : '');
+  loadModels();
 }
 const chosenEngine = () => document.querySelector('input[name="engine"]:checked')?.value ?? 'none';
 function syncEngine() {
   const engine = chosenEngine();
   $('api').hidden = engine !== 'api';
+  $('models-more').hidden = engine !== 'api';
   $('none').hidden = engine !== 'none';
   if (engine === 'api') return syncProvider();
   setStatus('engine-status', (engine === 'claude-code' || engine === 'codex') && !installed(engine) ? 'Pas trouvé sur ce PC : installe-le, puis relance Judith.' : '');
@@ -101,8 +119,8 @@ function syncEngine() {
 function engineInput() {
   const engine = chosenEngine();
   const input = { engine: engine === 'none' ? 'auto' : engine, apiProvider: $('api-provider').value || undefined, apiKey: $('api-key').value };
-  // The model of another provider makes no sense: start from the provider's own.
-  if (engine === 'api' && input.apiProvider !== engines.apiProvider) input.apiModel = '';
+  // The typed model (the list fills it); another provider's model makes no sense, so it starts from its own.
+  if (engine === 'api') input.apiModel = input.apiProvider !== engines.apiProvider && pickerFor !== input.apiProvider ? '' : $('api-model').value.trim();
   return input;
 }
 $('engine-test').addEventListener('click', async () => {
@@ -110,6 +128,8 @@ $('engine-test').addEventListener('click', async () => {
   $('engine-test').disabled = true;
   const result = await api.settings.test(engineInput()).catch((error) => ({ ok: false, error: error.message }));
   $('engine-test').disabled = false;
+  // The test may have proved (or ruled out) vision for this model.
+  if (chosenEngine() === 'api') modelPicker.load();
   setStatus('engine-status', result.ok ? `Ça marche (${(result.ms / 1000).toFixed(1)} s) ✓` : `Ça ne marche pas : ${result.error}`, result.ok ? 'ok' : 'err');
 });
 $('get-claude').addEventListener('click', () => api.openLink('https://docs.claude.com/en/docs/claude-code/setup'));
