@@ -247,13 +247,124 @@ function onPress(button, action) {
 onPress(document.getElementById('stop'), () => conversation.cancel());
 onPress(document.getElementById('close'), () => conversation.cancel());
 zoneButton.addEventListener('click', () => api.pickZone());
-// At rest, the whole pill summons Judith; its zone button summons her with a zone.
+// At rest, the whole pill summons Judith; its zone button summons her with a
+// zone, its gear opens the settings.
 notch.addEventListener('click', (event) => {
   if (notch.dataset.state !== 'none') return;
-  if (event.target.closest('#idle-zone')) api.summonZone();
+  if (event.target.closest('#idle-settings')) openSettings();
+  else if (event.target.closest('#idle-zone')) api.summonZone();
   else api.summon();
 });
+
+// ----- settings: which engine answers Judith -----
+const settingsStatus = document.getElementById('settings-status');
+const engineList = document.getElementById('engine-list');
+const apiFields = document.getElementById('api-fields');
+const agentFields = document.getElementById('agent-fields');
+const providerSelect = document.getElementById('api-provider');
+const apiModel = document.getElementById('api-model');
+const apiKey = document.getElementById('api-key');
+const agentModel = document.getElementById('agent-model');
+let settingsData = null;
+
+function setStatus(text, kind = '') {
+  settingsStatus.textContent = text;
+  settingsStatus.className = `settings-status ${kind}`;
+}
+
+function chosenEngine() {
+  return engineList.querySelector('input[name="engine"]:checked')?.value ?? 'auto';
+}
+
+// Show the fields of the chosen engine; the key field says if one is saved.
+function refreshFields() {
+  const engine = chosenEngine();
+  apiFields.hidden = engine !== 'api';
+  agentFields.hidden = engine !== 'codex' && engine !== 'cursor';
+  const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
+  apiModel.placeholder = provider?.model ? `par défaut : ${provider.model}` : 'nom du modèle';
+  apiKey.placeholder = provider?.hasKey ? 'clé enregistrée (laisser vide pour la garder)' : 'colle ta clé ici';
+}
+
+function renderSettings(data) {
+  settingsData = data;
+  const options = [{ id: 'auto', label: 'Automatique', installed: true, auto: true }, ...data.engines];
+  engineList.replaceChildren(
+    ...options.map((engine) => {
+      const row = document.createElement('label');
+      row.className = 'engine';
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'engine';
+      input.value = engine.id;
+      input.checked = engine.id === data.configured;
+      input.disabled = !engine.installed;
+      input.addEventListener('change', refreshFields);
+      const name = document.createElement('span');
+      name.textContent = engine.label;
+      const note = document.createElement('span');
+      note.className = 'note';
+      if (engine.auto) note.textContent = `en ce moment : ${data.engines.find((e) => e.id === data.engine)?.label ?? data.engine}`;
+      else if (engine.id === 'api') note.textContent = 'sans mémoire de tes projets';
+      else if (engine.installed) {
+        note.textContent = 'installé';
+        note.classList.add('ok');
+      } else note.textContent = 'non installé';
+      row.append(input, name, note);
+      return row;
+    }),
+  );
+  providerSelect.replaceChildren(
+    ...data.providers.map((p) => {
+      const option = document.createElement('option');
+      option.value = p.id;
+      option.textContent = p.label;
+      option.selected = p.id === data.apiProvider;
+      return option;
+    }),
+  );
+  apiModel.value = data.apiModel ?? '';
+  agentModel.value = data.agentModel ?? '';
+  apiKey.value = '';
+  refreshFields();
+}
+
+function formSettings() {
+  return { engine: chosenEngine(), apiProvider: providerSelect.value, apiModel: apiModel.value, apiKey: apiKey.value, agentModel: agentModel.value };
+}
+
+async function openSettings() {
+  conversation.cancel();
+  notch.dataset.state = 'settings';
+  api.notchState('settings');
+  setStatus('Je regarde ce qui est installé…');
+  renderSettings(await api.settings.get());
+  setStatus('');
+}
+function closeSettings() {
+  if (notch.dataset.state === 'settings') showState('idle');
+}
+
+providerSelect.addEventListener('change', refreshFields);
+document.getElementById('settings').addEventListener('click', openSettings);
+document.getElementById('settings-close').addEventListener('click', closeSettings);
+document.getElementById('settings-test').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  setStatus('Je teste : une question et une petite image…');
+  const result = await api.settings.test(formSettings());
+  button.disabled = false;
+  if (result.ok) setStatus(`Ça marche : réponse en ${(result.ms / 1000).toFixed(1)} s.`, 'ok');
+  else setStatus(result.error, 'error');
+});
+document.getElementById('settings-save').addEventListener('click', async () => {
+  const result = await api.settings.save(formSettings());
+  if (!result.ok) return setStatus(result.error, 'error');
+  renderSettings(result.settings);
+  setStatus('Enregistré.', 'ok');
+});
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && notch.dataset.state === 'settings') return closeSettings();
   if (event.key === 'Escape') conversation.cancel();
 });
 pauseButton.addEventListener('click', () => {

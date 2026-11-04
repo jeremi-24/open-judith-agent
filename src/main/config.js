@@ -4,6 +4,17 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 export const DEFAULTS = {
+  // Who answers: "auto" (Claude Code, else Codex, else Cursor, else an API key),
+  // "claude-code", "codex", "cursor" or "api". Set from the notch's settings.
+  engine: 'auto',
+  // With "api": the provider (anthropic, openai, gemini, openrouter), the model
+  // (empty = the provider's default) and an optional base URL (e.g. Ollama).
+  // The key itself is saved encrypted in keys.json, never here.
+  apiProvider: 'anthropic',
+  apiModel: '',
+  apiBaseUrl: '',
+  // With "codex" or "cursor": the model to ask for (empty = the agent's default).
+  agentModel: '',
   workingDirectory: homedir(),
   claudePath: null,
   model: 'haiku',
@@ -52,6 +63,18 @@ export const DEFAULTS = {
 };
 
 export const configPath = () => join(app.getPath('userData'), 'config.json');
+
+// Saves some keys, keeping everything else the user wrote in config.json.
+export function saveConfig(changes) {
+  const path = configPath();
+  let current = {};
+  try {
+    current = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    current = { ...DEFAULTS };
+  }
+  writeFileSync(path, `${JSON.stringify({ ...current, ...changes }, null, 2)}\n`);
+}
 
 export function loadConfig() {
   const path = configPath();

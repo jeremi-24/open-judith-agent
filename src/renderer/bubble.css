@@ -71,7 +71,7 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
   cursor: pointer;
   box-shadow: 0 6px 16px -8px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.06);
 }
-.notch[data-state="none"]:hover { width: 168px; }
+.notch[data-state="none"]:hover { width: 200px; }
 .notch[data-state="none"] .avatar { width: 24px; height: 24px; margin: 0; border-radius: 50%; }
 .notch[data-state="none"] .idle {
   display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
@@ -89,6 +89,7 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .idle-zone svg { width: 13px; height: 13px; fill: none; stroke: #c9c0ff; stroke-width: 1.6; stroke-linecap: round; }
 .idle-zone:hover { background: rgb(143 124 255 / 0.3); }
 .notch[data-state="none"] .body, .notch[data-state="none"] .progress { display: none; }
+.idle-settings { order: 3; margin-left: 4px !important; }
 
 /* ----- body ----- */
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -216,3 +217,33 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .link:hover { background: rgb(143 124 255 / 0.32); }
 .link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link svg { width: 14px; height: 14px; flex: none; fill: none; stroke: #c9c0ff; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ----- settings: which engine answers ----- */
+.gear svg, .idle-settings svg { width: 15px; height: 15px; fill: none; stroke: #c9c0ff; stroke-width: 1.5; stroke-linecap: round; }
+.notch[data-state="listening"] .gear { display: flex; width: 36px; height: 36px; background: rgb(255 255 255 / 0.06); }
+.settings { display: none; }
+.notch[data-state="settings"] .head, .notch[data-state="settings"] .text, .notch[data-state="settings"] .steps, .notch[data-state="settings"] .links { display: none; }
+.notch[data-state="settings"] .settings { display: flex; flex-direction: column; gap: 12px; padding: 16px 0 18px; }
+.settings-head { display: flex; align-items: center; justify-content: space-between; }
+.settings-close { display: flex; width: 32px; height: 32px; background: rgb(255 255 255 / 0.06); }
+.engine-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; border: 0; }
+.engine { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 14px; background: rgb(255 255 255 / 0.05); cursor: pointer; font-size: 14px; font-weight: 600; }
+.engine:has(input:checked) { background: rgb(143 124 255 / 0.22); box-shadow: inset 0 0 0 1px rgb(169 155 255 / 0.6); }
+.engine:has(input:disabled) { opacity: 0.5; cursor: default; }
+.engine input { accent-color: var(--iris); margin: 0; }
+.engine .note { margin-left: auto; font: 500 11px var(--font-mono); color: #a9a3c4; }
+.engine .note.ok { color: var(--mint); }
+.fields { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.fields[hidden] { display: none; }
+.fields label { font-size: 12px; font-weight: 700; color: #d9d3ff; }
+.fields label span { font-weight: 500; color: #a9a3c4; }
+.fields input, .fields select { height: 38px; border: 0; border-radius: 10px; padding: 0 12px; background: rgb(255 255 255 / 0.08); color: #f4f2ff; font: 500 14px var(--font-ui); outline: none; }
+.fields input:focus, .fields select:focus { box-shadow: 0 0 0 2px var(--iris); }
+.fields select option { color: #24203a; }
+.settings-status { margin: 0; min-height: 18px; font-size: 13px; color: #d9d3ff; }
+.settings-status.ok { color: var(--mint); }
+.settings-status.error { color: var(--blush); }
+.settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.settings-actions button { height: 38px; border: 0; border-radius: 999px; padding: 0 18px; font: 700 13px var(--font-ui); cursor: pointer; background: rgb(255 255 255 / 0.1); color: #f4f2ff; }
+.settings-actions .primary { background: var(--signature); color: #fff; }
+.settings-actions button:disabled { opacity: 0.5; cursor: default; }
