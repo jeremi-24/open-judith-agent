@@ -86,3 +86,8 @@ test('act: the actions of autonomous agent mode', () => {
   // An English sentence starting with "Type" stays a sentence.
   assert.equal(parseLine('Type your name in the box.').type, 'say');
 });
+
+test('propose: the model offers to guide a task to the end', () => {
+  assert.deepEqual(parseLine('propose créer un dépôt GitHub'), { type: 'propose', goal: 'créer un dépôt GitHub' });
+  assert.equal(parseLine('propose'), null);
+});

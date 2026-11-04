@@ -89,6 +89,13 @@
     <div class="links" id="links"></div>
 
     <!-- Settings: which engine answers (Claude Code, Codex, Cursor, an API key). -->
+    <!-- A task in several steps: Judith offers to guide it to the end. -->
+    <div class="offer" id="offer" hidden>
+      <span>Je te suis jusqu'au bout ?</span>
+      <button type="button" id="offer-no">Non merci</button>
+      <button type="button" id="offer-yes" class="primary">Oui, guide-moi</button>
+    </div>
+
     <!-- Autonomous agent mode: a sensitive action waits for the user. -->
     <section class="confirm" id="confirm" aria-live="assertive">
       <p id="confirm-text"></p>

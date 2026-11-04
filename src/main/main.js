@@ -895,11 +895,16 @@ async function ask(question, turn) {
   const asked = question === AGENT_NEXT ? agent.next() : agent.question(question);
   // The step limit was reached: the loop is over (the agent stopped itself).
   if (wasAgent && !agent.active) agentState({ limit: true });
-  if (asked == null) return send(bubble, 'answer', { turn });
+  if (asked == null) {
+    // "Non" to the offer to guide: no question for the model.
+    if (agent.declined) send(bubble, 'cmd', { type: 'say', text: "D'accord, je reste dans le coin.", turn });
+    return send(bubble, 'answer', { turn });
+  }
   const inAgent = agent.active;
   if (inAgent) agentState();
   let goalReached = false;
   const actions = [];
+  let proposed = null; // the model offers to guide a task in several steps
   entry = { at: Date.now(), question, spoken: Boolean(lastHeardAt && Date.now() - lastHeardAt < 15000), tools: [], marks: 0 };
   timeline = { ask: Date.now(), heard: lastHeardAt };
   turnLinks = new Map();
@@ -923,6 +928,10 @@ async function ask(question, turn) {
   // Script lines go to the notch as soon as they are complete.
   let commands = 0;
   const reader = createScriptReader((command) => {
+    if (command.type === 'propose') {
+      if (!agent.active) proposed = command.goal;
+      return;
+    }
     if (command.type === 'act') {
       // Only in autonomous agent mode; otherwise an action is never done.
       if (agent.autonomous) actions.push(command);
@@ -961,6 +970,9 @@ async function ask(question, turn) {
     if (creation) openCreation(creation.url);
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
     journal({ outcome: 'answered', commands, firstVoiceMs: timeline?.voice ? timeline.voice - timeline.ask : null });
+    // A task in several steps: "Je te suis jusqu'au bout ?" (the voice asks it,
+    // the notch shows Oui / Non; a spoken "oui" works too).
+    if (!inAgent && proposed && agent.offer(proposed)) send(bubble, 'offer', { goal: proposed });
     if (inAgent && goalReached) stopAgent({ done: true });
     else if (inAgent && agent.autonomous && actions.length && turn === activeTurn) {
       const result = await runPilot(actions, display);

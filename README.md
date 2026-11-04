@@ -198,6 +198,11 @@ the goal step by step, in a loop: "Agent, exporte cette vidéo en MP4".
    herself and gives the next step, or a fix if it went wrong.
 3. Again, until her answer ends with `done` ("Objectif atteint ✓").
 
+You don't need the special word: when a request takes several steps on the screen, she
+gives the first one, then offers "Tu veux que je te suive jusqu'au bout ?" ("Oui" by voice or
+in the notch starts the loop). Only the guided mode is offered; after two "non" she stops
+offering for the session. Questions of understanding never get the offer.
+
 She still never clicks: you act, she watches. You can answer her questions by voice; the
 answer goes back into the loop. While she waits, the resting notch shows "Étape 2/12".
 The loop ends with X, Esc or "arrête", after 12 steps, or after 3 minutes without a change.

@@ -92,3 +92,38 @@ test('autonomous: only when allowed; otherwise she guides (and says so)', async 
   agent.stop();
   assert.equal(agent.autonomous, false);
 });
+
+test('offer: the model proposes, a "oui" starts the guided loop', async () => {
+  const { offerAnswer } = await import('../src/core/agent.js');
+  for (const yes of ['Oui', 'ouais vas-y', "D'accord", 'ok', 'Vas-y', 'yes please', 'Carrément !']) assert.equal(offerAnswer(yes), 'yes', yes);
+  for (const no of ['Non', 'non merci', "C'est bon", 'pas besoin', 'Ça ira']) assert.equal(offerAnswer(no), 'no', no);
+  for (const other of ['Où est le bouton Exporter ?', 'oui mais comment je fais pour changer la couleur du titre en rouge dans ce document', '']) assert.equal(offerAnswer(other), null, other);
+
+  const agent = createAgent();
+  assert.equal(agent.offer('créer un dépôt GitHub'), true);
+  const asked = agent.question('Oui');
+  assert.match(asked, /^\(Agent mode, step 1\/\d+\) Goal: créer un dépôt GitHub\nYes, guide me to the end/);
+  assert.equal(agent.active, true);
+  assert.equal(agent.autonomous, false, 'only the guided mode is ever offered');
+  assert.equal(agent.offer('autre chose'), false, 'never during a loop');
+});
+
+test('offer: "non" asks nothing; twice, and Judith stops offering', () => {
+  const agent = createAgent();
+  agent.offer('installer Docker');
+  assert.equal(agent.question('non merci'), null);
+  assert.equal(agent.declined, true);
+  assert.equal(agent.active, false);
+  agent.offer('exporter en MP4');
+  assert.equal(agent.question('Non'), null);
+  assert.equal(agent.offer('autre tâche'), false);
+});
+
+test('offer: another question drops the offer and is asked as it is', () => {
+  const agent = createAgent();
+  agent.offer('installer Docker');
+  assert.equal(agent.question("C'est quoi Docker ?"), "C'est quoi Docker ?");
+  assert.equal(agent.offered, null);
+  assert.equal(agent.question('oui'), 'oui', 'no offer any more: an ordinary "oui"');
+  assert.equal(agent.active, false);
+});

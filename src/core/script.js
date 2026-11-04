@@ -116,6 +116,9 @@ export function parseLine(raw) {
       const action = parseAction(rest);
       return action ? { type: 'act', ...action } : { type: 'say', text: line };
     }
+    case 'propose':
+      // A task in several steps: Judith offers to guide it to the end.
+      return rest.trim() ? { type: 'propose', goal: rest.trim() } : null;
     case 'done':
       // Agent mode: the goal is reached (an optional last sentence is spoken).
       return { type: 'done', text: rest.trim() };
