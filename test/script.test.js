@@ -68,3 +68,8 @@ test('scene <n> moves the 3D scene; anything else after "scene" is spoken', () =
   assert.equal(parseLine('scene 0').type, 'say');
   assert.equal(parseLine('scene du crime').type, 'say');
 });
+
+test('done ends agent mode, with an optional last sentence', () => {
+  assert.deepEqual(parseLine('done'), { type: 'done', text: '' });
+  assert.deepEqual(parseLine('done Ta vidéo est exportée !'), { type: 'done', text: 'Ta vidéo est exportée !' });
+});

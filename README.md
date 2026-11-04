@@ -188,6 +188,22 @@ on three.js. The code runs in a sandboxed frame served from `judith-frame://` wi
 CSP: no network, no access to Judith. If it fails or hangs, the tool says so (a hung scene is
 stopped after 5 s) and she explains with words and marks instead.
 
+### Agent mode (guided)
+
+Start a question with the special word **"Agent"** (or "mode agent") and Judith takes you to
+the goal step by step, in a loop: "Agent, exporte cette vidéo en MP4".
+
+1. She marks the step to do now and says it, then waits.
+2. You do it. Judith watches the screen: once it changed and settled, she looks again by
+   herself and gives the next step, or a fix if it went wrong.
+3. Again, until her answer ends with `done` ("Objectif atteint ✓").
+
+She still never clicks: you act, she watches. You can answer her questions by voice; the
+answer goes back into the loop. While she waits, the resting notch shows "Étape 2/12".
+The loop ends with X, Esc or "arrête", after 12 steps, or after 3 minutes without a change.
+Screen changes are compared tile by tile, and what moves by itself (a video, an animation) is
+learned in the first second and ignored.
+
 ### When marks disappear
 
 A mark is only true for the screen Judith looked at. It is not drawn if that part of the

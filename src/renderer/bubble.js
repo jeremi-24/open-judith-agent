@@ -219,6 +219,20 @@ api.on('cancel-all', () => {
 // A question sent by the app itself (demo mode).
 api.on('ask', (text) => conversation.typed(text));
 
+// ----- agent mode: the notch shows the step; the next one starts by itself -----
+const idleName = document.querySelector('.idle-name');
+api.on('agent', ({ active, step, max, done, timeout, limit }) => {
+  notch.classList.toggle('agent', Boolean(active));
+  idleName.textContent = active ? `Étape ${step}/${max}` : 'Judith';
+  if (active) return;
+  const message = done ? 'Objectif atteint ✓' : timeout ? 'Je m’arrête là. Rappelle-moi si tu veux continuer.' : limit ? 'On a fait beaucoup d’étapes : je m’arrête là.' : '';
+  if (message && conversation.state !== 'thinking' && conversation.state !== 'speaking') showState('idle', { message });
+});
+api.on('agent-next', ({ question: next, step, max }) => {
+  idleName.textContent = `Étape ${step}/${max}`;
+  conversation.continueWith(next, `Étape ${step}/${max} : je regarde ce que tu as fait`);
+});
+
 form.addEventListener('submit', (event) => {
   event.preventDefault();
   conversation.typed(question.value);

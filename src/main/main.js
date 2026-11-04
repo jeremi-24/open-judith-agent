@@ -26,6 +26,7 @@ import { findLinks, isCreation, speakable } from '../core/links.js';
 import { fromZone, toZone } from '../core/zone.js';
 import { shortcutAction } from '../core/shortcut.js';
 import { createVisualStore, FRAME_SCHEME, resolveFrame } from './frames.js';
+import { AGENT_IDLE_MS, AGENT_NEXT, createAgent, createProgressWatch } from '../core/agent.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -730,8 +731,63 @@ function journal(fields) {
   } catch {}
 }
 
+// ----- agent mode, guided: step, wait for the user to do it, next step -----
+const agent = createAgent();
+let agentWatch = null;
+const AGENT_WATCH_EVERY_MS = 700;
+
+function agentState(extra = {}) {
+  send(bubble, 'agent', { active: agent.active, step: agent.step, max: agent.maxSteps, ...extra });
+}
+
+function stopAgent(extra = {}) {
+  clearTimeout(agentWatch);
+  agentWatch = null;
+  if (!agent.active) return;
+  console.log(`[judith] agent mode ends at step ${agent.step}${extra.done ? ' (goal reached)' : ''}`);
+  agent.stop();
+  agentState(extra);
+}
+
+// After a step: watch the screen until the user has done it (it changed, then
+// settled), then the notch asks the next step. Judith's own voice and windows
+// never count; nothing is watched while she thinks or speaks.
+function waitForUser(display) {
+  clearTimeout(agentWatch);
+  const watch = createProgressWatch();
+  const since = Date.now();
+  agentWatch = setTimeout(async function tick() {
+    if (!agent.active) return;
+    if (Date.now() - since > AGENT_IDLE_MS) return stopAgent({ timeout: true });
+    if (notchState !== 'thinking' && notchState !== 'speaking') {
+      try {
+        const progress = watch.push(await captureSmall(display), ownAreas(display));
+        if (progress === 'changed') {
+          if (agent.step >= agent.maxSteps) return stopAgent({ limit: true });
+          agentWatch = null;
+          console.log('[judith] agent mode: the screen changed, next step');
+          return send(bubble, 'agent-next', { question: AGENT_NEXT, step: agent.step + 1, max: agent.maxSteps });
+        }
+      } catch {}
+    }
+    agentWatch = setTimeout(tick, AGENT_WATCH_EVERY_MS);
+  }, AGENT_WATCH_EVERY_MS);
+}
+
 async function ask(question, turn) {
   activeTurn = turn;
+  clearTimeout(agentWatch);
+  agentWatch = null;
+  // Agent mode: the special word starts it; while it runs, the user's answers
+  // and the screen changes (AGENT_NEXT) become its next steps.
+  const wasAgent = agent.active;
+  const asked = question === AGENT_NEXT ? agent.next() : agent.question(question);
+  // The step limit was reached: the loop is over (the agent stopped itself).
+  if (wasAgent && !agent.active) agentState({ limit: true });
+  if (asked == null) return send(bubble, 'answer', { turn });
+  const inAgent = agent.active;
+  if (inAgent) agentState();
+  let goalReached = false;
   entry = { at: Date.now(), question, spoken: Boolean(lastHeardAt && Date.now() - lastHeardAt < 15000), tools: [], marks: 0 };
   timeline = { ask: Date.now(), heard: lastHeardAt };
   turnLinks = new Map();
@@ -747,7 +803,7 @@ async function ask(question, turn) {
   // look_at_screen. alwaysLook: the old behaviour, a screenshot every time.
   let image = null;
   // Engines other than Claude Code cannot call look_at_screen: they always get it.
-  if (config.alwaysLook || !engine.canLook || session.zone || needsScreen(question)) {
+  if (config.alwaysLook || !engine.canLook || session.zone || inAgent || needsScreen(question)) {
     const shot = await lookForJudith();
     if (shot.data) image = shot;
   }
@@ -755,6 +811,11 @@ async function ask(question, turn) {
   // Script lines go to the notch as soon as they are complete.
   let commands = 0;
   const reader = createScriptReader((command) => {
+    if (command.type === 'done') {
+      goalReached = true;
+      if (!command.text) return;
+      command = { type: 'say', text: command.text };
+    }
     if (command.type === 'say') {
       // Links become cards; the voice says their title, never the URL.
       for (const link of findLinks(command.text, config.language)) addLink(link);
@@ -771,7 +832,7 @@ async function ask(question, turn) {
   try {
     const result = await engine.ask(
       buildUserContent({
-        question,
+        question: asked,
         image: image && { mediaType: image.mediaType, data: image.data },
         pointer: toZone(session.pointer, image ? session.frame : null),
         zone: Boolean(image && session.frame),
@@ -783,8 +844,13 @@ async function ask(question, turn) {
     if (creation) openCreation(creation.url);
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
     journal({ outcome: 'answered', commands, firstVoiceMs: timeline?.voice ? timeline.voice - timeline.ask : null });
+    if (inAgent && goalReached) stopAgent({ done: true });
+    else if (inAgent) waitForUser(display);
   } catch (error) {
-    if (!error.cancelled) send(bubble, 'error', { turn, message: error.message });
+    if (!error.cancelled) {
+      send(bubble, 'error', { turn, message: error.message });
+      stopAgent();
+    }
     journal({ outcome: error.cancelled ? 'cancelled' : 'error', error: error.cancelled ? undefined : error.message });
   } finally {
     if (currentReader === reader) currentReader = null;
@@ -1050,6 +1116,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('judith:ask', (_e, question, turn) => (lastAsk = ask(String(question), Number(turn))));
   ipcMain.on('judith:cancel', (_e, turn) => cancelTurn(Number(turn)));
   ipcMain.on('judith:clear-screen', () => {
+    // X, Esc, "arrête": agent mode ends too.
+    stopAgent();
     dropZone();
     clearMarks();
     scanning = false;
