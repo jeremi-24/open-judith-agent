@@ -40,6 +40,7 @@ function showState(state, info = {}) {
   const message = info.error ?? info.message;
   const shown = state === 'idle' && message ? 'speaking' : state;
   notch.dataset.state = shown === 'idle' ? 'none' : shown;
+  api.notchState(notch.dataset.state);
   notch.dataset.mood = MOODS[state] ?? 'listen';
   if (LABELS[shown]) label.textContent = LABELS[shown];
   notch.classList.toggle('talking', shown === 'speaking' && !message && !info.done && voice.speaking);
@@ -226,6 +227,11 @@ api.on('focus', ({ conversation: keepTalking, interruptions, stt } = {}) => {
   conversation.summon();
 });
 api.on('idle', () => conversation.cancel());
+// The summon shortcut pressed again while Judith thinks or speaks.
+api.on('cancel-all', () => {
+  api.log('shortcut: cancel');
+  conversation.cancel();
+});
 // A question sent by the app itself (demo mode).
 api.on('ask', (text) => conversation.typed(text));
 
@@ -238,10 +244,25 @@ question.addEventListener('input', (event) => {
   if (event.isTrusted && conversation.state === 'listening') ears.cancel();
 });
 
+// Stop and X act on the press itself, not on the release: a click needs the
+// press and the release on the same element, and the notch changes under the
+// pointer (text arriving, state changing). Keyboard activation (Enter, Space)
+// still goes through 'click', whose detail is 0 for keys.
+function onPress(button, action) {
+  button.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    api.log(`${button.id} pressed (${conversation.state})`);
+    action();
+  });
+  button.addEventListener('click', (event) => {
+    if (event.detail === 0) action();
+  });
+}
 // Stop: the conversation is over, Judith goes back to rest.
-document.getElementById('stop').addEventListener('click', () => conversation.cancel());
+onPress(document.getElementById('stop'), () => conversation.cancel());
+onPress(document.getElementById('close'), () => conversation.cancel());
 zoneButton.addEventListener('click', () => api.pickZone());
-document.getElementById('close').addEventListener('click', () => conversation.cancel());
 // At rest, the whole pill summons Judith; its zone button summons her with a zone.
 notch.addEventListener('click', (event) => {
   if (notch.dataset.state !== 'none') return;
@@ -282,10 +303,8 @@ api.on('approved', ({ id }) => {
   }
 });
 
-// The window hugs the notch: transparent pixels around it would catch clicks.
-// At rest it is a pill a little below the top edge, with a tighter margin.
-new ResizeObserver(() => {
-  const atRest = notch.dataset.state === 'none';
-  api.resize({ width: notch.offsetWidth + (atRest ? 16 : 40), height: notch.offsetHeight + (atRest ? 12 : 22), atRest });
-}).observe(notch);
+// The window is a fixed transparent stage: it takes the clicks only while the
+// pointer is over the notch, and lets them through everywhere else.
+notch.addEventListener('pointerenter', () => api.interactive(true));
+notch.addEventListener('pointerleave', () => api.interactive(false));
 showState('idle');

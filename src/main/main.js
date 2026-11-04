@@ -7,7 +7,7 @@ import { startBridge } from './bridge.js';
 import { configPath, loadConfig } from './config.js';
 import { ensureVoice } from './models.js';
 import { captureDisplay, captureFull, captureSmall } from './capture.js';
-import { BOARD_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtection } from './windows.js';
+import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
 import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
@@ -21,6 +21,7 @@ import { needsScreen } from '../core/needs-screen.js';
 import { findLinks, isCreation, speakable } from '../core/links.js';
 import { fromZone, toZone } from '../core/zone.js';
 import { addReminder, describeWhen, dueReminders } from '../core/reminders.js';
+import { shortcutAction } from '../core/shortcut.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -73,8 +74,15 @@ async function withoutJudith(capture) {
   } finally {
     bubble.setOpacity(1);
     board.setOpacity(1);
-    if (session.zone || shownMarks.length) overlay.showInactive();
+    if (session.zone || shownMarks.length) showOverlay();
   }
+}
+
+// The overlay is shown without focus; the notch (and its X) must stay above it,
+// or the full-screen overlay would sit over the buttons.
+function showOverlay() {
+  overlay.showInactive();
+  bubble.moveTop();
 }
 
 // With a zone drawn by the user, only that zone is sent: Claude's coordinates
@@ -174,8 +182,7 @@ async function summon() {
   session = { display, reference: null, pointer, zone: null, frame: null };
   send(overlay, 'zone', null);
 
-  bubbleAtRest = false; // the open notch is glued to the top edge
-  placeBubble(display, bubble.getBounds());
+  placeBubble(display);
   bubble.show();
   bubble.focus();
   const ears = liveEars();
@@ -454,14 +461,15 @@ function speakLocal(text) {
 
 // ----- the notch -----
 // Glued to the very top of the screen, always centered.
-// At rest, a pill a few pixels below the top edge: what is right under
-// the edge (tabs, title bars) stays clickable.
-const REST_GAP = 6;
-let bubbleAtRest = true;
-function placeBubble(display, { width, height }) {
+// The window is a fixed transparent stage: it is only moved, never resized.
+// At rest the pill sits a few pixels below the edge (bubble.css), and the
+// stage lets clicks through around it, so tabs and title bars stay clickable.
+function placeBubble(display) {
   const { x, y, width: screenWidth } = display.bounds;
-  bubble.setBounds({ x: Math.round(x + (screenWidth - width) / 2), y: y + (bubbleAtRest ? REST_GAP : 0), width, height });
+  bubble.setPosition(Math.round(x + (screenWidth - BUBBLE_WIDTH) / 2), y);
 }
+// The notch's state as the page shows it (none, listening, thinking, speaking).
+let notchState = 'none';
 
 // Back to the small idle notch.
 function hide() {
@@ -535,7 +543,7 @@ async function drawMark(mark) {
   }
   if (!overlay.isVisible()) {
     overlay.setBounds(bounds);
-    overlay.showInactive();
+    showOverlay();
   }
   // The ink that stays readable on what is under the mark.
   const ground = session.reference ?? (await screenNow(display).catch(() => null));
@@ -691,7 +699,7 @@ async function lookForJudith() {
     const shot = await look(display);
     session.reference = shot.small;
     overlay.setBounds(display.bounds);
-    overlay.showInactive();
+    showOverlay();
     scanning = true;
     send(overlay, 'scan', true);
     const zone = Boolean(session.frame);
@@ -960,7 +968,7 @@ app.whenReady().then(async () => {
 
   // The idle notch ("Judith ●") is always at the top of the screen.
   bubble.webContents.once('did-finish-load', () => {
-    placeBubble(cursorDisplay(), bubble.getBounds());
+    placeBubble(cursorDisplay());
     bubble.showInactive();
   });
 
@@ -969,7 +977,9 @@ app.whenReady().then(async () => {
   tray.on('click', summon);
   buildTrayMenu();
 
-  if (!globalShortcut.register(config.shortcut, summon)) {
+  // The same shortcut summons Judith and, while she thinks or speaks, stops her.
+  const onShortcut = () => (shortcutAction(notchState) === 'cancel' ? send(bubble, 'cancel-all') : summon());
+  if (!globalShortcut.register(config.shortcut, onShortcut)) {
     console.error(`[judith] shortcut ${config.shortcut} is already taken`);
   }
   if (config.zoneShortcut && !globalShortcut.register(config.zoneShortcut, summonWithZone)) {
@@ -1005,12 +1015,12 @@ app.whenReady().then(async () => {
   // The notch reports the end of speech and the first spoken sentence.
   ipcMain.on('judith:timing', (_e, step) => (step === 'heard' ? (lastHeardAt = Date.now()) : mark(step)));
   ipcMain.on('judith:approve', (_e, { id, allow }) => settleApproval(id, allow === true));
-  ipcMain.on('judith:resize', (_e, size) => {
-    const width = Math.min(720, Math.max(60, Math.ceil(size?.width ?? 0)));
-    const height = Math.min(480, Math.max(40, Math.ceil(size?.height ?? 0)));
-    bubbleAtRest = size?.atRest === true;
-    placeBubble(session.display ?? cursorDisplay(), { width, height });
-  });
+  // The pointer entered or left the notch: take the clicks, or let them through.
+  ipcMain.on('judith:interactive', (_e, on) => setNotchInteractive(bubble, on === true));
+  ipcMain.on('judith:notch-state', (_e, state) => (notchState = String(state)));
+  // What the notch does with the user's presses, in the terminal log: if a
+  // button "does nothing", this tells whether the press reached the page.
+  ipcMain.on('judith:log', (_e, text) => console.log(`[notch] ${String(text).slice(0, 200)}`));
   ipcMain.on('judith:open-path', (_e, path) => existsSync(path) && shell.openPath(path));
   ipcMain.on('judith:preview', (_e, path) => preview(String(path)));
   ipcMain.on('judith:close-board', () => {

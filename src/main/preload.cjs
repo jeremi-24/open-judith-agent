@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const EVENTS = [
   // notch
-  'focus', 'idle', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale', 'marked', 'speech', 'link', 'reminder',
+  'focus', 'idle', 'cancel-all', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale', 'marked', 'speech', 'link', 'reminder',
   // overlay (and the notch, for 'zone')
   'mark', 'clear', 'scan', 'shift', 'select', 'zone',
   // board
@@ -30,7 +30,11 @@ contextBridge.exposeInMainWorld('judith', {
   summonZone: () => ipcRenderer.send('judith:summon-zone'),
   close: () => ipcRenderer.send('judith:close'),
   approve: (id, allow) => ipcRenderer.send('judith:approve', { id, allow }),
-  resize: (size) => ipcRenderer.send('judith:resize', size),
+  // The pointer is over the notch (it takes the clicks) or not (they go through).
+  interactive: (on) => ipcRenderer.send('judith:interactive', on),
+  // The state the notch shows; the summon shortcut depends on it.
+  notchState: (state) => ipcRenderer.send('judith:notch-state', state),
+  log: (text) => ipcRenderer.send('judith:log', text),
   // The zone of the screen to explain: start drawing it, the drawn zone
   // (fractions of the display, or null), forget it.
   pickZone: () => ipcRenderer.send('judith:pick-zone'),

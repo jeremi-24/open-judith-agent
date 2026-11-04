@@ -10,6 +10,13 @@ html, body {
   overflow: hidden;
   user-select: none;
 }
+/* The window is a fixed transparent stage; the notch hangs from its top edge,
+   centered, and only the notch takes the mouse (see bubble.js). */
+body { height: 100vh; display: flex; justify-content: center; align-items: flex-start; }
+
+/* One motion for every change of shape: fast start, soft landing, no
+   overshoot (an overshoot made the notch wobble). */
+:root { --morph: 0.42s cubic-bezier(0.32, 0.72, 0, 1); }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
@@ -17,7 +24,7 @@ html, body {
   --bg: #14111d;
   --glow: rgb(143 124 255 / 0.55);
   position: relative;
-  margin: 0 auto 22px;
+  margin: 0;
   width: 560px;
   min-height: 84px;
   padding: 0 18px 0 16px;
@@ -28,7 +35,15 @@ html, body {
   align-items: flex-start;
   gap: 16px;
   overflow: hidden;
-  transition: width 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.15), border-radius 0.35s;
+  transition: width var(--morph), min-height var(--morph), border-radius var(--morph), margin-top var(--morph), box-shadow var(--morph);
+}
+/* What the notch holds fades in once it has opened, instead of being drawn
+   while the shape is still changing. */
+.notch:not([data-state="none"]) .body { animation: notch-body-in 0.26s 0.1s both ease-out; }
+@keyframes notch-body-in { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .notch { transition: none; }
+  .notch:not([data-state="none"]) .body { animation: none; }
 }
 .notch[data-state="listening"] { --glow: rgb(92 184 255 / 0.55); }
 .notch[data-state="speaking"] { --glow: rgb(232 80 138 / 0.4); width: 520px; }
@@ -46,10 +61,11 @@ html, body {
 .notch[data-state="none"] {
   width: 58px;
   min-height: 34px;
-  height: 34px;
-  margin-bottom: 12px;
+  margin-top: 6px;
   padding: 0 10px 0 6px;
-  border-radius: 999px;
+  /* Half the height, not 999px: the corners then morph smoothly into the
+     open notch's corners instead of snapping. */
+  border-radius: 17px;
   align-items: center;
   gap: 9px;
   cursor: pointer;
