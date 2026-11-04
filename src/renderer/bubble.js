@@ -129,10 +129,13 @@ const spokenNow = [];
 
 const conversation = createConversation({
   listen: (info) => {
-    // Guided agent mode: between steps the screen moves her on, not the mic
-    // (music, people around). She listens only when she asked a question.
+    // Guided agent mode: between steps the screen moves her on. Unless she
+    // asked a question, she rests and only watches for the user's voice:
+    // real words (not music, not her echo) and she listens to them.
     if (info.followUp && notch.classList.contains('agent') && !/\?\s*$/.test(spokenNow.at(-1) ?? '')) {
-      return conversation.heard('', info);
+      conversation.heard('', info);
+      setTimeout(watchBetweenSteps, 0);
+      return;
     }
     resetAnswer();
     ears.start(info, (text) => conversation.heard(text, info), () => api.timing('heard')).catch((error) => {
@@ -233,6 +236,14 @@ api.on('agent', ({ active, step, max, done, timeout, limit }) => {
   const message = done ? 'Objectif atteint ✓' : timeout ? 'Je m’arrête là. Rappelle-moi si tu veux continuer.' : limit ? 'On a fait beaucoup d’étapes : je m’arrête là.' : '';
   if (message && conversation.state !== 'thinking' && conversation.state !== 'speaking') showState('idle', { message });
 });
+function watchBetweenSteps() {
+  if (!notch.classList.contains('agent') || conversation.state !== 'idle') return;
+  ears.watch(true, (text) => {
+    ears.watch(false);
+    conversation.overheard(text);
+  });
+}
+
 // A soft two-note "got it" the moment Judith sees the user did the step: the
 // next one takes a few seconds to come, the user knows she is on it.
 function gotIt() {

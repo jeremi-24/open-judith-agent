@@ -182,7 +182,7 @@ export function createEars({ transcribe, filter, onLevel = () => {}, onPartial =
       } catch {}
       checking = false;
       vad = createVad(PROFILES.watch);
-      if (watcher && words(text) >= 2) onSpeech();
+      if (watcher && words(text) >= 2) onSpeech(text);
     };
     watcher = onFrames((frame, level, ms) => {
       if (checking) return;

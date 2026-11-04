@@ -98,6 +98,21 @@ export function createConversation(fx, options = {}) {
       listen();
     },
 
+    // At rest, the user started talking to her (words already recognised):
+    // keep them and listen for the rest of the sentence.
+    overheard(text) {
+      const t = String(text ?? '').trim();
+      if (state !== 'idle' || !t) return false;
+      if (isGoodbye(t)) {
+        fx.clearScreen();
+        set('idle', { message: 'À plus !' });
+        return true;
+      }
+      prefix = t;
+      listen({ continuation: true, partial: t });
+      return true;
+    },
+
     // A question typed in the notch.
     typed(text) {
       const t = String(text ?? '').trim();
