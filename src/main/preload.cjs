@@ -34,6 +34,12 @@ contextBridge.exposeInMainWorld('judith', {
   // The state the notch shows; the summon shortcut depends on it.
   notchState: (state) => ipcRenderer.send('judith:notch-state', state),
   log: (text) => ipcRenderer.send('judith:log', text),
+  // The settings panel: which engine answers (Claude Code, Codex, Cursor, an API key).
+  settings: {
+    get: () => ipcRenderer.invoke('judith:settings-get'),
+    test: (input) => ipcRenderer.invoke('judith:settings-test', input),
+    save: (input) => ipcRenderer.invoke('judith:settings-save', input),
+  },
   // The zone of the screen to explain: start drawing it, the drawn zone
   // (fractions of the display, or null), forget it.
   pickZone: () => ipcRenderer.send('judith:pick-zone'),

@@ -11,6 +11,9 @@ Judith now does one thing, well: she looks at your screen and explains it.
 - Her examples come from the screen itself: its names, numbers and words.
 - What Claude Code makes to explain (artifacts, diagrams, documents) is still shown: a
   card in the notch, and the creation opens in the browser.
+- **Other engines**: OpenAI Codex, Cursor's agent, or an API key (Anthropic, OpenAI, Google
+  Gemini, OpenRouter, OpenAI-compatible servers). "Automatique" picks what is installed.
+  A gear in the notch lists them, tests them (text + image) and saves API keys encrypted.
 - The notch window keeps a fixed size: smoother motion, and Stop / X work again in every
   state. The summon shortcut stops her while she thinks or speaks.
 

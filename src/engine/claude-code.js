@@ -15,6 +15,9 @@ export function findClaude(configured) {
 }
 
 export class ClaudeCodeEngine extends EventEmitter {
+  // Claude Code calls Judith's look_at_screen tool when it needs the screen.
+  canLook = true;
+
   // extraArgs: more Claude Code flags (MCP servers, allowed tools…).
   // env: extra environment variables for Claude Code.
   constructor({ claudePath, cwd, model, systemPrompt, extraArgs = [], env = {} }) {

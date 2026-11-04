@@ -4,11 +4,13 @@ import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
-import { configPath, loadConfig } from './config.js';
+import { configPath, loadConfig, saveConfig } from './config.js';
+import { getKey, hasKey, setKey } from './secrets.js';
+import { detectEngines } from './detect.js';
 import { ensureVoice } from './models.js';
 import { captureDisplay, captureSmall } from './capture.js';
 import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
-import { ClaudeCodeEngine } from '../engine/claude-code.js';
+import { chooseEngine, createEngine, ENGINES, PROVIDERS } from '../engine/engines.js';
 import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
 import { averageLuma, bestShift, CHANGED, markCore, markRect, regionDiff, STALE } from '../core/pixels.js';
@@ -678,7 +680,8 @@ async function ask(question, turn) {
   // was drawn: the screenshot goes with it, one round trip less than
   // look_at_screen. alwaysLook: the old behaviour, a screenshot every time.
   let image = null;
-  if (config.alwaysLook || session.zone || needsScreen(question)) {
+  // Engines other than Claude Code cannot call look_at_screen: they always get it.
+  if (config.alwaysLook || !engine.canLook || session.zone || needsScreen(question)) {
     const shot = await lookForJudith();
     if (shot.data) image = shot;
   }
@@ -733,6 +736,115 @@ function cancelTurn(turn) {
   engine.cancel();
   scanning = false;
   send(overlay, 'scan', false);
+}
+
+// ----- the engine: Claude Code, another agent, or a model with an API key -----
+let claudeArgs = [];
+let available = []; // engines installed on this PC
+let engineKind = null;
+
+// Everything an engine needs, from the settings. overrides: the settings being
+// tested in the notch before they are saved.
+function engineOptions(kind, overrides = {}) {
+  const settings = { ...config, ...overrides };
+  const canLook = kind === 'claude-code';
+  return {
+    cwd: settings.workingDirectory,
+    // Emotion tags only when the voice can act them.
+    systemPrompt: buildSystemPrompt({ language: settings.language, annotations: settings.annotations, emotions: settings.voice === 'fish', board: settings.board, canLook }),
+    // Speed: little thinking for a conversation, and Judith's tools loaded up
+    // front (no ToolSearch round trip before looking at the screen).
+    claude: { claudePath: settings.claudePath, model: settings.model, extraArgs: claudeArgs, env: { ENABLE_TOOL_SEARCH: 'false' } },
+    api: { provider: settings.apiProvider, model: settings.apiModel, baseUrl: settings.apiBaseUrl, key: overrides.apiKey || getKey(settings.apiProvider) },
+    agentModel: settings.agentModel,
+  };
+}
+
+function startEngine() {
+  engine?.stop();
+  engineKind = chooseEngine({ configured: config.engine, available, hasKey: hasKey(config.apiProvider) });
+  console.log(`[judith] engine: ${engineKind} (configured: ${config.engine}, installed: ${available.join(', ') || 'none'})`);
+  engine = createEngine(engineKind, engineOptions(engineKind));
+  // The warm-up answer stays silent: no reader is listening yet.
+  engine.on('delta', (text) => {
+    if (currentReader) mark('firstWord');
+    currentReader?.push(text);
+  });
+  engine.on('tool', (tool) => {
+    console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
+    send(bubble, 'tool', { turn: activeTurn, label: describeTool(tool.name, tool.input, config.language) });
+    trackTool(tool);
+    creationsIn(JSON.stringify(tool.input ?? {}));
+    // Claude Code "opens" a creation in its own app: Judith opens the browser.
+    if (tool.name === 'Artifact' && tool.input?.action === 'open' && isCreation(String(tool.input.url))) openCreation(tool.input.url);
+  });
+  engine.on('tool-result', (result) => {
+    trackResult(result);
+    creationsIn(result.output);
+  });
+  engine.on('log', (text) => console.error(`[${engineKind}]`, text.trim()));
+  // Claude Code is kept warm: start it and load its context now, so the first
+  // real question is fast. Other engines start per question (and a warm-up
+  // would cost the user API credits for nothing).
+  warmingUp =
+    engineKind === 'claude-code'
+      ? engine.ask([{ type: 'text', text: 'Réponds seulement : say prête.' }]).catch((error) => console.error('[judith] warm-up failed:', error.message))
+      : Promise.resolve();
+}
+
+// What the settings panel shows.
+function engineSettings() {
+  return {
+    engine: engineKind,
+    configured: config.engine,
+    engines: Object.entries(ENGINES).map(([id, e]) => ({ id, label: e.label, memory: e.memory, installed: id === 'api' || available.includes(id) })),
+    providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, model: p.model, hasKey: hasKey(id) })),
+    apiProvider: config.apiProvider,
+    apiModel: config.apiModel,
+    agentModel: config.agentModel,
+  };
+}
+
+const SETTING_KEYS = ['engine', 'apiProvider', 'apiModel', 'apiBaseUrl', 'agentModel'];
+function pickSettings(input = {}) {
+  const out = {};
+  for (const key of SETTING_KEYS) if (typeof input[key] === 'string') out[key] = input[key].trim();
+  if (out.engine && out.engine !== 'auto' && !ENGINES[out.engine]) throw new Error(`Unknown engine: ${out.engine}`);
+  if (out.apiProvider && !PROVIDERS[out.apiProvider]) throw new Error(`Unknown provider: ${out.apiProvider}`);
+  return out;
+}
+
+// A 1x1 white PNG: the test checks that the engine answers AND accepts an image.
+const TEST_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
+async function testEngine(input) {
+  const settings = pickSettings(input);
+  const kind = settings.engine && settings.engine !== 'auto' ? settings.engine : engineKind;
+  const apiKey = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
+  const probe = createEngine(kind, engineOptions(kind, { ...settings, apiKey }));
+  const startedAt = Date.now();
+  const timer = setTimeout(() => probe.cancel(), 45000);
+  try {
+    await probe.ask([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: TEST_IMAGE } },
+      { type: 'text', text: 'Test de connexion. Réponds seulement : say ok' },
+    ]);
+    return { ok: true, ms: Date.now() - startedAt };
+  } catch (error) {
+    return { ok: false, error: error.cancelled ? 'Pas de réponse en 45 s.' : error.message };
+  } finally {
+    clearTimeout(timer);
+    probe.stop();
+  }
+}
+
+function saveEngineSettings(input) {
+  const settings = pickSettings(input);
+  const apiKey = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
+  if (apiKey) setKey(settings.apiProvider || config.apiProvider, apiKey);
+  Object.assign(config, settings);
+  saveConfig(settings);
+  startEngine();
+  return engineSettings();
 }
 
 function newConversation() {
@@ -821,44 +933,14 @@ app.whenReady().then(async () => {
     }),
   );
 
-  engine = new ClaudeCodeEngine({
-    claudePath: config.claudePath,
-    cwd: config.workingDirectory,
-    model: config.model,
-    // Emotion tags only when the voice can act them.
-    systemPrompt: buildSystemPrompt({ language: config.language, annotations: config.annotations, emotions: config.voice === 'fish', board: config.board }),
-    // Speed: little thinking for a conversation, and Judith's tools loaded up
-    // front (no ToolSearch round trip before looking at the screen).
-    env: { ENABLE_TOOL_SEARCH: 'false' },
-    extraArgs: [
-      ...(config.effort ? ['--effort', config.effort] : []),
-      '--mcp-config', mcpConfig,
-      '--allowedTools', ALLOWED_TOOLS.join(','),
-      '--disallowedTools', DENIED_TOOLS.join(','),
-    ],
-  });
-  // The warm-up answer stays silent: no reader is listening yet.
-  engine.on('delta', (text) => {
-    if (currentReader) mark('firstWord');
-    currentReader?.push(text);
-  });
-  engine.on('tool', (tool) => {
-    console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
-    send(bubble, 'tool', { turn: activeTurn, label: describeTool(tool.name, tool.input, config.language) });
-    trackTool(tool);
-    creationsIn(JSON.stringify(tool.input ?? {}));
-    // Claude Code "opens" a creation in its own app: Judith opens the browser.
-    if (tool.name === 'Artifact' && tool.input?.action === 'open' && isCreation(String(tool.input.url))) openCreation(tool.input.url);
-  });
-  engine.on('tool-result', (result) => {
-    trackResult(result);
-    creationsIn(result.output);
-  });
-  engine.on('log', (text) => console.error('[claude]', text.trim()));
-  // Starts Claude Code and loads its context now, so the first real question is fast.
-  warmingUp = engine
-    .ask([{ type: 'text', text: 'Réponds seulement : say prête.' }])
-    .catch((error) => console.error('[judith] warm-up failed:', error.message));
+  claudeArgs = [
+    ...(config.effort ? ['--effort', config.effort] : []),
+    '--mcp-config', mcpConfig,
+    '--allowedTools', ALLOWED_TOOLS.join(','),
+    '--disallowedTools', DENIED_TOOLS.join(','),
+  ];
+  available = await detectEngines(config.claudePath);
+  startEngine();
 
   // The idle notch ("Judith ●") is always at the top of the screen.
   bubble.webContents.once('did-finish-load', () => {
@@ -914,6 +996,19 @@ app.whenReady().then(async () => {
   // What the notch does with the user's presses, in the terminal log: if a
   // button "does nothing", this tells whether the press reached the page.
   ipcMain.on('judith:log', (_e, text) => console.log(`[notch] ${String(text).slice(0, 200)}`));
+  // The settings panel in the notch: which engine answers Judith.
+  ipcMain.handle('judith:settings-get', async () => {
+    available = await detectEngines(config.claudePath); // something may have been installed since
+    return engineSettings();
+  });
+  ipcMain.handle('judith:settings-test', (_e, input) => testEngine(input).catch((error) => ({ ok: false, error: error.message })));
+  ipcMain.handle('judith:settings-save', (_e, input) => {
+    try {
+      return { ok: true, settings: saveEngineSettings(input) };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
   ipcMain.on('judith:open-path', (_e, path) => existsSync(path) && shell.openPath(path));
   ipcMain.on('judith:preview', (_e, path) => preview(String(path)));
   ipcMain.on('judith:close-board', () => {
