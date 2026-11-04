@@ -117,3 +117,35 @@ export function openCurve(points) {
 export function inkFor(luma) {
   return luma >= 140 ? 'dark' : 'light';
 }
+
+// A hand-drawn arrow from a to b (pixels): a slightly bent stroke and a head.
+// The bend side and size come from the seed, so two arrows never look stamped.
+export function arrowStroke(a, b, seed) {
+  const random = rng(seed);
+  const [x1, y1] = a;
+  const [x2, y2] = b;
+  const length = Math.hypot(x2 - x1, y2 - y1) || 1;
+  const [ux, uy] = [(x2 - x1) / length, (y2 - y1) / length];
+  // Bend: up to 8% of the length, on a random side.
+  const bend = (random() < 0.5 ? -1 : 1) * length * (0.04 + random() * 0.04);
+  const mid = [(x1 + x2) / 2 - uy * bend, (y1 + y2) / 2 + ux * bend];
+  const points = [];
+  for (let i = 0; i <= 16; i++) {
+    const t = i / 16;
+    const q = (1 - t) * (1 - t);
+    points.push([q * x1 + 2 * (1 - t) * t * mid[0] + t * t * x2, q * y1 + 2 * (1 - t) * t * mid[1] + t * t * y2]);
+  }
+  // The head follows the direction of the end of the stroke.
+  const [px, py] = points[points.length - 3];
+  const angle = Math.atan2(y2 - py, x2 - px);
+  const head = Math.min(18, Math.max(10, length * 0.12));
+  const wing = (side) => [x2 - head * Math.cos(angle + side * 0.5), y2 - head * Math.sin(angle + side * 0.5)];
+  const [l, r] = [wing(1), wing(-1)];
+  const round = (v) => Math.round(v * 10) / 10;
+  return {
+    d: openCurve(points),
+    head: `M${round(l[0])} ${round(l[1])} L${round(x2)} ${round(y2)} L${round(r[0])} ${round(r[1])}`,
+    start: points[0],
+    points,
+  };
+}

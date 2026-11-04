@@ -45,6 +45,15 @@ export function parseLine(raw) {
       const [y1, y2] = [Math.min(top, bottom), Math.max(top, bottom)];
       return { type: 'mark', shape: word, x: (x1 + x2) / 2, y: (y1 + y2) / 2, w: x2 - x1, h: y2 - y1, label };
     }
+    case 'arrow': {
+      // A hand-drawn arrow from one thing to another: a link, a flow, a cause.
+      const [coords, label] = splitLabel(rest);
+      const n = numbers(coords);
+      if (!n || n.length !== 4) return null;
+      const [x1, y1, x2, y2] = n.map(clamp01);
+      if (x1 === x2 && y1 === y2) return null;
+      return { type: 'mark', shape: 'arrow', points: [[x1, y1], [x2, y2]], x: (x1 + x2) / 2, y: (y1 + y2) / 2, w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), label };
+    }
     case 'shape': {
       const [coords, label] = splitLabel(rest);
       const n = numbers(coords);

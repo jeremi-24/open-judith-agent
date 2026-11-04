@@ -13,6 +13,8 @@ import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOverlay, se
 import { chooseEngine, createEngine, ENGINES, PROVIDERS } from '../engine/engines.js';
 import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
+import { markBox, pickSnap, snapMark } from '../core/snap.js';
+import { createEyes, findEyes } from './eyes.js';
 import { averageLuma, bestShift, CHANGED, markCore, markRect, regionDiff, STALE } from '../core/pixels.js';
 import { inkFor } from '../core/ink.js';
 import { createScriptReader } from '../core/script.js';
@@ -31,6 +33,8 @@ const root = join(import.meta.dirname, '..', '..');
 // The installer adds a version with transparent rounded corners (tray, notifications).
 const iconPath = [join(root, 'assets', 'icon-rounded.png'), join(root, 'assets', 'icon.png')].find(existsSync);
 let bubble, overlay, board, tray, engine, warmingUp;
+// Windows UI Automation, to snap marks onto the real controls (optional).
+let eyes = null;
 
 // Tools Judith may use without asking: opening things, reading, showing.
 // Everything else (editing files, running commands) goes through the notch.
@@ -435,6 +439,29 @@ function ownAreas(display) {
     .map((b) => ({ x1: (b.x - x) / width, y1: (b.y - y) / height, x2: (b.x + b.width - x) / width, y2: (b.y + b.height - y) / height }));
 }
 
+// A ring or box lands on the real control under it: the model's box is only
+// approximate (often ~30 px off on small icons); Windows knows the exact one.
+async function snapToControl(mark, display) {
+  if (!eyes?.available || (mark.shape !== 'ring' && mark.shape !== 'box') || !(mark.w > 0 && mark.h > 0)) return mark;
+  const { bounds } = display;
+  const onWindows = process.platform === 'win32';
+  const dip = { x: Math.round(bounds.x + mark.x * bounds.width), y: Math.round(bounds.y + mark.y * bounds.height) };
+  const point = onWindows ? screen.dipToScreenPoint(dip) : dip;
+  const elements = await eyes.around(point.x, point.y);
+  if (!elements?.length) return mark;
+  const candidates = elements.map((e) => {
+    const r = onWindows ? screen.screenToDipRect(null, { x: e.x, y: e.y, width: e.w, height: e.h }) : { x: e.x, y: e.y, width: e.w, height: e.h };
+    return {
+      name: e.name,
+      type: e.type,
+      rect: { x1: (r.x - bounds.x) / bounds.width, y1: (r.y - bounds.y) / bounds.height, x2: (r.x + r.width - bounds.x) / bounds.width, y2: (r.y + r.height - bounds.y) / bounds.height },
+    };
+  });
+  const rect = pickSnap(markBox(mark), mark.label, candidates);
+  if (rect) console.log(`[judith] mark "${mark.label}" snapped onto the real control`);
+  return snapMark(mark, rect);
+}
+
 async function drawMark(mark) {
   const display = session.display ?? cursorDisplay();
   const { bounds } = display;
@@ -469,6 +496,7 @@ async function drawMark(mark) {
       return;
     }
   }
+  mark = await snapToControl(mark, display);
   if (!overlay.isVisible()) {
     overlay.setBounds(bounds);
     showOverlay();
@@ -933,6 +961,8 @@ app.whenReady().then(async () => {
     }),
   );
 
+  eyes = createEyes({ exe: process.platform === 'win32' ? findEyes(root) : null, log: (text) => console.log(`[eyes] ${text}`) });
+  console.log(`[judith] eyes (UI Automation): ${eyes.available ? 'on' : 'off, marks keep the model position'}`);
   claudeArgs = [
     ...(config.effort ? ['--effort', config.effort] : []),
     '--mcp-config', mcpConfig,
@@ -1063,6 +1093,7 @@ app.on('window-all-closed', () => {}); // lives in the tray
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   engine?.stop();
+  eyes?.stop();
   speech?.terminate();
   tts?.kill();
 });

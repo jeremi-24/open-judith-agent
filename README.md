@@ -160,6 +160,20 @@ microphone, the transcription, Claude Code and the voice only report events to i
   Claude Code in the middle of an answer. The conversation memory is kept.
 - **Follow-up**: after answering, Judith listens a few more seconds (`"conversation": true`).
 
+### Marks on the real controls
+
+The model gives an approximate box from a screenshot. On Windows, a tiny companion
+(`companions/eyes`, .NET Framework 4.8, built into Windows 10/11) asks **UI Automation** which
+controls are around that point, with their exact bounds, and Judith draws the ring or box on
+the right one (`src/core/snap.js` picks it: overlap, name matching the label, kind of control).
+Without the companion, marks keep the model's position. To build it from source: install the
+[.NET SDK](https://dotnet.microsoft.com/download) and run `dotnet build companions/eyes -c Release`.
+
+### Diagrams on the screen
+
+To explain how things relate, Judith marks the parts and joins them with hand-drawn arrows
+(`arrow` in her script): "this value comes from there", "this call goes to that function".
+
 ### When marks disappear
 
 A mark is only true for the screen Judith looked at. It is not drawn if that part of the
@@ -191,8 +205,8 @@ JUDITH_DEMO="Où est le bouton Démarrer ?" JUDITH_DEMO_SHOT=shot.jpg npm start
 ## Known limits (v0.1)
 
 - Answers take ~5 s with a screenshot (Claude Code is kept warm in the background).
-- Pointing is precise on regular buttons but can be off by ~30 px on tiny icons
-  (taskbar). Windows UI Automation is planned to snap marks onto real controls.
+- Pointing snaps onto real controls through UI Automation; content without accessible
+  controls (images, videos, canvases, some games) keeps the model's approximate position.
 - With voice, a full turn takes ~8-10 s (end of speech, ~2 s of transcription, answer).
 - No wake word yet ("Hey Judith"): use the shortcut.
 

@@ -3,7 +3,7 @@
 // is not exactly the end); the badge and the label pop in after. The ink is
 // dark on light backgrounds and light on dark ones. Marks are drawn one
 // after the other, never at the same time.
-import { handStroke, outlinePoints } from '../core/ink.js';
+import { arrowStroke, handStroke, outlinePoints } from '../core/ink.js';
 import { zoneFrom } from '../core/zone.js';
 
 const canvas = document.getElementById('canvas');
@@ -88,6 +88,7 @@ async function trace(paths, mine) {
 
 // ----- a mark -----
 async function drawMark(m, mine) {
+  if (m.shape === 'arrow') return drawArrow(m, mine);
   const group = el('g', { class: `mark ink-${m.ink === 'light' ? 'light' : 'dark'}` });
   const outline = outlinePoints(m);
   const size = Math.max(m.rx, m.ry);
@@ -113,6 +114,26 @@ async function drawMark(m, mine) {
   window.judith.marked();
   // The pen rests next to the mark, ready for the next one.
   await flyTo(m.cx + m.rx * 0.6, m.cy + m.ry * 0.5, mine);
+}
+
+// An arrow between two things on the screen: the stroke is traced by the pen,
+// then the head appears. Its label sits at the middle.
+async function drawArrow(m, mine) {
+  const group = el('g', { class: `mark ink-${m.ink === 'light' ? 'light' : 'dark'}` });
+  const [from, to] = m.points;
+  const stroke = arrowStroke(from, to, m.seed ?? 1);
+  const halo = el('path', { class: 'halo', d: stroke.d }, group);
+  const main = el('path', { class: 'ink', d: stroke.d }, group);
+  await flyTo(stroke.start[0], stroke.start[1], mine);
+  if (mine !== generation) return;
+  await trace([halo, main], mine);
+  if (mine !== generation) return;
+  el('path', { class: 'halo pop', d: stroke.head }, group);
+  el('path', { class: 'ink pop', d: stroke.head }, group);
+  count += 1;
+  label({ ...m, rx: 6, ry: 6 }, count, m.ink);
+  window.judith.marked();
+  await flyTo(to[0] + 14, to[1] + 10, mine);
 }
 
 function badge(m, n, group) {
