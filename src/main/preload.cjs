@@ -4,8 +4,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 const EVENTS = [
   // notch
   'focus', 'idle', 'cancel-all', 'agent', 'agent-next', 'confirm', 'offer', 'ask', 'cmd', 'answer', 'error', 'tool', 'stale', 'marked', 'speech', 'link',
-  // overlay (and the notch, for 'zone')
-  'mark', 'clear', 'scan', 'shift', 'select', 'zone', 'piloting',
+  // overlay (and the notch, for 'zones' and 'notice')
+  'mark', 'clear', 'scan', 'shift', 'select', 'zones', 'notice', 'piloting',
   // board
   'board', 'note', 'visual', 'scene', 'scene-step', 'activity', 'clear-board',
 ];
@@ -50,11 +50,13 @@ contextBridge.exposeInMainWorld('judith', {
     save: (input) => ipcRenderer.invoke('judith:onboarding-save', input),
     done: (info) => ipcRenderer.send('judith:onboarding-done', info),
   },
-  // The zone of the screen to explain: start drawing it, the drawn zone
-  // (fractions of the display, or null), forget it.
+  // The zones of the screen to explain: draw one more, the drawn zone
+  // (fractions of the display, or null), forget them all.
   pickZone: () => ipcRenderer.send('judith:pick-zone'),
   zoneSelected: (zone) => ipcRenderer.send('judith:zone-selected', zone),
   dropZone: () => ipcRenderer.send('judith:drop-zone'),
+  // The cross of a thumbnail: forget that zone (0-based).
+  removeZone: (index) => ipcRenderer.send('judith:remove-zone', index),
   // A document, page or site Judith made or mentioned.
   openLink: (url) => ipcRenderer.send('judith:open-link', url),
   // board

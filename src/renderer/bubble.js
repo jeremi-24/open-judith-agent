@@ -197,7 +197,43 @@ api.on('cmd', ({ turn, ...command }) => {
 api.on('link', ({ turn, ...link }) => {
   if (turn === conversation.turn) showLink(link);
 });
-api.on('zone', (on) => zoneButton.setAttribute('aria-pressed', String(Boolean(on))));
+// The zones shown: the notch keeps a numbered thumbnail of each, and the zone
+// button draws one more.
+const zonesBox = document.getElementById('zones');
+api.on('zones', (list) => {
+  const zones = Array.isArray(list) ? list : [];
+  zoneButton.setAttribute('aria-pressed', String(zones.length > 0));
+  zoneButton.title = zones.length ? 'Ajouter une autre zone (Ctrl+Alt+Maj+J)' : 'Choisir la zone à expliquer (Ctrl+Alt+Maj+J)';
+  zonesBox.hidden = zones.length === 0;
+  const known = new Map([...zonesBox.children].map((node) => [node.dataset.key, node]));
+  zonesBox.replaceChildren(
+    ...zones.map((zone, i) => {
+      // A thumbnail that is already there stays (no flicker while the next one arrives).
+      const key = `${i}:${zone.thumb ? 'img' : 'wait'}`;
+      const old = known.get(key);
+      if (old && zone.thumb && old.dataset.thumb === zone.thumb) return old;
+      const node = document.createElement('div');
+      node.className = 'zthumb';
+      node.dataset.key = key;
+      node.dataset.thumb = zone.thumb;
+      if (zone.thumb) node.style.backgroundImage = `url("${zone.thumb}")`;
+      node.setAttribute('role', 'img');
+      node.setAttribute('aria-label', `Zone ${zone.n}`);
+      const n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = String(zone.n);
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'x';
+      x.setAttribute('aria-label', `Retirer la zone ${zone.n}`);
+      x.innerHTML = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1L9 9M9 1L1 9"/></svg>';
+      x.addEventListener('click', () => api.removeZone(i));
+      node.append(n, x);
+      return node;
+    }),
+  );
+});
+api.on('notice', (text) => toast(text, { warn: true }));
 api.on('answer', ({ turn }) => {
   if (turn === conversation.turn) releaseHeld();
   conversation.answered(turn);
@@ -335,7 +371,23 @@ function refreshFields() {
   agentFields.hidden = engine !== 'codex' && engine !== 'cursor';
   const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
   apiModel.placeholder = provider?.model ? `par défaut : ${provider.model}` : 'nom du modèle';
-  apiKey.placeholder = provider?.hasKey ? 'clé enregistrée (laisser vide pour la garder)' : 'colle ta clé ici';
+  apiKey.placeholder = provider?.hasKey ? 'clé enregistrée (laisser vide pour la garder)' : provider?.keyPrefix ? `colle ta clé (${provider.keyPrefix}…)` : 'colle ta clé ici';
+  document.getElementById('api-models').replaceChildren(
+    ...(provider?.models ?? []).map((m) => {
+      const option = document.createElement('option');
+      option.value = m.id;
+      option.label = m.label;
+      return option;
+    }),
+  );
+  const hint = document.getElementById('api-hint');
+  hint.replaceChildren();
+  if (provider?.free) {
+    const free = document.createElement('b');
+    free.textContent = 'Gratuit';
+    hint.append(free, ` : ${provider.freeNote}. Les limites sont celles du fournisseur et peuvent changer.`);
+  }
+  document.getElementById('api-key-link').hidden = !provider?.keyUrl;
 }
 
 function renderSettings(data) {
@@ -370,7 +422,7 @@ function renderSettings(data) {
     ...data.providers.map((p) => {
       const option = document.createElement('option');
       option.value = p.id;
-      option.textContent = p.label;
+      option.textContent = p.free ? `${p.label} · gratuit` : p.label;
       option.selected = p.id === data.apiProvider;
       return option;
     }),
@@ -400,7 +452,15 @@ function closeSettings() {
   if (notch.dataset.state === 'settings') showState('idle');
 }
 
-providerSelect.addEventListener('change', refreshFields);
+providerSelect.addEventListener('change', () => {
+  // A model name belongs to one provider.
+  apiModel.value = '';
+  refreshFields();
+});
+document.getElementById('api-key-link').addEventListener('click', () => {
+  const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
+  if (provider?.keyUrl) api.openLink(provider.keyUrl);
+});
 document.getElementById('settings').addEventListener('click', openSettings);
 document.getElementById('settings-close').addEventListener('click', closeSettings);
 document.getElementById('settings-test').addEventListener('click', async (event) => {
@@ -412,11 +472,35 @@ document.getElementById('settings-test').addEventListener('click', async (event)
   if (result.ok) setStatus(`Ça marche : réponse en ${(result.ms / 1000).toFixed(1)} s.`, 'ok');
   else setStatus(result.error, 'error');
 });
-document.getElementById('settings-save').addEventListener('click', async () => {
-  const result = await api.settings.save(formSettings());
+// A short confirmation under the notch.
+const toastBox = document.getElementById('toast');
+let toastTimer = null;
+function toast(text, { warn = false } = {}) {
+  clearTimeout(toastTimer);
+  toastBox.textContent = warn ? text : `✓ ${text}`;
+  toastBox.classList.toggle('warn', warn);
+  toastBox.hidden = false;
+  // Under the notch, which may still be changing shape (settings → listening).
+  const place = () => (toastBox.style.top = `${Math.round(notch.getBoundingClientRect().bottom) + 12}px`);
+  place();
+  setTimeout(place, 480);
+  requestAnimationFrame(() => toastBox.classList.add('on'));
+  toastTimer = setTimeout(() => {
+    toastBox.classList.remove('on');
+    setTimeout(() => (toastBox.hidden = true), 300);
+  }, 2600);
+}
+// Saved: the notch goes back to listening, where the conversation was.
+document.getElementById('settings-save').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  const result = await api.settings.save(formSettings()).catch((error) => ({ ok: false, error: error.message }));
+  button.disabled = false;
   if (!result.ok) return setStatus(result.error, 'error');
   renderSettings(result.settings);
-  setStatus('Enregistré.', 'ok');
+  setStatus('');
+  conversation.summon();
+  toast('Enregistré');
 });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && notch.dataset.state === 'settings') return closeSettings();

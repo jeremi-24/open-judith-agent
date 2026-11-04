@@ -1,13 +1,13 @@
-// The welcome window: one screen at a time, one idea each. The three settings
-// screens save as the user moves on (engine through the notch's own settings,
-// the rest through onboarding.save); every key is optional.
+// The welcome window: one screen at a time, one idea each. The two settings
+// screens save as the user moves on (the AI through the notch's own settings,
+// the shortcut through onboarding.save); listening keeps its defaults (they
+// are in the notch's settings). Every key is optional.
 const api = window.judith;
 const $ = (id) => document.getElementById(id);
 const screens = [...document.querySelectorAll('.screen')];
-const NEXT_LABELS = ['Découvrir', 'Suivant', 'Suivant', 'Continuer', 'Continuer', 'Continuer', 'Essayer maintenant'];
+const NEXT_LABELS = ['Découvrir', 'Suivant', 'Suivant', 'Continuer', 'Continuer', 'Essayer maintenant'];
 const ENGINE = 3;
-const LISTEN = 4;
-const SHORTCUT = 5;
+const SHORTCUT = 4;
 let current = 0;
 let status = null;
 let engines = null;
@@ -31,12 +31,9 @@ function show(index) {
   });
   $('back').style.visibility = current === 0 ? 'hidden' : 'visible';
   $('next').textContent = NEXT_LABELS[current];
-  // The microphone listens on its own screen only, without a click.
-  if (current === LISTEN) startMic();
-  else stopMic();
 }
 
-const SAVES = { [ENGINE]: saveEngine, [LISTEN]: saveListening, [SHORTCUT]: saveShortcuts };
+const SAVES = { [ENGINE]: saveEngine, [SHORTCUT]: saveShortcuts };
 $('next').addEventListener('click', async () => {
   if (current === screens.length - 1) return api.onboarding.done({ tryNow: true });
   const save = SAVES[current];
@@ -60,105 +57,73 @@ function setStatus(id, text, kind = '') {
   el.className = `status ${kind}`;
 }
 
-// ----- engine -----
+// ----- the AI: the labels say which one to pick -----
+const installed = (id) => engines.engines.some((e) => e.id === id && e.installed);
 function renderEngines() {
-  const box = $('engines');
-  const chosen = engines.configured ?? 'auto';
   const options = [
-    { id: 'auto', label: 'Automatique', tag: engines.engine === 'api' ? 'clé API' : (engines.engines.find((e) => e.id === engines.engine)?.label ?? 'aucun'), installed: true },
-    ...engines.engines.map((e) => ({ ...e, tag: e.id === 'api' ? 'ta clé' : e.installed ? 'installé' : 'absent' })),
+    { id: 'claude-code', label: "J'ai Claude Code" },
+    { id: 'codex', label: "J'ai Codex" },
+    { id: 'api', label: "J'ai une clé API" },
+    { id: 'none', label: "Je n'ai rien de tout ça" },
   ];
-  box.innerHTML = options
-    .map(
-      (o) => `<label class="option"><input type="radio" name="engine" value="${o.id}" ${o.id === chosen ? 'checked' : ''} ${o.installed ? '' : 'disabled'}>
-      <b>${o.label}</b><span class="tag-pill ${o.installed && o.id !== 'api' && o.id !== 'auto' ? 'ok' : ''}">${o.tag}</span></label>`,
-    )
+  // Pre-selected: what is configured, else what is installed, else nothing.
+  const configured = engines.configured && engines.configured !== 'auto' ? engines.configured : null;
+  const chosen = configured ?? (installed('claude-code') ? 'claude-code' : installed('codex') ? 'codex' : engines.providers.some((p) => p.hasKey) ? 'api' : 'none');
+  $('engines').innerHTML = options
+    .map((o) => {
+      const found = o.id !== 'api' && o.id !== 'none' && installed(o.id);
+      return `<label class="option"><input type="radio" name="engine" value="${o.id}" ${o.id === chosen ? 'checked' : ''}>
+      <b>${o.label}</b>${found ? '<span class="tag-pill ok">détecté</span>' : ''}</label>`;
+    })
     .join('');
-  $('api-provider').innerHTML = engines.providers.map((p) => `<option value="${p.id}" ${p.id === engines.apiProvider ? 'selected' : ''}>${p.label}${p.hasKey ? ' (clé enregistrée)' : ''}</option>`).join('');
-  box.addEventListener('change', syncApi);
-  syncApi();
+  // Without any key yet, the free NVIDIA endpoints are the way in.
+  const preselected = engines.providers.some((p) => p.hasKey) ? engines.apiProvider : 'nvidia';
+  $('api-provider').innerHTML = engines.providers.map((p) => `<option value="${p.id}" ${p.id === preselected ? 'selected' : ''}>${p.label}${p.free ? ' · gratuit' : ''}${p.hasKey ? ' (clé enregistrée)' : ''}</option>`).join('');
+  $('api-provider').addEventListener('change', syncProvider);
+  $('engines').addEventListener('change', syncEngine);
+  syncEngine();
 }
-function syncApi() {
-  $('api').hidden = document.querySelector('input[name="engine"]:checked')?.value !== 'api';
+const provider = () => engines.providers.find((p) => p.id === $('api-provider').value);
+function syncProvider() {
+  const p = provider();
+  $('api-key').placeholder = p?.keyPrefix ? `Colle ta clé (${p.keyPrefix}…)` : 'Colle ta clé';
+  $('get-provider-key').hidden = !p?.keyUrl;
+  setStatus('engine-status', p?.free ? `Gratuit : ${p.freeNote}.` : '');
+}
+const chosenEngine = () => document.querySelector('input[name="engine"]:checked')?.value ?? 'none';
+function syncEngine() {
+  const engine = chosenEngine();
+  $('api').hidden = engine !== 'api';
+  $('none').hidden = engine !== 'none';
+  if (engine === 'api') return syncProvider();
+  setStatus('engine-status', (engine === 'claude-code' || engine === 'codex') && !installed(engine) ? 'Pas trouvé sur ce PC : installe-le, puis relance Judith.' : '');
 }
 function engineInput() {
-  return {
-    engine: document.querySelector('input[name="engine"]:checked')?.value ?? 'auto',
-    apiProvider: $('api-provider').value || undefined,
-    apiKey: $('api-key').value,
-  };
+  const engine = chosenEngine();
+  const input = { engine: engine === 'none' ? 'auto' : engine, apiProvider: $('api-provider').value || undefined, apiKey: $('api-key').value };
+  // The model of another provider makes no sense: start from the provider's own.
+  if (engine === 'api' && input.apiProvider !== engines.apiProvider) input.apiModel = '';
+  return input;
 }
 $('engine-test').addEventListener('click', async () => {
-  setStatus('engine-status', 'Test en cours (texte + image)…');
+  setStatus('engine-status', 'Test en cours…');
   $('engine-test').disabled = true;
   const result = await api.settings.test(engineInput()).catch((error) => ({ ok: false, error: error.message }));
   $('engine-test').disabled = false;
-  setStatus('engine-status', result.ok ? `Ça marche : réponse en ${(result.ms / 1000).toFixed(1)} s.` : `Ça ne marche pas : ${result.error}`, result.ok ? 'ok' : 'err');
+  setStatus('engine-status', result.ok ? `Ça marche (${(result.ms / 1000).toFixed(1)} s) ✓` : `Ça ne marche pas : ${result.error}`, result.ok ? 'ok' : 'err');
 });
+$('get-claude').addEventListener('click', () => api.openLink('https://docs.claude.com/en/docs/claude-code/setup'));
+$('get-key').addEventListener('click', () => api.openLink(engines.providers.find((p) => p.id === 'nvidia')?.keyUrl ?? 'https://build.nvidia.com'));
+$('get-gemini').addEventListener('click', () => api.openLink('https://aistudio.google.com/apikey'));
+$('get-provider-key').addEventListener('click', () => provider()?.keyUrl && api.openLink(provider().keyUrl));
 async function saveEngine() {
   const result = await api.settings.save(engineInput());
   if (!result.ok) setStatus('engine-status', result.error, 'err');
-  else engines = result.settings;
+  else engines = result.settings ?? engines;
   return result.ok;
 }
 
-// ----- microphone and listening -----
-let micStream = null;
-let micFrame = 0;
-async function startMic() {
-  stopMic();
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-    // The user left the screen while Windows was opening the mic.
-    if (current !== LISTEN) return stream.getTracks().forEach((t) => t.stop());
-    micStream = stream;
-  } catch (error) {
-    return setStatus('mic-status', 'Micro bloqué : Paramètres Windows → Confidentialité → Microphone.', 'err');
-  }
-  const ctx = new AudioContext();
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 512;
-  ctx.createMediaStreamSource(micStream).connect(analyser);
-  const data = new Float32Array(analyser.fftSize);
-  let loudest = 0;
-  setStatus('mic-status', '');
-  const tick = () => {
-    analyser.getFloatTimeDomainData(data);
-    const level = Math.sqrt(data.reduce((sum, v) => sum + v * v, 0) / data.length);
-    loudest = Math.max(loudest, level);
-    $('pulse').style.transform = `scale(${(1 + Math.min(1, level * 9) * 0.7).toFixed(3)})`;
-    if (loudest > 0.04) setStatus('mic-status', 'Je t’entends bien ✓', 'ok');
-    micFrame = requestAnimationFrame(tick);
-  };
-  tick();
-  micStream.stop = () => ctx.close();
-}
-function stopMic() {
-  cancelAnimationFrame(micFrame);
-  micStream?.getTracks().forEach((t) => t.stop());
-  micStream?.stop?.();
-  micStream = null;
-  $('pulse').style.transform = '';
-}
-document.querySelectorAll('input[name="stt"]').forEach((r) => r.addEventListener('change', syncDeepgram));
-function syncDeepgram() {
-  $('deepgram').hidden = !$('stt-cloud').checked;
-}
-$('deepgram-link').addEventListener('click', () => api.openLink('https://deepgram.com'));
-async function saveListening() {
-  const deepgram = $('stt-cloud').checked;
-  const key = $('deepgram-key').value.trim();
-  // Deepgram without any key would not work: stay local until there is one.
-  const result = await api.onboarding.save({
-    listenMode: $('listen-push').checked ? 'push' : 'auto',
-    speechInput: deepgram && (key || status.deepgramSet) ? 'deepgram' : 'whisper',
-    deepgramKey: key,
-  });
-  status = result.status;
-  return true;
-}
-
-// ----- shortcuts and start -----
+// ----- shortcut and start -----
 async function saveShortcuts() {
   const result = await api.onboarding.save({ shortcut: $('shortcut').value, startWithWindows: $('start-windows').checked });
   status = result.status;
@@ -176,12 +141,7 @@ $('shortcut').addEventListener('change', () => ($('shortcut-keys').innerHTML = k
 async function load() {
   [status, engines] = await Promise.all([api.onboarding.status(), api.settings.get()]);
   renderEngines();
-  $(status.listenMode === 'push' ? 'listen-push' : 'listen-auto').checked = true;
-  $(status.speechInput === 'deepgram' ? 'stt-cloud' : 'stt-local').checked = true;
-  if (status.deepgramSet) $('deepgram-key').placeholder = 'Clé déjà enregistrée';
-  syncDeepgram();
   $('shortcut').innerHTML = status.shortcuts.map((s) => `<option value="${s}" ${s === status.shortcut ? 'selected' : ''}>${s.replace('Control', 'Ctrl').replace('Shift', 'Maj').replace(/\+/g, ' + ')}</option>`).join('');
-  $('zone-keys').innerHTML = keys(status.zoneShortcut);
   $('shortcut-keys').innerHTML = keys(status.shortcut);
   $('ready-keys').innerHTML = keys(status.shortcut);
   $('start-windows').checked = status.startWithWindows;

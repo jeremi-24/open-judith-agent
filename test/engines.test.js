@@ -48,7 +48,7 @@ test('OpenAI-compatible request: bearer key, system message, image as a data URL
 test('a custom base URL (Ollama…) and a provider without default model', () => {
   const r = buildRequest({ provider: 'openai', key: 'k', baseUrl: 'http://localhost:11434/v1/', model: 'llava', system: '', content: ask('x') });
   assert.equal(r.url, 'http://localhost:11434/v1/chat/completions');
-  assert.throws(() => buildRequest({ provider: 'openrouter', key: 'k', system: '', content: ask('x') }), /Choose a model/);
+  assert.throws(() => buildRequest({ provider: 'openrouter', key: 'k', system: '', content: ask('x') }), /Choisis un modèle/);
   assert.throws(() => buildRequest({ provider: 'nope', key: 'k', system: '', content: ask('x') }), /Unknown provider/);
 });
 
@@ -117,8 +117,8 @@ test('ApiEngine streams the answer, then remembers the words of the turn', async
 });
 
 test('ApiEngine: no key, an HTTP error, and cancel', async () => {
-  await assert.rejects(new ApiEngine({ provider: 'anthropic', key: '', systemPrompt: '' }).ask(ask('x')), /No API key/);
-  await assert.rejects(new ApiEngine({ provider: 'openai', key: 'k', systemPrompt: '', fetchImpl: fakeFetch([], { status: 401 }) }).ask(ask('x')), /OpenAI 401/);
+  await assert.rejects(new ApiEngine({ provider: 'anthropic', key: '', systemPrompt: '' }).ask(ask('x')), /Pas de clé API/);
+  await assert.rejects(new ApiEngine({ provider: 'openai', key: 'k', systemPrompt: '', fetchImpl: fakeFetch([], { status: 401 }) }).ask(ask('x')), /OpenAI refuse ta clé/);
   const slow = new ApiEngine({ provider: 'openai', key: 'k', systemPrompt: '', fetchImpl: fakeFetch(Array(50).fill('data: {"choices":[{"delta":{"content":"a"}}]}\n')) });
   const pending = slow.ask(ask('x'));
   setTimeout(() => slow.cancel(), 5);

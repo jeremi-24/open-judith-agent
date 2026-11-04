@@ -10,14 +10,54 @@
 // call look_at_screen, so Judith sends the screenshot with every question
 // (canLook = false).
 import { EventEmitter } from 'node:events';
+import { cleanKey, explainHttpError, explainNetworkError, explainStreamError } from './api-errors.js';
 
 // model: a sensible default, editable in the settings (names change often).
+// models: suggestions that SEE IMAGES (Judith sends the screen with each
+// question), the first one is the default. free: a free tier exists (keys,
+// quotas and limits are the provider's, and they change: see freeNote).
+// keyPrefix: how the key starts, to help the user paste the right one.
 export const PROVIDERS = {
-  anthropic: { label: 'Anthropic', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', model: 'claude-haiku-5-5', env: 'ANTHROPIC_API_KEY' },
-  openai: { label: 'OpenAI', protocol: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5-mini', env: 'OPENAI_API_KEY' },
-  gemini: { label: 'Google Gemini', protocol: 'openai', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.5-flash', env: 'GEMINI_API_KEY' },
-  openrouter: { label: 'OpenRouter', protocol: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: '', env: 'OPENROUTER_API_KEY' },
+  nvidia: {
+    label: 'NVIDIA', protocol: 'openai', baseUrl: 'https://integrate.api.nvidia.com/v1', env: 'NVIDIA_API_KEY',
+    free: true, freeNote: 'compte NVIDIA gratuit, environ 40 requêtes par minute', keyPrefix: 'nvapi-', keyUrl: 'https://build.nvidia.com/settings/api-keys',
+    models: [
+      { id: 'meta/llama-3.2-11b-vision-instruct', label: 'Llama 3.2 11B Vision' },
+      { id: 'microsoft/phi-3-vision-128k-instruct', label: 'Phi-3 Vision' },
+    ],
+  },
+  gemini: {
+    label: 'Google Gemini', protocol: 'openai', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', env: 'GEMINI_API_KEY',
+    free: true, freeNote: 'offre gratuite avec limites quotidiennes', keyPrefix: 'AIza', keyUrl: 'https://aistudio.google.com/apikey',
+    models: [{ id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' }],
+  },
+  groq: {
+    label: 'Groq', protocol: 'openai', baseUrl: 'https://api.groq.com/openai/v1', env: 'GROQ_API_KEY',
+    free: true, freeNote: 'offre gratuite avec limites par minute et par jour', keyPrefix: 'gsk_', keyUrl: 'https://console.groq.com/keys',
+    models: [{ id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout' }],
+  },
+  mistral: {
+    label: 'Mistral', protocol: 'openai', baseUrl: 'https://api.mistral.ai/v1', env: 'MISTRAL_API_KEY',
+    free: true, freeNote: 'offre gratuite « Experiment » avec limites', keyUrl: 'https://console.mistral.ai/api-keys',
+    models: [{ id: 'mistral-small-latest', label: 'Mistral Small' }],
+  },
+  anthropic: {
+    label: 'Anthropic', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com/v1', env: 'ANTHROPIC_API_KEY',
+    keyPrefix: 'sk-ant-', keyUrl: 'https://console.anthropic.com/settings/keys',
+    models: [{ id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' }],
+  },
+  openai: {
+    label: 'OpenAI', protocol: 'openai', baseUrl: 'https://api.openai.com/v1', env: 'OPENAI_API_KEY',
+    keyPrefix: 'sk-', keyUrl: 'https://platform.openai.com/api-keys',
+    models: [{ id: 'gpt-5-mini', label: 'GPT-5 mini' }],
+  },
+  openrouter: {
+    label: 'OpenRouter', protocol: 'openai', baseUrl: 'https://openrouter.ai/api/v1', env: 'OPENROUTER_API_KEY',
+    keyPrefix: 'sk-or-', keyUrl: 'https://openrouter.ai/keys', models: [],
+  },
 };
+// The model used when the settings name none.
+export const defaultModel = (provider) => PROVIDERS[provider]?.models?.[0]?.id ?? '';
 
 const MAX_TOKENS = 1024;
 
@@ -40,12 +80,12 @@ export function buildRequest({ provider, model, key, baseUrl, system, history = 
   const spec = PROVIDERS[provider];
   if (!spec) throw new Error(`Unknown provider: ${provider}`);
   const base = (baseUrl || spec.baseUrl).replace(/\/+$/, '');
-  const chosen = model || spec.model;
-  if (!chosen) throw new Error(`Choose a model for ${spec.label} in the settings.`);
+  const chosen = model || defaultModel(provider);
+  if (!chosen) throw new Error(`Choisis un modèle pour ${spec.label} dans les réglages (son nom, comme sur son site).`);
   if (spec.protocol === 'anthropic') {
     return {
       url: `${base}/messages`,
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      headers: { 'content-type': 'application/json', 'x-api-key': cleanKey(key), 'anthropic-version': '2023-06-01' },
       body: {
         model: chosen,
         max_tokens: MAX_TOKENS,
@@ -57,7 +97,7 @@ export function buildRequest({ provider, model, key, baseUrl, system, history = 
   }
   return {
     url: `${base}/chat/completions`,
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${cleanKey(key)}` },
     body: {
       model: chosen,
       stream: true,
@@ -132,27 +172,48 @@ export class ApiEngine extends EventEmitter {
   async ask(content) {
     if (this.pending) throw new Error('Judith is already answering');
     const { provider, model, key, baseUrl, systemPrompt, maxTurns } = this.options;
-    if (!key) throw new Error(`No API key for ${PROVIDERS[provider]?.label ?? provider}: add it in Judith's settings.`);
+    if (!cleanKey(key)) throw new Error(`Pas de clé API pour ${PROVIDERS[provider]?.label ?? provider} : ajoute-la dans les réglages de Judith.`);
     const request = buildRequest({ provider, model, key, baseUrl, system: systemPrompt, history: this.history, content });
     const controller = new AbortController();
     const pending = { controller, text: '' };
     this.pending = pending;
     const startedAt = Date.now();
+    const spec = { id: provider, ...PROVIDERS[provider] };
+    const custom = Boolean(baseUrl);
     try {
-      const response = await this.fetch(request.url, { method: 'POST', headers: request.headers, body: JSON.stringify(request.body), signal: controller.signal });
-      if (!response.ok) {
-        const detail = await response.text().catch(() => '');
-        throw new Error(`${PROVIDERS[provider].label} ${response.status}: ${detail.slice(0, 300)}`);
+      let response;
+      try {
+        response = await this.fetch(request.url, { method: 'POST', headers: request.headers, body: JSON.stringify(request.body), signal: controller.signal });
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        throw explainNetworkError({ spec, error, base: baseUrl, custom });
       }
-      const protocol = PROVIDERS[provider].protocol;
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        const retry = Number.parseInt(response.headers?.get?.('retry-after') ?? '', 10);
+        throw explainHttpError({ spec, status: response.status, body, model: request.body.model, custom, retryAfter: Number.isFinite(retry) ? retry : null });
+      }
+      const protocol = spec.protocol;
       const parse = createSSEParser((event) => {
-        const delta = deltaOf(protocol, event);
+        let delta;
+        try {
+          delta = deltaOf(protocol, event);
+        } catch (error) {
+          throw explainStreamError({ spec, message: error.message });
+        }
         if (!delta) return;
         pending.text += delta;
         this.emit('delta', pending.text);
       });
       const decoder = new TextDecoder();
-      for await (const chunk of response.body) parse(decoder.decode(chunk, { stream: true }));
+      try {
+        for await (const chunk of response.body) parse(decoder.decode(chunk, { stream: true }));
+      } catch (error) {
+        if (controller.signal.aborted || error.kind) throw error;
+        throw explainNetworkError({ spec, error, base: baseUrl, custom });
+      }
+      // A "thinking" model can spend its whole budget thinking and say nothing.
+      if (!pending.text.trim()) throw Object.assign(new Error(`${spec.label} n'a rien répondu. Si c'est un modèle qui « réfléchit », essaie-en un autre dans les réglages.`), { kind: 'empty' });
       this.history.push({ role: 'user', text: textOf(content) }, { role: 'assistant', text: pending.text });
       this.history = this.history.slice(-2 * maxTurns);
       return { text: pending.text, streamed: pending.text, durationMs: Date.now() - startedAt };

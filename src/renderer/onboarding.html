@@ -10,7 +10,7 @@
 <script type="module" src="onboarding.js"></script>
 </head>
 <body>
-<!-- Rules: one idea per screen, one sentence of 5 to 10 words, one moving
+<!-- Rules: one idea per screen, one sentence of 5 to 10 words, a moving
      demo, no paragraph, one obvious button, "Passer" always there. -->
 <header class="bar">
   <span class="brand"><img src="../../assets/icon.png" alt=""> Judith</span>
@@ -19,102 +19,107 @@
 </header>
 
 <main id="screens">
-  <!-- 1. Explain: she circles the answer on your screen -->
-  <section class="screen" data-title="Elle explique">
-    <h1>Montre ton écran. Elle t'explique.</h1>
-    <div class="stage" aria-hidden="true">
-      <div class="notch"><span class="face"></span><span class="said">« C'est quoi ce pic ? »</span></div>
-      <div class="app">
-        <div class="app-bar"><i></i><i></i><i></i></div>
-        <div class="chart"><span></span><span></span><span class="peak"></span><span></span><span></span><span></span></div>
-        <svg class="ring" viewBox="0 0 120 200" preserveAspectRatio="none"><path d="M60 8C96 6 112 40 110 100s-14 92-50 92S8 160 10 100 26 10 64 10"/></svg>
-        <span class="tag"><b>1</b>Lancement en mars</span>
-      </div>
+  <!-- 1. Explain (a zone on an unknown thing) and guide (numbered steps) -->
+  <section class="screen" data-title="Elle explique et guide">
+    <h1>Montre ton écran. Elle explique et te guide.</h1>
+    <div class="duo" aria-hidden="true">
+      <figure>
+        <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« C'est quoi ça ? »</span></div>
+        <div class="shot photo">
+          <!-- A real photo of something few people know (NASA, public domain: assets/onboarding/README.md). -->
+          <img class="mystery" id="mystery" src="../../assets/onboarding/mystery.jpg" alt="">
+          <span class="zone"><span class="zone-tag">Zone partagée</span></span>
+        </div>
+      </figure>
+      <figure>
+        <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« Améliore mon profil »</span></div>
+        <div class="shot profile">
+          <div class="cover"></div>
+          <span class="avatar"></span>
+          <div class="who"><i class="name"></i><i class="headline"></i><i class="place"></i></div>
+          <span class="edit">Enregistrer</span>
+          <div class="about"><i></i><i></i><i></i></div>
+          <span class="num n1"><b>1</b>Ajoute ta photo de profil</span>
+          <span class="num n2"><b>2</b>Écris ton métier en une ligne</span>
+          <span class="num n3"><b>3</b>Clique sur Enregistrer</span>
+          <span class="hl h1"></span><span class="hl h2"></span><span class="hl h3"></span>
+        </div>
+      </figure>
     </div>
   </section>
 
-  <!-- 2. A zone -->
-  <section class="screen" data-title="Une zone" hidden>
-    <h1>Montre-lui juste une partie de l'écran.</h1>
-    <div class="stage" aria-hidden="true">
-      <div class="app">
-        <div class="app-bar"><i></i><i></i><i></i></div>
-        <div class="doc"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        <span class="zone"><span class="zone-tag">Zone partagée</span></span>
+  <!-- 2. Another zone: the first one stays, as a numbered thumbnail -->
+  <section class="screen" data-title="Plusieurs zones" hidden>
+    <h1>Une autre zone&nbsp;? La&nbsp;première reste à&nbsp;côté.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« Compare les deux »</span></div>
+      <div class="shot photo multi">
+        <img class="mystery" src="../../assets/onboarding/mystery.jpg" alt="">
+        <span class="zone z1"><b class="zbadge">1</b></span>
+        <span class="zone z2"><b class="zbadge">2</b></span>
+        <div class="tray">
+          <span class="thumb t1"><b class="zbadge">1</b></span>
+          <span class="thumb t2"><b class="zbadge">2</b></span>
+        </div>
       </div>
-      <p class="keys big" id="zone-keys"></p>
-    </div>
+    </figure>
   </section>
 
-  <!-- 3. Guided -->
-  <section class="screen" data-title="Pas à pas" hidden>
-    <h1>Elle te guide, une étape à la fois.</h1>
-    <div class="stage" aria-hidden="true">
-      <div class="notch"><span class="face"></span><span class="said step-count"><b class="s1">Étape 1/3</b><b class="s2">Étape 2/3</b><b class="s3">Étape 3/3</b><b class="s4">Terminé ✓</b></span></div>
-      <div class="app">
-        <div class="app-bar"><i></i><i></i><i></i></div>
-        <div class="menu"><span>Fichier</span><span>Édition</span><span>Affichage</span></div>
-        <div class="panel"><span class="field"></span><span class="field"></span><span class="go">Enregistrer</span></div>
-        <span class="hop"></span>
+  <!-- 3. Understanding fast: a long message, and what it comes down to -->
+  <section class="screen" data-title="Elle comprend vite" hidden>
+    <h1>Un long message&nbsp;? Compris en une phrase.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« Résume-moi ça »</span></div>
+      <div class="shot mail">
+        <div class="mail-head"><span class="sender"></span><div><b>Ta cheffe</b><i>Rapport du mois</i></div></div>
+        <p class="mail-body">Bonjour, suite à la réunion, j'ai besoin du <mark data-n="1">rapport de ventes d'octobre</mark> avant la fin de la semaine. Peux-tu le finaliser <mark data-n="2">pour vendredi 14&nbsp;h</mark> et <mark data-n="3">l'envoyer à Marc</mark>, en me mettant en copie&nbsp;? Dis-moi si un chiffre te manque. Je compte sur toi pour la présentation de lundi. Merci&nbsp;!</p>
+        <div class="answer">
+          <div class="answer-head"><img class="face" src="../../assets/icon.png" alt="">En clair</div>
+          <ol>
+            <li><b>1</b>Le rapport de ventes d'octobre</li>
+            <li><b>2</b>À rendre vendredi, 14&nbsp;h</li>
+            <li><b>3</b>À envoyer à Marc, elle en copie</li>
+          </ol>
+        </div>
       </div>
-    </div>
+    </figure>
   </section>
 
-  <!-- 4. Engine -->
-  <section class="screen" data-title="Qui répond" hidden>
-    <h1>Choisis qui répond derrière Judith.</h1>
-    <div class="choices" id="engines" role="radiogroup" aria-label="Moteur"></div>
+  <!-- 4. Connect an AI: the labels say what to pick -->
+  <section class="screen" data-title="Ton IA" hidden>
+    <h1>Connecte ton IA à Judith.</h1>
+    <div class="choices" id="engines" role="radiogroup" aria-label="Ton IA"></div>
     <div class="api" id="api" hidden>
       <select id="api-provider" aria-label="Fournisseur"></select>
-      <input id="api-key" type="password" autocomplete="off" placeholder="Clé API (sk-…)" aria-label="Clé API">
+      <input id="api-key" type="password" autocomplete="off" placeholder="Colle ta clé (sk-…)" aria-label="Clé API">
       <button type="button" class="link" id="engine-test">Tester</button>
+      <button type="button" class="link" id="get-provider-key">Obtenir une clé</button>
+    </div>
+    <div class="api" id="none" hidden>
+      <button type="button" class="link" id="get-claude">Installer Claude Code</button>
+      <button type="button" class="link" id="get-key">Clé gratuite NVIDIA</button>
+      <button type="button" class="link" id="get-gemini">Clé gratuite Google Gemini</button>
     </div>
     <p class="status" id="engine-status" aria-live="polite"></p>
   </section>
 
-  <!-- 5. Listening: the mic starts by itself on this screen -->
-  <section class="screen" data-title="Écoute" hidden>
-    <h1>Parle-lui : le cercle doit bouger.</h1>
-    <div class="stage mic-stage" aria-hidden="true">
-      <span class="pulse" id="pulse"></span>
-      <span class="face big-face"></span>
-    </div>
-    <p class="status center" id="mic-status" aria-live="polite"></p>
-    <div class="segments">
-      <div class="segment" role="radiogroup" aria-label="Fin de ta question">
-        <label><input type="radio" name="listen" value="auto" id="listen-auto"><span>Elle devine la fin</span></label>
-        <label><input type="radio" name="listen" value="push" id="listen-push"><span>J'appuie pour envoyer</span></label>
-      </div>
-      <div class="segment" role="radiogroup" aria-label="Transcription">
-        <label><input type="radio" name="stt" value="whisper" id="stt-local"><span>Sur mon PC</span></label>
-        <label><input type="radio" name="stt" value="deepgram" id="stt-cloud"><span>Deepgram</span></label>
-      </div>
-    </div>
-    <div class="api center" id="deepgram" hidden>
-      <input id="deepgram-key" type="password" autocomplete="off" placeholder="Clé Deepgram (facultative)" aria-label="Clé Deepgram">
-      <button type="button" class="link" id="deepgram-link">Obtenir une clé</button>
-    </div>
-  </section>
-
-  <!-- 6. Shortcut -->
+  <!-- 5. Shortcut -->
   <section class="screen" data-title="Raccourci" hidden>
     <h1>Appelle-la de partout, d'un raccourci.</h1>
-    <div class="stage" aria-hidden="true">
-      <p class="keys big press" id="shortcut-keys"></p>
-    </div>
+    <p class="keys big press" id="shortcut-keys" aria-hidden="true"></p>
     <div class="inline">
       <select id="shortcut" aria-label="Raccourci pour appeler Judith"></select>
       <label class="toggle"><input type="checkbox" id="start-windows"><span>Démarrer avec Windows</span></label>
     </div>
-    <p class="status center" id="shortcut-status" aria-live="polite"></p>
+    <p class="status" id="shortcut-status" aria-live="polite"></p>
   </section>
 
-  <!-- 7. Ready -->
+  <!-- 6. Ready -->
   <section class="screen" data-title="Prête" hidden>
     <h1>Essaie maintenant, sur ton propre écran.</h1>
-    <div class="stage" aria-hidden="true">
+    <div class="stack" aria-hidden="true">
       <p class="keys big press" id="ready-keys"></p>
-      <div class="notch late"><span class="face"></span><span class="said">« C'est quoi ça ? »</span></div>
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« C'est quoi ça ? »</span></div>
     </div>
   </section>
 </main>

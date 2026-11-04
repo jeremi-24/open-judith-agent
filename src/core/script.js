@@ -8,6 +8,7 @@
 //   board Exporter une vidéo | Les réglages qui comptent
 //   note Le MP4 se lit partout
 //   scene 2                (moves the 3D scene to its 2nd step)
+//   zone 2                 (several zones: the drawing lines that follow are in zone 2)
 //   done                   (agent mode: the goal is reached)
 //   act click 0.42 0.18 | Exporter   (autonomous agent mode: Judith clicks herself)
 //
@@ -102,6 +103,11 @@ export function parseLine(raw) {
       // The voice reached step n of the 3D scene (1-based).
       const n = Number(rest.trim());
       return Number.isInteger(n) && n >= 1 ? { type: 'scene', step: n } : { type: 'say', text: line };
+    }
+    case 'zone': {
+      // Several zones were shared: the next drawing lines are in zone n (1-based).
+      const n = Number(rest.trim());
+      return Number.isInteger(n) && n >= 1 ? { type: 'zone', n } : { type: 'say', text: line };
     }
     case 'board': {
       const [title, subtitle] = splitLabel(rest);

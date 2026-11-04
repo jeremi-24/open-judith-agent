@@ -208,7 +208,7 @@ function scan(on) {
   const frame = document.getElementById('scan');
   frame.hidden = !on;
   document.getElementById('scan-pill').hidden = !on;
-  if (zone) place(frame, zone);
+  if (zones.length === 1) place(frame, zones[0]);
   else frame.removeAttribute('style');
 }
 
@@ -217,8 +217,9 @@ function scan(on) {
 // Escape (or a simple click) cancels. Then only the dashed frame stays.
 const zoneFrame = document.getElementById('zone');
 const hint = document.getElementById('select-hint');
-let zone = null; // fractions of the screen
+let zones = []; // the zones already drawn, fractions of the screen
 let dragFrom = null;
+const zonesBox = document.getElementById('zones');
 
 function place(node, z) {
   node.style.inset = 'auto'; // first: it would reset left and top
@@ -231,10 +232,28 @@ function place(node, z) {
 }
 const at = (event) => ({ x: event.clientX / innerWidth, y: event.clientY / innerHeight });
 
+// The frame being dragged.
 function showZone(z) {
-  zone = z;
   zoneFrame.hidden = !z;
   if (z) place(zoneFrame, z);
+}
+
+// The zones drawn: one frame each; with several, each wears its number.
+function showZones(list) {
+  zones = Array.isArray(list) ? list : [];
+  showZone(null);
+  zonesBox.replaceChildren(
+    ...zones.map((z, i) => {
+      const frame = document.createElement('div');
+      frame.className = 'zone-frame fixed';
+      const tag = document.createElement('span');
+      tag.className = zones.length > 1 ? 'zone-tag numbered' : 'zone-tag';
+      tag.textContent = zones.length > 1 ? String(i + 1) : 'Zone partagée';
+      frame.append(tag);
+      place(frame, z);
+      return frame;
+    }),
+  );
 }
 
 window.judith.on('select', (on) => {
@@ -244,7 +263,7 @@ window.judith.on('select', (on) => {
   dragFrom = null;
   if (on) showZone(null);
 });
-window.judith.on('zone', showZone);
+window.judith.on('zones', showZones);
 
 addEventListener('pointerdown', (event) => {
   if (!document.body.classList.contains('selecting') || event.button !== 0) return;

@@ -8,9 +8,10 @@ import { configPath, loadConfig, saveConfig } from './config.js';
 import { getKey, hasKey, setKey } from './secrets.js';
 import { detectEngines } from './detect.js';
 import { ensureVoice } from './models.js';
-import { captureDisplay, captureSmall } from './capture.js';
+import { captureDisplay, captureSmall, captureThumb, captureZones } from './capture.js';
 import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOnboarding, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
 import { chooseEngine, createEngine, ENGINES, PROVIDERS } from '../engine/engines.js';
+import { cleanKey } from '../engine/api-errors.js';
 import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
 import { markBox, pickSnap, snapMark } from '../core/snap.js';
@@ -25,7 +26,7 @@ import { decodeWav } from '../core/audio.js';
 import { stripEmotions } from '../core/emotions.js';
 import { needsScreen } from '../core/needs-screen.js';
 import { findLinks, isCreation, speakable } from '../core/links.js';
-import { fromZone, toZone } from '../core/zone.js';
+import { MAX_ZONES, addZone, frameOf, fromZone, removeZone, toZone } from '../core/zone.js';
 import { shortcutAction } from '../core/shortcut.js';
 import { createVisualStore, FRAME_SCHEME, resolveFrame } from './frames.js';
 import { AGENT_IDLE_MS, AGENT_NEXT, createAgent, createProgressWatch } from '../core/agent.js';
@@ -64,7 +65,7 @@ const DENIED_TOOLS = ['Bash', 'PowerShell', 'Edit', 'Write', 'MultiEdit', 'Noteb
 
 // The display Judith works on, and a tiny copy of the screen as she last saw
 // it (to notice when it changes under her marks).
-let session = { display: null, reference: null };
+let session = { display: null, reference: null, zones: [], thumbs: [], frames: [] };
 
 function send(win, event, data) {
   if (win && !win.isDestroyed()) win.webContents.send(`judith:${event}`, data);
@@ -85,7 +86,7 @@ async function withoutJudith(capture) {
   } finally {
     bubble.setOpacity(1);
     board.setOpacity(1);
-    if (session.zone || shownMarks.length) showOverlay();
+    if (session.zones?.length || shownMarks.length) showOverlay();
   }
 }
 
@@ -96,14 +97,18 @@ function showOverlay() {
   bubble.moveTop();
 }
 
-// With a zone drawn by the user, only that zone is sent: Claude's coordinates
-// are then fractions of the zone (session.frame) until the next look.
-// The tiny reference copy is taken the same way as the later checks, so
-// only real changes count.
+// With zones drawn by the user, only those zones are sent (one image each):
+// Claude's coordinates are then fractions of a zone (session.frames) until
+// the next look. The tiny reference copy is taken the same way as the later
+// checks, so only real changes count.
 async function look(display) {
-  const zone = session.zone;
-  session.frame = zone;
-  return withoutJudith(async () => ({ ...(await captureDisplay(display, zone)), small: await captureSmall(display) }));
+  const zones = session.zones ?? [];
+  session.frames = zones;
+  return withoutJudith(async () => {
+    if (!zones.length) return { ...(await captureDisplay(display)), small: await captureSmall(display) };
+    const { images } = await captureZones(display, zones);
+    return { images, mediaType: images[0].mediaType, data: images[0].data, small: await captureSmall(display) };
+  });
 }
 
 // Summoning is instant: Judith looks at the screen only if the question needs
@@ -115,8 +120,8 @@ async function summon() {
   const cursor = screen.getCursorScreenPoint();
   const { x, y, width, height } = display.bounds;
   const pointer = { x: (cursor.x - x) / width, y: (cursor.y - y) / height };
-  session = { display, reference: null, pointer, zone: null, frame: null };
-  send(overlay, 'zone', null);
+  session = { display, reference: null, pointer, zones: [], thumbs: [], frames: [] };
+  publishZones();
 
   placeBubble(display);
   bubble.show();
@@ -130,14 +135,43 @@ async function summon() {
   send(bubble, 'focus', { conversation, interruptions: config.interruptions && !push, stt: ears, push });
 }
 
-// ----- the zone: the user draws the part of the screen to explain -----
+// ----- the zones: the user draws the parts of the screen to explain -----
 // The overlay catches the mouse while the user drags a rectangle (Escape or
 // a simple click cancels); then it only shows the zone's frame. Judith keeps
 // listening meanwhile: "c'est quoi ça ?" can be said while drawing.
+// A second zone does not replace the first: the first stays, numbered, as a
+// thumbnail in the notch, and so on up to MAX_ZONES. The conversation ending
+// (or the thumbnail's cross) removes them.
 let zonePicking = null;
 let settleZone = null;
+
+// The zones go to the overlay (numbered frames) and to the notch (thumbnails).
+function publishZones() {
+  send(overlay, 'zones', session.zones ?? []);
+  send(bubble, 'zones', (session.zones ?? []).map((zone, i) => ({ n: i + 1, thumb: session.thumbs?.[i] ?? '' })));
+}
+
+// A small picture of the zone just drawn, for its thumbnail.
+async function makeThumb(zone) {
+  const display = session.display ?? cursorDisplay();
+  try {
+    const thumb = await withoutJudith(() => captureThumb(display, zone));
+    const i = session.zones.indexOf(zone);
+    if (i >= 0) {
+      session.thumbs[i] = thumb;
+      publishZones();
+    }
+  } catch (error) {
+    console.error('[judith] thumbnail failed:', error.message);
+  }
+}
+
 function pickZone() {
   if (zonePicking) return zonePicking;
+  if ((session.zones ?? []).length >= MAX_ZONES) {
+    send(bubble, 'notice', `${MAX_ZONES} zones au maximum : retire-en une avec sa croix.`);
+    return Promise.resolve(null);
+  }
   const display = session.display ?? cursorDisplay();
   session.display = display;
   overlay.setBounds(display.bounds);
@@ -154,29 +188,44 @@ function pickZone() {
       overlay.setIgnoreMouseEvents(true);
       overlay.setFocusable(false);
       send(overlay, 'select', false);
-      session.zone = zone;
-      send(overlay, 'zone', zone);
-      send(bubble, 'zone', Boolean(zone));
-      if (!zone && !shownMarks.length) overlay.hide();
-      if (zone) console.log(`[judith] zone ${JSON.stringify(Object.values(zone).map((v) => +v.toFixed(3)))}`);
+      const zones = addZone(session.zones ?? [], zone);
+      const added = zones.length > (session.zones ?? []).length;
+      session.zones = zones;
+      if (added) session.thumbs = [...(session.thumbs ?? []), ''];
+      publishZones();
+      if (!session.zones.length && !shownMarks.length) overlay.hide();
+      if (zone) console.log(`[judith] zone ${session.zones.length}: ${JSON.stringify(Object.values(zone).map((v) => +v.toFixed(3)))}`);
       bubble.focus();
       resolve(zone);
+      if (added) makeThumb(zone);
     };
   });
   return zonePicking;
 }
 
-// The conversation is over (or cancelled): the zone goes, the marks stay.
+// The conversation is over (or cancelled): the zones go, the marks stay.
 function dropZone() {
-  if (settleZone) return settleZone(null);
-  if (!session.zone) return;
-  session.zone = null;
-  send(overlay, 'zone', null);
-  send(bubble, 'zone', false);
+  if (settleZone) settleZone(null);
+  if (!session.zones?.length) return;
+  session.zones = [];
+  session.thumbs = [];
+  publishZones();
   if (!shownMarks.length) overlay.hide();
 }
 
+// The cross of a thumbnail: that zone goes, the others are renumbered.
+function dropOneZone(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= (session.zones?.length ?? 0)) return;
+  session.zones = removeZone(session.zones, index);
+  session.thumbs = removeZone(session.thumbs ?? [], index);
+  publishZones();
+  if (!session.zones.length && !shownMarks.length) overlay.hide();
+}
+
+// The zone shortcut: summons Judith and draws a zone; during a conversation it
+// adds a zone to the ones already drawn.
 function summonWithZone() {
+  if (notchState !== 'none' && notchState !== 'settings' && session.display) return void pickZone();
   summon();
   pickZone();
 }
@@ -571,7 +620,7 @@ function clearMarks() {
   shownMarks = [];
   send(overlay, 'clear');
   // The frame of the zone the user drew stays.
-  if (!session.zone && !zonePicking && !piloting) overlay?.hide();
+  if (!session.zones?.length && !zonePicking && !piloting) overlay?.hide();
 }
 
 // ----- the board: notes, visuals and what Claude Code did -----
@@ -708,8 +757,16 @@ async function lookForJudith() {
     showOverlay();
     scanning = true;
     send(overlay, 'scan', true);
-    const zone = Boolean(session.frame);
-    return { data: shot.data, mediaType: shot.mediaType, pointer: toZone(session.pointer, session.frame), zone };
+    const frames = session.frames ?? [];
+    return {
+      data: shot.data,
+      mediaType: shot.mediaType,
+      // Several zones: one image each (the first is also data / mediaType).
+      images: shot.images ?? [{ data: shot.data, mediaType: shot.mediaType }],
+      pointer: frames.length > 1 ? null : toZone(session.pointer, frames[0] ?? null),
+      zone: frames.length > 0,
+      zones: frames.length,
+    };
   } catch (error) {
     console.error('[judith] look failed:', error.message);
     return {};
@@ -823,7 +880,7 @@ function endPiloting() {
   answerConfirm?.(false);
   globalShortcut.unregister(STOP_SHORTCUT);
   send(overlay, 'piloting', false);
-  if (!shownMarks.length && !session.zone && !zonePicking) overlay.hide();
+  if (!shownMarks.length && !session.zones?.length && !zonePicking) overlay.hide();
 }
 
 // The notch asks "Vas-y / Non" for a sensitive action (30 s, then no).
@@ -845,7 +902,7 @@ function askConfirmation(reason) {
 
 // A point of the model's screenshot → display fractions and physical pixels.
 function actPoint(action, display) {
-  const p = fromZone({ x: action.x, y: action.y, w: 0, h: 0 }, session.frame);
+  const p = fromZone({ x: action.x, y: action.y, w: 0, h: 0 }, frameOf(session.frames, action.zone));
   const { bounds } = display;
   const dip = { x: Math.round(bounds.x + p.x * bounds.width), y: Math.round(bounds.y + p.y * bounds.height) };
   return { fraction: p, physical: process.platform === 'win32' ? screen.dipToScreenPoint(dip) : dip };
@@ -925,21 +982,27 @@ async function ask(question, turn) {
   // look_at_screen. alwaysLook: the old behaviour, a screenshot every time.
   let image = null;
   // Engines other than Claude Code cannot call look_at_screen: they always get it.
-  if (config.alwaysLook || !engine.canLook || session.zone || inAgent || needsScreen(question)) {
+  if (config.alwaysLook || !engine.canLook || session.zones?.length || inAgent || needsScreen(question)) {
     const shot = await lookForJudith();
     if (shot.data) image = shot;
   }
 
   // Script lines go to the notch as soon as they are complete.
   let commands = 0;
+  let currentZone = 1; // the zone the drawing lines are in (script line "zone n")
   const reader = createScriptReader((command) => {
     if (command.type === 'propose') {
       if (!agent.active) proposed = command.goal;
       return;
     }
+    if (command.type === 'zone') {
+      // Several zones: the drawing lines that follow are in zone n.
+      currentZone = command.n;
+      return;
+    }
     if (command.type === 'act') {
       // Only in autonomous agent mode; otherwise an action is never done.
-      if (agent.autonomous) actions.push(command);
+      if (agent.autonomous) actions.push({ ...command, zone: currentZone });
       return;
     }
     if (command.type === 'done') {
@@ -954,7 +1017,7 @@ async function ask(question, turn) {
       if (!command.text) return;
     }
     // Coordinates of a zone screenshot → coordinates of the display.
-    if (command.type === 'mark') command = fromZone(command, session.frame);
+    if (command.type === 'mark') command = fromZone(command, frameOf(session.frames, currentZone));
     commands += 1;
     mark('firstLine');
     send(bubble, 'cmd', { ...command, turn });
@@ -964,9 +1027,9 @@ async function ask(question, turn) {
     const result = await engine.ask(
       buildUserContent({
         question: asked,
-        image: image && { mediaType: image.mediaType, data: image.data },
-        pointer: toZone(session.pointer, image ? session.frame : null),
-        zone: Boolean(image && session.frame),
+        images: image?.images?.map(({ mediaType, data }) => ({ mediaType, data })),
+        pointer: image && (session.frames?.length ?? 0) <= 1 ? toZone(session.pointer, session.frames?.[0] ?? null) : null,
+        zone: Boolean(image && session.frames?.length),
       }),
     );
     reader.finish(result.streamed || result.text);
@@ -1073,7 +1136,7 @@ function engineSettings() {
     engine: engineKind,
     configured: config.engine,
     engines: Object.entries(ENGINES).map(([id, e]) => ({ id, label: e.label, memory: e.memory, installed: id === 'api' || available.includes(id) })),
-    providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, model: p.model, hasKey: hasKey(id) })),
+    providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, model: p.models[0]?.id ?? '', models: p.models, free: Boolean(p.free), freeNote: p.freeNote ?? '', keyPrefix: p.keyPrefix ?? '', keyUrl: p.keyUrl, hasKey: hasKey(id) })),
     apiProvider: config.apiProvider,
     apiModel: config.apiModel,
     agentModel: config.agentModel,
@@ -1089,6 +1152,8 @@ function pickSettings(input = {}) {
   if (out.engine && out.engine !== 'auto' && !ENGINES[out.engine]) throw new Error(`Unknown engine: ${out.engine}`);
   if (out.apiProvider && !PROVIDERS[out.apiProvider]) throw new Error(`Unknown provider: ${out.apiProvider}`);
   if (typeof input.agentHands === 'boolean') out.agentHands = input.agentHands;
+  // A model name belongs to one provider: another provider starts from its own default.
+  if (out.apiProvider && out.apiProvider !== config.apiProvider && out.apiModel === undefined) out.apiModel = '';
   return out;
 }
 
@@ -1097,7 +1162,7 @@ const TEST_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8
 async function testEngine(input) {
   const settings = pickSettings(input);
   const kind = settings.engine && settings.engine !== 'auto' ? settings.engine : engineKind;
-  const apiKey = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
+  const apiKey = typeof input?.apiKey === 'string' ? cleanKey(input.apiKey) : '';
   const probe = createEngine(kind, engineOptions(kind, { ...settings, apiKey }));
   const startedAt = Date.now();
   const timer = setTimeout(() => probe.cancel(), 45000);
@@ -1117,7 +1182,7 @@ async function testEngine(input) {
 
 function saveEngineSettings(input) {
   const settings = pickSettings(input);
-  const apiKey = typeof input?.apiKey === 'string' ? input.apiKey.trim() : '';
+  const apiKey = typeof input?.apiKey === 'string' ? cleanKey(input.apiKey) : '';
   if (apiKey) setKey(settings.apiProvider || config.apiProvider, apiKey);
   Object.assign(config, settings);
   saveConfig(settings);
@@ -1363,6 +1428,7 @@ app.whenReady().then(async () => {
   ipcMain.on('judith:pick-zone', () => pickZone());
   ipcMain.on('judith:zone-selected', (_e, zone) => settleZone?.(zone && ['x1', 'y1', 'x2', 'y2'].every((k) => Number.isFinite(zone[k])) ? zone : null));
   ipcMain.on('judith:drop-zone', dropZone);
+  ipcMain.on('judith:remove-zone', (_e, index) => dropOneZone(index));
   ipcMain.on('judith:open-link', (_e, url) => /^https?:\/\//i.test(String(url)) && shell.openExternal(String(url)));
   ipcMain.on('judith:summon', summon);
   ipcMain.on('judith:summon-zone', summonWithZone);

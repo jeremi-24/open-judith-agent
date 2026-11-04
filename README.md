@@ -20,7 +20,7 @@ She points, you click: Judith never acts on your computer.
 She runs on **your own Claude Code**, so she shares its memory, skills and MCP
 connectors. She already knows your projects and your level on day one.
 No Claude Code? She also works with **OpenAI Codex**, **Cursor**, or a model with your own
-**API key** (Anthropic, OpenAI, Google Gemini, OpenRouter). Pick it from the gear in the notch.
+**API key** (NVIDIA, Google Gemini, Groq and Mistral have free tiers; Anthropic, OpenAI, OpenRouter). Pick it from the gear in the notch.
 
 > 🚧 Early work in progress (v0.1). Windows first.
 
@@ -47,7 +47,9 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
   opens it in your browser, with a card in the notch. She never reads a link aloud.
 - **Show her a zone**: press **Ctrl + Alt + Shift + J** (or the frame button in the notch)
   and draw a rectangle around what you want to understand. Only that zone is sent, and
-  she annotates it. Escape or a simple click cancels.
+  she annotates it. Escape or a simple click cancels. Draw another zone and the first one
+  stays as a numbered thumbnail in the notch (up to 4, a cross removes one): she sees them
+  all and can compare them.
 - **Session mode** *(planned)*: give her a goal, she guides you step by step, quizzes
   you and tracks what you have learned.
 
@@ -59,7 +61,7 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
     kept warm for fast answers, with its memory, skills and connectors;
   - OpenAI Codex (`codex`) or Cursor's agent (`agent`), logged in: they bring their own project
     knowledge (AGENTS.md, Cursor rules); slower, one process per question;
-  - an API key (Anthropic, OpenAI, Google Gemini, OpenRouter, or an OpenAI-compatible server like
+  - an API key (NVIDIA, Google Gemini, Groq, Mistral, Anthropic, OpenAI, OpenRouter, or an OpenAI-compatible server like
     Ollama): a bare model, without memory of your projects.
 
 ### Choosing the engine
@@ -69,7 +71,7 @@ installed on this PC. **Automatique** picks Claude Code, else Codex, else Cursor
 **Tester** sends a tiny question with a tiny image and says if it works (the model must read
 images to see your screen). API keys are encrypted with Windows' protection for your account
 (`keys.json`), never written in `config.json`. Keys can also come from `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, `GEMINI_API_KEY` or `OPENROUTER_API_KEY`.
+`OPENAI_API_KEY`, `GEMINI_API_KEY`, `NVIDIA_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY` or `OPENROUTER_API_KEY`.
 
 Only Claude Code can ask for the screen when it needs it; with the other engines Judith sends a
 screenshot with every question. Codex runs in its read-only sandbox and Cursor without `--force`:

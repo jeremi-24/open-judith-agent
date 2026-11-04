@@ -91,3 +91,13 @@ test('propose: the model offers to guide a task to the end', () => {
   assert.deepEqual(parseLine('propose créer un dépôt GitHub'), { type: 'propose', goal: 'créer un dépôt GitHub' });
   assert.equal(parseLine('propose'), null);
 });
+
+test('zone n: the drawing lines that follow are in zone n', () => {
+  assert.deepEqual(parseLine('zone 2'), { type: 'zone', n: 2 });
+  assert.deepEqual(parseLine('zone 0'), { type: 'say', text: 'zone 0' });
+  assert.deepEqual(parseLine('zone deux'), { type: 'say', text: 'zone deux' });
+  const seen = [];
+  const reader = createScriptReader((command) => seen.push(command.type === 'mark' ? `mark${command.label}` : command.type === 'zone' ? `zone${command.n}` : command.type));
+  reader.finish('zone 1\nring 0.4 0.2 0.6 0.3 | A\nzone 2\nring 0.1 0.1 0.2 0.2 | B\nsay Voilà.');
+  assert.deepEqual(seen, ['zone1', 'markA', 'zone2', 'markB', 'say']);
+});

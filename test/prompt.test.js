@@ -108,3 +108,22 @@ test('the model may offer to guide, never for a question of understanding', asyn
   assert.match(prompt, /Never for a question of understanding/);
   assert.match(prompt, /^propose <goal>/m);
 });
+
+test('several zones: one numbered image each, a note on "zone <n>", no pointer', () => {
+  const shot = (data) => ({ mediaType: 'image/jpeg', data });
+  const content = buildUserContent({ question: 'Compare', images: [shot('A'), shot('B')], pointer: { x: 0.5, y: 0.5 }, zone: true });
+  assert.deepEqual(content.map((b) => b.type), ['text', 'image', 'text', 'image', 'text']);
+  assert.equal(content[0].text, 'Zone 1:');
+  assert.equal(content[2].text, 'Zone 2:');
+  assert.match(content[4].text, /2 images are 2 zones/);
+  assert.match(content[4].text, /"zone <n>"/);
+  assert.doesNotMatch(content[4].text, /Mouse pointer/);
+  assert.match(content[4].text, /Compare$/);
+  // One image in the list is a plain zone.
+  assert.match(buildUserContent({ question: 'Q', images: [shot('A')], zone: true })[1].text, /only the zone of the screen/);
+});
+
+test('the script reference documents "zone <n>" for several zones', () => {
+  assert.match(buildSystemPrompt({ language: 'fr', canLook: true }), /^zone <n>\s+several zones were shared/m);
+  assert.match(buildSystemPrompt({ language: 'fr', canLook: false }), /^zone <n>\s+several zones were shared/m);
+});

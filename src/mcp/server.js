@@ -36,19 +36,21 @@ server.registerTool(
   async () => {
     const shot = await bridge('/look', {});
     if (!shot?.data) return text('The screen could not be captured.');
-    return {
-      content: [
-        { type: 'image', data: shot.data, mimeType: shot.mediaType },
-        {
-          type: 'text',
-          text:
-            (shot.zone
-              ? 'This is the zone of the screen the user selected (not the whole screen). Coordinates you give are fractions of this image.'
-              : 'This is the user screen now. Coordinates you give are fractions of this image.') +
-            (shot.pointer ? ` The mouse pointer is at x=${shot.pointer.x.toFixed(3)} y=${shot.pointer.y.toFixed(3)}: "ça"/"this" is what is under it.` : ''),
-        },
-      ],
-    };
+    // Several zones: one image each, numbered; otherwise one image.
+    const images = shot.images?.length ? shot.images : [{ data: shot.data, mediaType: shot.mediaType }];
+    const several = images.length > 1;
+    const content = images.flatMap((image, i) => [
+      ...(several ? [{ type: 'text', text: `Zone ${i + 1}:` }] : []),
+      { type: 'image', data: image.data, mimeType: image.mediaType },
+    ]);
+    const note = several
+      ? `These ${images.length} images are ${images.length} zones of the screen the user selected, numbered in the order he drew them. ` +
+        'Coordinates you give are fractions of the zone image they point at: write the line "zone <n>" before the drawing lines about zone n.'
+      : (shot.zone
+          ? 'This is the zone of the screen the user selected (not the whole screen). Coordinates you give are fractions of this image.'
+          : 'This is the user screen now. Coordinates you give are fractions of this image.') +
+        (shot.pointer ? ` The mouse pointer is at x=${shot.pointer.x.toFixed(3)} y=${shot.pointer.y.toFixed(3)}: "ça"/"this" is what is under it.` : '');
+    return { content: [...content, { type: 'text', text: note }] };
   },
 );
 

@@ -84,6 +84,9 @@
       </button>
     </div>
 
+    <!-- The zones the user showed: the first stays as a numbered thumbnail, the next ones join it. -->
+    <div class="zones" id="zones" aria-label="Zones montrées à Judith" hidden></div>
+
     <p class="text" id="text" aria-live="polite"></p>
     <ol class="steps" id="steps"></ol>
     <div class="links" id="links"></div>
@@ -112,6 +115,7 @@
           <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1L9 9M9 1L1 9"/></svg>
         </button>
       </div>
+      <div class="settings-body">
       <fieldset class="engine-list" id="engine-list"><legend class="sr-only">Moteur</legend></fieldset>
       <div class="fields" id="agent-fields" hidden>
         <label for="agent-model">Modèle <span>(vide : celui par défaut de l'agent)</span></label>
@@ -120,10 +124,13 @@
       <div class="fields" id="api-fields" hidden>
         <label for="api-provider">Fournisseur</label>
         <select id="api-provider"></select>
-        <label for="api-model">Modèle</label>
-        <input id="api-model" autocomplete="off" spellcheck="false">
+        <p class="api-hint" id="api-hint"></p>
+        <label for="api-model">Modèle <span>(il doit lire les images)</span></label>
+        <input id="api-model" list="api-models" autocomplete="off" spellcheck="false">
+        <datalist id="api-models"></datalist>
         <label for="api-key">Clé API <span>(chiffrée sur ce PC)</span></label>
         <input id="api-key" type="password" autocomplete="off" spellcheck="false">
+        <button type="button" class="api-link" id="api-key-link">Obtenir une clé</button>
       </div>
       <label class="hands" id="hands-row">
         <input type="checkbox" id="agent-hands">
@@ -132,6 +139,7 @@
           <em id="hands-note"></em></span>
       </label>
       <p class="settings-status" id="settings-status" aria-live="polite"></p>
+      </div>
       <div class="settings-actions">
         <button type="button" id="settings-test">Tester</button>
         <button type="button" id="settings-save" class="primary">Enregistrer</button>
@@ -141,5 +149,6 @@
   </div>
   <div class="progress" aria-hidden="true"><i></i></div>
 </main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>

@@ -101,7 +101,8 @@ done                                agent mode only: the goal is reached
 act click <x> <y> [right|double] | <what>   autonomous agent mode only: click there
 act type <text> | <field>           autonomous agent mode only: type into the focused field
 act key <combo>                     autonomous agent mode only: enter, tab, escape, ctrl+s…
-act scroll <x> <y> <notches>        autonomous agent mode only: negative scrolls down${canLook ? '\nscene <n>                           moves the 3D scene (show_scene) to its step n' : ''}${boardLines}
+act scroll <x> <y> <notches>        autonomous agent mode only: negative scrolls down
+zone <n>                            several zones were shared: the drawing lines that follow are in the coordinates of zone n${canLook ? '\nscene <n>                           moves the 3D scene (show_scene) to its step n' : ''}${boardLines}
 Coordinates: fractions (0..1) of the screenshot, x from the left, y from the top.
 For ring and box give the exact corners of the element itself, tight around it (not the area around it).
 Labels: at most 3 words. Mark only what is visible, as precisely as you can: at most 3 marks to show where to click,
@@ -139,13 +140,25 @@ export const ZONE_NOTE =
   'The image is only the zone of the screen the user selected for this question: explain what is in it. ' +
   'Coordinates are fractions of this image.\n';
 
+// Several zones: one image each, numbered in the order the user drew them.
+export const zonesNote = (count) =>
+  `The ${count} images are ${count} zones of the screen the user selected, numbered in the order he drew them (Zone 1, Zone 2…). ` +
+  'Explain them, and compare them if asked. Coordinates are fractions of the zone image they point at: ' +
+  'before the drawing lines about a zone, write the line "zone <n>"; they apply to that zone until the next "zone" line. ' +
+  'Say "zone 1", "zone 2"… when you refer to one: the user sees them as numbered thumbnails.\n';
+
 // zone: the image is the zone the user drew, not the whole screen.
-export function buildUserContent({ question, image, activeWindow, pointer, zone = false }) {
+// images: several zones, one image each (they replace image).
+export function buildUserContent({ question, image, images, activeWindow, pointer, zone = false }) {
+  const shots = images?.length ? images : image ? [image] : [];
+  const several = shots.length > 1;
   const content = [];
-  if (image) {
-    content.push({ type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } });
-  }
-  const context = `${activeWindow ? `Active window: ${activeWindow}\n` : ''}${zone ? ZONE_NOTE : ''}${pointerNote(pointer)}`;
+  shots.forEach((shot, i) => {
+    if (several) content.push({ type: 'text', text: `Zone ${i + 1}:` });
+    content.push({ type: 'image', source: { type: 'base64', media_type: shot.mediaType, data: shot.data } });
+  });
+  const note = several ? zonesNote(shots.length) : zone ? ZONE_NOTE : '';
+  const context = `${activeWindow ? `Active window: ${activeWindow}\n` : ''}${note}${several ? '' : pointerNote(pointer)}`;
   content.push({ type: 'text', text: `${context}${question}`.trim() });
   return content;
 }

@@ -223,7 +223,12 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .notch[data-state="listening"] .gear { display: flex; width: 36px; height: 36px; background: rgb(255 255 255 / 0.06); }
 .settings { display: none; }
 .notch[data-state="settings"] .head, .notch[data-state="settings"] .text, .notch[data-state="settings"] .steps, .notch[data-state="settings"] .links { display: none; }
-.notch[data-state="settings"] .settings { display: flex; flex-direction: column; gap: 12px; padding: 16px 0 18px; }
+.notch[data-state="settings"] { max-height: calc(100vh - 8px); }
+.notch[data-state="settings"] .body { min-height: 0; max-height: calc(100vh - 8px); }
+/* The panel never outgrows the window: the fields scroll, the buttons stay. */
+.notch[data-state="settings"] .settings { display: flex; flex-direction: column; gap: 12px; padding: 16px 0 14px; min-height: 0; max-height: calc(100vh - 8px); }
+.settings-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; padding-right: 6px; margin-right: -6px; scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.25) transparent; }
+.settings-actions { flex: none; }
 .settings-head { display: flex; align-items: center; justify-content: space-between; }
 .settings-close { display: flex; width: 32px; height: 32px; background: rgb(255 255 255 / 0.06); }
 .engine-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; border: 0; }
@@ -240,6 +245,10 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .fields input, .fields select { height: 38px; border: 0; border-radius: 10px; padding: 0 12px; background: rgb(255 255 255 / 0.08); color: #f4f2ff; font: 500 14px var(--font-ui); outline: none; }
 .fields input:focus, .fields select:focus { box-shadow: 0 0 0 2px var(--iris); }
 .fields select option { color: #24203a; }
+.api-hint { margin: 0; font-size: 12px; color: #a9a3c4; min-height: 16px; }
+.api-hint b { color: var(--mint); font-weight: 700; }
+.api-link { justify-self: start; padding: 2px 0; border: 0; background: none; color: #8fd0ff; font: 600 12px var(--font-ui); cursor: pointer; }
+.api-link:hover { text-decoration: underline; }
 .settings-status { margin: 0; min-height: 18px; font-size: 13px; color: #d9d3ff; }
 .settings-status.ok { color: var(--mint); }
 .settings-status.error { color: var(--blush); }
@@ -279,3 +288,21 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .offer .primary { background: var(--signature); color: #fff; }
 @keyframes offer-in { from { opacity: 0; translate: 0 4px; } }
 @media (prefers-reduced-motion: reduce) { .offer { animation: none; } }
+
+/* A short confirmation under the notch: it does not take the mouse. */
+.toast { position: fixed; left: 50%; top: 100px; transform: translate(-50%, -6px); z-index: 5; pointer-events: none; display: flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px; background: #0c0a12; color: var(--mint); font: 700 13px var(--font-ui); box-shadow: 0 10px 28px -10px #000, 0 0 0 1px rgb(61 220 151 / 0.4); opacity: 0; transition: opacity 0.2s, transform 0.25s cubic-bezier(0.32, 0.72, 0, 1); }
+.toast[hidden] { display: none; }
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+/* ----- the zones shown to Judith: numbered thumbnails ----- */
+.zones { display: flex; gap: 12px; padding: 2px 0 12px; }
+.zones[hidden], .notch[data-state="none"] .zones, .notch[data-state="settings"] .zones, .notch[data-state="confirm"] .zones { display: none; }
+.zthumb { position: relative; width: 76px; height: 48px; flex: none; border-radius: 9px; background: #2a2540 center / cover no-repeat; box-shadow: 0 0 0 2px #fff, 0 8px 18px -8px #000; animation: zthumb-in 0.28s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.zthumb .n { position: absolute; left: -8px; top: -8px; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: #fff; color: #4a35d4; font: 700 11px var(--font-mono); box-shadow: 0 3px 8px -3px #000; }
+.zthumb .x { position: absolute; right: -8px; top: -8px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; display: grid; place-items: center; background: #0c0a12; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.35); cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+.zthumb:hover .x, .zthumb .x:focus-visible { opacity: 1; }
+.zthumb .x svg { width: 8px; height: 8px; fill: none; stroke: #fff; stroke-width: 1.6; stroke-linecap: round; }
+@keyframes zthumb-in { from { opacity: 0; transform: scale(0.85); } }
+@media (prefers-reduced-motion: reduce) { .zthumb { animation: none; } }
+.toast.warn { color: #ffd479; box-shadow: 0 10px 28px -10px #000, 0 0 0 1px rgb(255 212 121 / 0.4); }
