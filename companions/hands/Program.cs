@@ -207,8 +207,8 @@ internal static class Program
         var codes = new List<ushort>();
         foreach (string name in names) codes.Add(Vk(name));
         var inputs = new List<INPUT>();
-        foreach (ushort vk in codes) inputs.Add(Keyboard(vk, 0, 0));
-        for (int i = codes.Count - 1; i >= 0; i--) inputs.Add(Keyboard(codes[i], 0, KEYEVENTF_KEYUP));
+        foreach (ushort vk in codes) inputs.Add(Keyboard(vk, '\0', 0));
+        for (int i = codes.Count - 1; i >= 0; i--) inputs.Add(Keyboard(codes[i], '\0', KEYEVENTF_KEYUP));
         Send(inputs.ToArray());
     }
 
@@ -219,7 +219,7 @@ internal static class Program
             if (c == '\r') continue;
             if (c == '\n')
             {
-                Send(Keyboard(0x0D, 0, 0), Keyboard(0x0D, 0, KEYEVENTF_KEYUP));
+                Send(Keyboard(0x0D, '\0', 0), Keyboard(0x0D, '\0', KEYEVENTF_KEYUP));
                 continue;
             }
             Send(Keyboard(0, c, KEYEVENTF_UNICODE), Keyboard(0, c, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
