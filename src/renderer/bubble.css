@@ -267,3 +267,12 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .hands b { color: #fff; }
 .hands em { display: block; font-style: normal; color: var(--lemon); }
 .hands em:empty { display: none; }
+
+/* The offer to guide a task to the end: a quiet row under the answer. */
+.offer { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; font-size: 13px; font-weight: 600; color: #d9d3ff; animation: offer-in 0.3s ease-out; }
+.offer[hidden], .notch[data-state="none"] .offer, .notch[data-state="settings"] .offer, .notch[data-state="confirm"] .offer { display: none; }
+.offer span { flex: 1; min-width: 0; }
+.offer button { height: 30px; border: 0; border-radius: 999px; padding: 0 14px; font: 700 12.5px var(--font-ui); cursor: pointer; background: rgb(255 255 255 / 0.1); color: #f4f2ff; }
+.offer .primary { background: var(--signature); color: #fff; }
+@keyframes offer-in { from { opacity: 0; translate: 0 4px; } }
+@media (prefers-reduced-motion: reduce) { .offer { animation: none; } }

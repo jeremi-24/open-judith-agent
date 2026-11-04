@@ -146,6 +146,7 @@ const conversation = createConversation({
   finishListening: () => ears.finish(),
   stopListening: () => ears.cancel(),
   ask: (text, turn) => {
+    offer.hidden = true;
     resetAnswer();
     links.replaceChildren();
     spokenNow.length = 0;
@@ -428,3 +429,12 @@ new ResizeObserver(() => {
   const r = notch.getBoundingClientRect();
   api.notchBox({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) });
 }).observe(notch);
+
+// ----- the offer to guide a task in several steps to the end -----
+const offer = document.getElementById('offer');
+api.on('offer', () => {
+  offer.hidden = false;
+});
+// The same as saying it: the answer goes through the conversation.
+onPress(document.getElementById('offer-yes'), () => conversation.typed('oui'));
+onPress(document.getElementById('offer-no'), () => conversation.typed('non'));

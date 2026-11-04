@@ -32,6 +32,20 @@ export function agentRequest(text) {
 // The goal of an agent request, or null for an ordinary question.
 export const agentGoal = (text) => agentRequest(text)?.goal ?? null;
 
+// A short yes / no to Judith's offer ("Je te suis jusqu'au bout ?").
+const YES = /^(oui|ouais|ouai|ok|okay|d'accord|dac|vas[- ]?y|go|yes|yep|yeah|sure|carrement|volontiers|bien sur|avec plaisir|je veux bien|s'il te plait|stp|allons[- ]y|c'est parti)\b/;
+const NO = /^(non|nan|no|nope|pas besoin|pas la peine|ca ira|ca va aller|c'est bon|laisse|merci non|non merci|je vais me debrouiller)\b/;
+const plain = (text) => String(text ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[’`]/g, "'").trim();
+export function offerAnswer(text) {
+  const t = plain(text);
+  if (!t || t.length > 60) return null;
+  if (NO.test(t)) return 'no';
+  if (YES.test(t)) return 'yes';
+  return null;
+}
+// After this many "non", Judith stops offering for the session.
+export const MAX_DECLINES = 2;
+
 // The loop's state, and the question sent to the model at each step.
 // canAct(): may Judith act herself now (the setting is on, the hands are
 // there)? Asked when an autonomous request starts; otherwise she guides.
@@ -40,6 +54,9 @@ export function createAgent({ maxSteps = AGENT_MAX_STEPS, canAct = () => false }
   let step = 0;
   let autonomous = false;
   let refused = false; // asked for autonomous, but not allowed: guided instead
+  let offered = null; // a goal the model offered to guide (the user has not answered yet)
+  let declines = 0;
+  let declined = false; // the user just said no to the offer
   const frame = (body) => `(${autonomous ? 'Autonomous agent mode' : 'Agent mode'}, step ${step}/${maxSteps}) Goal: ${goal}\n${body}`;
   return {
     maxSteps,
@@ -59,11 +76,48 @@ export function createAgent({ maxSteps = AGENT_MAX_STEPS, canAct = () => false }
     get refused() {
       return refused;
     },
+    // The user just said "non" to the offer: nothing to ask the model.
+    get declined() {
+      return declined;
+    },
+    get offered() {
+      return offered;
+    },
+    // The model found a task in several steps and offers to guide it to the
+    // end (script line "propose <goal>"). Never during a loop, never after
+    // MAX_DECLINES "non". → whether the offer stands.
+    offer(newGoal) {
+      const g = String(newGoal ?? '').trim();
+      if (goal != null || declines >= MAX_DECLINES || g.length < 3) return false;
+      offered = g;
+      return true;
+    },
     // A question from the user: starts the loop (special word), continues it
     // (an answer to Judith while it runs), or passes through unchanged.
     question(text) {
       const request = agentRequest(text);
       refused = false;
+      declined = false;
+      // The answer to an offer: only the guided mode is ever offered.
+      if (offered && !request) {
+        const goalOffered = offered;
+        offered = null;
+        const answer = offerAnswer(text);
+        if (answer === 'yes') {
+          declines = 0;
+          goal = goalOffered;
+          step = 1;
+          autonomous = false;
+          return frame('Yes, guide me to the end. You already gave me the first step: look at the screen. If it is done, give the next step; if not, remind it in one sentence.');
+        }
+        if (answer === 'no') {
+          declines += 1;
+          declined = true;
+          return null;
+        }
+        // Something else: the offer is dropped, the question is asked as it is.
+      }
+      offered = null;
       if (request) {
         goal = request.goal;
         step = 1;

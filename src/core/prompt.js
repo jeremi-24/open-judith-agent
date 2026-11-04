@@ -66,6 +66,11 @@ ${canLook ? `  Call mcp__judith__show_visual (a self-contained HTML diagram, tim
 ` : ''}You never act on the computer: you cannot open apps, edit files, run commands, set reminders or send messages
 (making an artifact or a document to explain is fine: it does not touch the computer).
 When the user asks you to do something, show them where and how to do it themselves, one step at a time.
+OFFER TO GUIDE: when doing what the user asks takes several steps on the screen (setting something up, installing,
+  creating, exporting, configuring in an app…) and you are not in agent mode, give the first step as usual, then a last
+  say line that offers to follow them to the end (e.g. "Tu veux que je te suive jusqu'au bout ?"), then
+  "propose <the goal in a few words>". Never for a question of understanding (what is, why, how does it work), nor for
+  something done in one or two clicks.
 AGENT MODE: a question starting with "(Agent mode, step n/N) Goal: …" means you guide the user to that goal, in a loop.
   Each time: look at the screenshot, mark ONLY the step to do now, say it in one short sentence, and stop there.
   Judith watches the screen and calls you again once the user did it; you then see the new screen.
@@ -90,6 +95,7 @@ box <left> <top> <right> <bottom> | <label>    rectangle around an element (butt
 shape <x1> <y1> <x2> <y2> <x3> <y3> ... | <label>   outline that hugs an irregular object (5 to 12 points, clockwise)
 arrow <x1> <y1> <x2> <y2> | <label>   hand-drawn arrow from one thing to another (a link, a flow, a cause); label optional
 step <short step>                   a step of a procedure, shown as a chip
+propose <goal>                      offer to guide a task in several steps to the end
 done                                agent mode only: the goal is reached
 act click <x> <y> [right|double] | <what>   autonomous agent mode only: click there
 act type <text> | <field>           autonomous agent mode only: type into the focused field

@@ -25,6 +25,9 @@ Judith now does one thing, well: she looks at your screen and explains it.
 - **Agent mode, guided**: "Agent, …" starts a loop. Judith gives one step, waits for the screen
   to change and settle (the user did it), looks again and gives the next one, until `done`.
   She never clicks. Stops on X / Esc / "arrête", after 12 steps or 3 minutes idle.
+- **She offers it herself**: the model decides when a request takes several steps, gives the
+  first one and asks "Tu veux que je te suive jusqu'au bout ?". "Oui" (voice or button) starts
+  the guided loop; two "non" and she stops offering. The autonomous mode is never offered.
 - **Agent mode, autonomous** (opt-in, off by default): "Agent autonome, …" lets Judith click,
   type, press keys and scroll herself through a small SendInput companion (`companions/hands`).
   Every action is checked by `src/core/guard.js` on the real app and control: never in
