@@ -985,7 +985,8 @@ async function ask(question, turn) {
       else if (agent.active) {
         // Let the screen react, then the next step.
         await wait(1200);
-        if (agent.active && turn === activeTurn) send(bubble, 'agent-next', { question: AGENT_NEXT, step: agent.step + 1, max: agent.maxSteps });
+        if (agent.active && agent.step >= agent.maxSteps) stopAgent({ limit: true });
+        else if (agent.active && turn === activeTurn) send(bubble, 'agent-next', { question: AGENT_NEXT, step: agent.step + 1, max: agent.maxSteps });
       }
     } else if (inAgent) waitForUser(display);
   } catch (error) {

@@ -250,7 +250,10 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 
 /* Agent mode: while Judith waits for the user to do the step, the resting
    pill stays open on "Étape 2/12", with an iris dot that breathes. */
-.notch.agent[data-state="none"] { width: 150px; }
+/* Guided mode at rest: the pill grows with its text ("Étape 3/12", then on hover
+   the zone button too), so nothing ever overlaps. */
+.notch.agent[data-state="none"],
+.notch.agent[data-state="none"]:hover { width: max-content; min-width: 150px; }
 .notch.agent[data-state="none"] .idle-name { display: inline; font: 600 12px var(--font-mono); }
 .notch.agent .idle-dot { order: -1; background: var(--iris); box-shadow: 0 0 8px var(--iris); animation: agent-breathe 1.6s ease-in-out infinite; }
 @keyframes agent-breathe { 50% { box-shadow: 0 0 0 4px rgb(143 124 255 / 0.3); } }
