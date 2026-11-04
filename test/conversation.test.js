@@ -168,3 +168,13 @@ test('right after the shortcut, "Salut" is a hello, not a goodbye', () => {
   assert.equal(c.state, 'thinking');
   assert.equal(did('ask').length, 1);
 });
+
+test('agent mode: the next step is asked by itself, never over Judith', () => {
+  const { c, did } = setup();
+  c.typed('Agent, exporte en MP4');
+  assert.equal(c.continueWith('(agent:next)', 'Étape 2/12'), false, 'Judith is thinking');
+  c.answered(c.turn);
+  assert.equal(c.continueWith('(agent:next)', 'Étape 2/12'), true);
+  assert.equal(c.state, 'thinking');
+  assert.deepEqual(did('ask').at(-1), ['ask', '(agent:next)', c.turn]);
+});

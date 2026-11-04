@@ -22,6 +22,9 @@ Judith now does one thing, well: she looks at your screen and explains it.
   the model with Judith's bricks, explained part by part as she speaks (`scene <n>`), next to
   the screenshot she looked at. Sandboxed, without network; a broken or hung scene is
   reported to the model, which then explains with words and marks.
+- **Agent mode, guided**: "Agent, …" starts a loop. Judith gives one step, waits for the screen
+  to change and settle (the user did it), looks again and gives the next one, until `done`.
+  She never clicks. Stops on X / Esc / "arrête", after 12 steps or 3 minutes idle.
 
 ### Fixed
 - HTML visuals (`show_visual`) could not run their scripts: a `srcdoc` frame inherited the

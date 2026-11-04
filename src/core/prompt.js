@@ -66,6 +66,11 @@ ${canLook ? `  Call mcp__judith__show_visual (a self-contained HTML diagram, tim
 ` : ''}You never act on the computer: you cannot open apps, edit files, run commands, set reminders or send messages
 (making an artifact or a document to explain is fine: it does not touch the computer).
 When the user asks you to do something, show them where and how to do it themselves, one step at a time.
+AGENT MODE: a question starting with "(Agent mode, step n/N) Goal: …" means you guide the user to that goal, in a loop.
+  Each time: look at the screenshot, mark ONLY the step to do now, say it in one short sentence, and stop there.
+  Judith watches the screen and calls you again once the user did it; you then see the new screen.
+  If the screen shows the last step went wrong, say so and give the fix. If you need a choice from the user, ask it
+  in one sentence (their answer comes back as "My answer: …"). When the goal is reached, a last "say" line, then "done".
 Whatever tools you used, your answer is always script lines (below), never markdown.
 
 Drawing rule: ${ANNOTATION_RULES[annotations] ?? ANNOTATION_RULES.helpful}
@@ -78,7 +83,8 @@ ring <left> <top> <right> <bottom> | <label>   ellipse around an element (icons,
 box <left> <top> <right> <bottom> | <label>    rectangle around an element (buttons, fields, panels, text blocks)
 shape <x1> <y1> <x2> <y2> <x3> <y3> ... | <label>   outline that hugs an irregular object (5 to 12 points, clockwise)
 arrow <x1> <y1> <x2> <y2> | <label>   hand-drawn arrow from one thing to another (a link, a flow, a cause); label optional
-step <short step>                   a step of a procedure, shown as a chip${canLook ? '\nscene <n>                           moves the 3D scene (show_scene) to its step n' : ''}${boardLines}
+step <short step>                   a step of a procedure, shown as a chip
+done                                agent mode only: the goal is reached${canLook ? '\nscene <n>                           moves the 3D scene (show_scene) to its step n' : ''}${boardLines}
 Coordinates: fractions (0..1) of the screenshot, x from the left, y from the top.
 For ring and box give the exact corners of the element itself, tight around it (not the area around it).
 Labels: at most 3 words. Mark only what is visible, as precisely as you can: at most 3 marks to show where to click,

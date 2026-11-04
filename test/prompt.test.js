@@ -83,3 +83,12 @@ test('her own creations (artifacts, documents) have their own words in the notch
   assert.equal(describeTool('Artifact', { file_path: 'page.html' }), 'Je crée la page');
   assert.match(buildSystemPrompt(), /VISUALIZE: [\s\S]*Judith shows it as a card and opens it/);
 });
+
+test('agent mode is explained to every engine', async () => {
+  const { buildSystemPrompt } = await import('../src/core/prompt.js');
+  for (const canLook of [true, false]) {
+    const prompt = buildSystemPrompt({ language: 'fr', canLook });
+    assert.match(prompt, /AGENT MODE/);
+    assert.match(prompt, /^done +agent mode only/m);
+  }
+});

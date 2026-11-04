@@ -46,11 +46,11 @@ export function createConversation(fx, options = {}) {
     fx.listen(info);
   }
 
-  function think(text) {
+  function think(text, shown = text) {
     prefix = '';
     turn += 1;
     answerDone = false;
-    set('thinking', { heard: text });
+    set('thinking', { heard: shown });
     fx.ask(text, turn);
   }
 
@@ -105,6 +105,17 @@ export function createConversation(fx, options = {}) {
       if (state === 'thinking' || state === 'speaking') stopAll();
       fx.stopListening();
       think(t);
+    },
+
+    // Agent mode: the user did the step, Judith asks herself the next one.
+    // Never over Judith (thinking, speaking): → false, nothing done.
+    continueWith(text, shown) {
+      // (speaking with a follow-up pending: the answer is over, she is silent)
+      if (state === 'thinking' || (state === 'speaking' && !pending)) return false;
+      unschedule();
+      fx.stopListening();
+      think(text, shown);
+      return true;
     },
 
     // The ears finished: text heard ('' when nothing).

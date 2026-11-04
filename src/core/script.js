@@ -8,6 +8,7 @@
 //   board Exporter une vidéo | Les réglages qui comptent
 //   note Le MP4 se lit partout
 //   scene 2                (moves the 3D scene to its 2nd step)
+//   done                   (agent mode: the goal is reached)
 //
 // Coordinates are fractions (0..1) of the screenshot; ring and box take the
 // corners of the element (left top right bottom), or a single point.
@@ -82,6 +83,9 @@ export function parseLine(raw) {
       return rest.trim() ? { type: 'note', text: rest.trim() } : null;
     case 'clear':
       return { type: 'clear' };
+    case 'done':
+      // Agent mode: the goal is reached (an optional last sentence is spoken).
+      return { type: 'done', text: rest.trim() };
     default:
       // Not a command: Judith says it.
       return { type: 'say', text: line };
