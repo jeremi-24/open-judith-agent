@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld('judith', {
     test: (input) => ipcRenderer.invoke('judith:settings-test', input),
     save: (input) => ipcRenderer.invoke('judith:settings-save', input),
   },
+  // The welcome window: status, settings to save, done (tryNow: summon her).
+  onboarding: {
+    status: () => ipcRenderer.invoke('judith:onboarding-status'),
+    save: (input) => ipcRenderer.invoke('judith:onboarding-save', input),
+    done: (info) => ipcRenderer.send('judith:onboarding-done', info),
+  },
   // The zone of the screen to explain: start drawing it, the drawn zone
   // (fractions of the display, or null), forget it.
   pickZone: () => ipcRenderer.send('judith:pick-zone'),

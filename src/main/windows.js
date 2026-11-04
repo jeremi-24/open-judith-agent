@@ -100,3 +100,25 @@ export function createOverlay() {
   win.loadFile(renderer('overlay.html'));
   return win;
 }
+
+// The welcome window: what Judith does, then the few settings that matter.
+// A normal window (in the taskbar, with Judith's icon), shown on first start.
+export function createOnboarding(icon) {
+  const win = new BrowserWindow({
+    width: 900,
+    height: 620,
+    minWidth: 720,
+    minHeight: 560,
+    // Shown at once: its dark background avoids a white flash.
+    show: true,
+    center: true,
+    frame: false,
+    resizable: true,
+    backgroundColor: '#14111d',
+    title: 'Bienvenue · Judith',
+    icon,
+    webPreferences: secure,
+  });
+  win.loadFile(renderer('onboarding.html'));
+  return win;
+}

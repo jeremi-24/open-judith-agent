@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:">
+<title>Bienvenue · Judith</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="onboarding.css">
+<script type="module" src="onboarding.js"></script>
+</head>
+<body>
+<header class="bar">
+  <span class="brand"><img src="../../assets/icon.png" alt=""> Judith</span>
+  <ol class="dots" id="dots" aria-label="Progression"></ol>
+  <button type="button" class="skip" id="skip">Passer</button>
+</header>
+
+<main id="screens">
+  <!-- 1. Welcome: the product in one moving picture -->
+  <section class="screen" data-title="Bienvenue">
+    <div class="split">
+      <div class="copy">
+        <p class="eyebrow">Bienvenue</p>
+        <h1>Montre-lui ton écran.<br>Elle t'explique.</h1>
+        <p class="lead">Judith vit en haut de ton écran. Tu l'appelles, tu parles, elle regarde ce que tu regardes et entoure la réponse directement sur ton logiciel.</p>
+        <p class="keys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>J</kbd> pour l'appeler, où que tu sois.</p>
+      </div>
+      <div class="demo demo-hero" aria-hidden="true">
+        <div class="pill-notch"><span class="face"></span><span class="said">« C'est quoi ce pic ? »</span></div>
+        <div class="app">
+          <div class="app-bar"><i></i><i></i><i></i></div>
+          <div class="chart">
+            <span></span><span></span><span class="peak"></span><span></span><span></span><span></span>
+          </div>
+          <svg class="ring" viewBox="0 0 120 200" preserveAspectRatio="none"><path d="M60 8C96 6 112 40 110 100s-14 92-50 92S8 160 10 100 26 10 64 10"/></svg>
+          <span class="tag"><b>1</b>Lancement en mars</span>
+        </div>
+        <p class="voice">« Ce pic, c'est le lancement en mars : les ventes ont presque doublé. »</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. What she does -->
+  <section class="screen" data-title="Ce qu'elle sait faire" hidden>
+    <p class="eyebrow">Ce qu'elle sait faire</p>
+    <h2>Trois façons de t'aider, toutes à la voix.</h2>
+    <div class="cards">
+      <article class="card">
+        <div class="mini mini-explain" aria-hidden="true"><span class="btn">Exporter</span><svg viewBox="0 0 100 40" preserveAspectRatio="none"><path d="M14 22C10 8 40 3 64 4s34 8 31 18-28 14-50 13S6 30 12 18"/></svg></div>
+        <h3>Elle explique ce que tu vois</h3>
+        <p>« Où est le bouton Exporter ? », « Explique-moi ce tableau ». Elle entoure le vrai élément pendant qu'elle en parle.</p>
+      </article>
+      <article class="card">
+        <div class="mini mini-zone" aria-hidden="true"><span class="lines"><i></i><i></i><i></i><i></i></span><span class="rect"></span></div>
+        <h3>Tu lui montres une zone</h3>
+        <p><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Maj</kbd><kbd>J</kbd> : trace un rectangle, seule cette partie de l'écran lui est envoyée.</p>
+      </article>
+      <article class="card">
+        <div class="mini mini-guide" aria-hidden="true"><span class="chip">1</span><span class="chip">2</span><span class="chip">3</span><span class="done">✓</span></div>
+        <h3>Elle te guide pas à pas</h3>
+        <p>« Agent, aide-moi à changer mon fond d'écran » : une étape, elle attend que tu la fasses, puis la suivante.</p>
+      </article>
+    </div>
+    <p class="hint">Tu peux lui couper la parole, dire « arrête », ou cliquer sur <kbd>✕</kbd> à tout moment.</p>
+  </section>
+
+  <!-- 3. Engine -->
+  <section class="screen" data-title="Qui répond" hidden>
+    <p class="eyebrow">Réglage 1 sur 3</p>
+    <h2>Qui répond derrière Judith ?</h2>
+    <p class="lead">Judith utilise l'assistant que tu as déjà. Claude Code garde ta mémoire, tes projets et tes connecteurs.</p>
+    <div class="choices" id="engines" role="radiogroup" aria-label="Moteur"></div>
+    <div class="api" id="api" hidden>
+      <label for="api-provider">Fournisseur</label>
+      <select id="api-provider"></select>
+      <label for="api-key">Clé API <span class="opt">facultative si déjà enregistrée</span></label>
+      <input id="api-key" type="password" autocomplete="off" placeholder="sk-…">
+    </div>
+    <div class="row">
+      <button type="button" id="engine-test">Tester</button>
+      <p class="status" id="engine-status" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <!-- 4. Listening -->
+  <section class="screen" data-title="Écoute" hidden>
+    <p class="eyebrow">Réglage 2 sur 3</p>
+    <h2>Le micro et l'écoute</h2>
+    <div class="mic">
+      <button type="button" id="mic-test">Tester le micro</button>
+      <span class="meter" aria-hidden="true"><i id="meter"></i></span>
+      <p class="status" id="mic-status" aria-live="polite">Parle un peu après avoir cliqué : la barre doit bouger.</p>
+    </div>
+    <fieldset>
+      <legend>Quand ta question est-elle finie ?</legend>
+      <label class="option"><input type="radio" name="listen" value="auto" id="listen-auto"> <span><b>Elle le devine</b> quand tu t'arrêtes de parler. Idéal au calme.</span></label>
+      <label class="option"><input type="radio" name="listen" value="push" id="listen-push"> <span><b>Tu appuies pour envoyer</b> : raccourci pour commencer, raccourci pour envoyer. Idéal avec de la musique ou du monde autour.</span></label>
+    </fieldset>
+    <fieldset>
+      <legend>Qui transcrit ta voix ?</legend>
+      <label class="option"><input type="radio" name="stt" value="whisper" id="stt-local"> <span><b>Sur ton PC</b>, gratuit, rien ne sort.</span></label>
+      <label class="option"><input type="radio" name="stt" value="deepgram" id="stt-cloud"> <span><b>Deepgram</b>, plus rapide et plus précis, avec ta clé (offre gratuite à l'inscription).</span></label>
+      <div class="api" id="deepgram" hidden>
+        <label for="deepgram-key">Clé Deepgram <span class="opt" id="deepgram-note">facultative</span></label>
+        <input id="deepgram-key" type="password" autocomplete="off" placeholder="Colle ta clé ici, ou passe">
+        <button type="button" class="link" id="deepgram-link">Obtenir une clé sur deepgram.com</button>
+      </div>
+    </fieldset>
+  </section>
+
+  <!-- 5. Shortcuts and start -->
+  <section class="screen" data-title="Raccourcis" hidden>
+    <p class="eyebrow">Réglage 3 sur 3</p>
+    <h2>Raccourcis et démarrage</h2>
+    <div class="grid2">
+      <div class="field">
+        <label for="shortcut">Appeler Judith</label>
+        <select id="shortcut"></select>
+        <p class="small">Le même raccourci l'arrête quand elle réfléchit ou parle.</p>
+      </div>
+      <div class="field">
+        <span class="label">Montrer une zone</span>
+        <p class="keys" id="zone-shortcut"></p>
+      </div>
+    </div>
+    <label class="option toggle"><input type="checkbox" id="start-windows"> <span><b>Démarrer avec Windows</b> : elle est là dès que ton PC s'allume, sous forme de petite pilule en haut de l'écran.</span></label>
+    <p class="small" id="start-note" hidden>Disponible dans la version installée.</p>
+    <p class="status" id="shortcut-status" aria-live="polite"></p>
+  </section>
+
+  <!-- 6. Ready -->
+  <section class="screen" data-title="Prête" hidden>
+    <div class="ready">
+      <p class="eyebrow">C'est prêt</p>
+      <h2>Essaie maintenant.</h2>
+      <ol class="try">
+        <li>Ouvre une page ou un logiciel que tu ne comprends pas tout à fait.</li>
+        <li>Appuie sur <span id="ready-shortcut" class="keys"></span>.</li>
+        <li>Demande : <q>C'est quoi ça ?</q> ou <q>Où est le bouton… ?</q></li>
+      </ol>
+      <p class="small">Tu retrouves cet accueil dans le menu de son icône, près de l'heure : « Revoir l'accueil ».</p>
+    </div>
+  </section>
+</main>
+
+<footer class="nav">
+  <button type="button" id="back">Retour</button>
+  <button type="button" id="next" class="primary">Découvrir</button>
+</footer>
+</body>
+</html>

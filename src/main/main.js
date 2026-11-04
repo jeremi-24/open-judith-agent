@@ -9,7 +9,7 @@ import { getKey, hasKey, setKey } from './secrets.js';
 import { detectEngines } from './detect.js';
 import { ensureVoice } from './models.js';
 import { captureDisplay, captureSmall } from './capture.js';
-import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
+import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOnboarding, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
 import { chooseEngine, createEngine, ENGINES, PROVIDERS } from '../engine/engines.js';
 import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
@@ -1125,6 +1125,67 @@ function saveEngineSettings(input) {
   return engineSettings();
 }
 
+// The same shortcut summons Judith and, while she thinks or speaks, stops her.
+function onShortcut() {
+  if (shortcutAction(notchState) === 'cancel') send(bubble, 'cancel-all');
+  else summon();
+}
+
+// ----- the welcome window: first start, or "Revoir l'accueil" in the tray -----
+// What Judith does, then the engine, listening and shortcuts. Keys are optional.
+const SHORTCUT_CHOICES = ['Control+Alt+J', 'Control+Shift+Space', 'Alt+Shift+J'];
+let onboarding = null;
+const onboardedPath = () => join(app.getPath('userData'), 'onboarded');
+function openOnboarding() {
+  if (onboarding && !onboarding.isDestroyed()) return onboarding.focus();
+  onboarding = createOnboarding(iconPath);
+  onboarding.on('closed', () => (onboarding = null));
+  onboarding.webContents.on('console-message', (event) => event.level === 'error' && console.error('[onboarding]', event.message));
+}
+function onboardingStatus() {
+  return {
+    shortcut: config.shortcut,
+    zoneShortcut: config.zoneShortcut,
+    shortcuts: [...new Set([config.shortcut, ...SHORTCUT_CHOICES])],
+    listenMode: config.listenMode,
+    speechInput: config.speechInput,
+    deepgramSet: Boolean(config.deepgramKey),
+    packaged: app.isPackaged,
+    startWithWindows: app.isPackaged && app.getLoginItemSettings().openAtLogin,
+  };
+}
+// A new summon shortcut, or the old one back if another app holds it.
+function setShortcut(next) {
+  if (!next || next === config.shortcut) return true;
+  globalShortcut.unregister(config.shortcut);
+  if (!globalShortcut.register(next, onShortcut)) {
+    globalShortcut.register(config.shortcut, onShortcut);
+    return false;
+  }
+  config.shortcut = next;
+  saveConfig({ shortcut: next });
+  return true;
+}
+function saveOnboarding(input = {}) {
+  const changes = {};
+  if (input.listenMode === 'auto' || input.listenMode === 'push') changes.listenMode = input.listenMode;
+  if (input.speechInput === 'whisper' || input.speechInput === 'deepgram') changes.speechInput = input.speechInput;
+  if (typeof input.deepgramKey === 'string' && input.deepgramKey.trim()) changes.deepgramKey = input.deepgramKey.trim();
+  if (Object.keys(changes).length) {
+    Object.assign(config, changes);
+    saveConfig(changes);
+  }
+  if (typeof input.startWithWindows === 'boolean' && app.isPackaged) app.setLoginItemSettings({ openAtLogin: input.startWithWindows });
+  const shortcutOk = typeof input.shortcut === 'string' ? setShortcut(input.shortcut) : true;
+  buildTrayMenu();
+  return { ok: shortcutOk, error: shortcutOk ? null : `Le raccourci ${input.shortcut} est déjà pris par une autre appli.`, status: onboardingStatus() };
+}
+function finishOnboarding({ tryNow = false } = {}) {
+  writeFileSync(onboardedPath(), new Date().toISOString());
+  onboarding?.close();
+  if (tryNow) setTimeout(summon, 500);
+}
+
 function newConversation() {
   engine.restart();
   hide();
@@ -1136,6 +1197,7 @@ function buildTrayMenu() {
       { label: `Demander à Judith (${config.shortcut})`, click: summon },
       { label: 'Nouvelle conversation', click: newConversation },
       { label: 'Ouvrir la configuration', click: () => shell.openPath(configPath()) },
+      { label: "Revoir l'accueil", click: openOnboarding },
       {
         label: 'Appuyer pour parler (lieu bruyant)',
         type: 'checkbox',
@@ -1265,14 +1327,18 @@ app.whenReady().then(async () => {
   tray.on('click', summon);
   buildTrayMenu();
 
-  // The same shortcut summons Judith and, while she thinks or speaks, stops her.
-  const onShortcut = () => (shortcutAction(notchState) === 'cancel' ? send(bubble, 'cancel-all') : summon());
   if (!globalShortcut.register(config.shortcut, onShortcut)) {
     console.error(`[judith] shortcut ${config.shortcut} is already taken`);
   }
   if (config.zoneShortcut && !globalShortcut.register(config.zoneShortcut, summonWithZone)) {
     console.error(`[judith] shortcut ${config.zoneShortcut} is already taken`);
   }
+
+  ipcMain.handle('judith:onboarding-status', () => onboardingStatus());
+  ipcMain.handle('judith:onboarding-save', (_e, input) => saveOnboarding(input));
+  ipcMain.on('judith:onboarding-done', (_e, info) => finishOnboarding(info ?? {}));
+  // First start on this PC (or JUDITH_ONBOARDING=1 to see it again while testing).
+  if (!existsSync(onboardedPath()) || process.env.JUDITH_ONBOARDING) openOnboarding();
 
   ipcMain.handle('judith:ask', (_e, question, turn) => (lastAsk = ask(String(question), Number(turn))));
   ipcMain.on('judith:cancel', (_e, turn) => cancelTurn(Number(turn)));
