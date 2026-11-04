@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-src 'self' about:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-src judith-frame:">
 <title>Judith · tableau</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="tokens.css">
@@ -28,6 +28,15 @@
     <section class="visual" id="visual" hidden>
       <h2 id="visual-title"></h2>
       <iframe id="frame" title="Visuel de Judith" sandbox="allow-scripts"></iframe>
+    </section>
+
+    <section class="scene" id="scene" hidden>
+      <h2 id="scene-title"></h2>
+      <figure class="seen" id="seen" hidden>
+        <img id="seen-img" alt="La capture d'écran que Judith a regardée">
+        <figcaption>Ce que j'ai vu</figcaption>
+      </figure>
+      <div class="scene-box" id="scene-box"></div>
     </section>
 
     <section class="activity" id="activity" hidden>

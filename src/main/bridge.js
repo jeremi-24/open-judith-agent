@@ -4,7 +4,7 @@
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
-export function startBridge({ onVisual, onLook }) {
+export function startBridge({ onVisual, onLook, onScene }) {
   const token = randomBytes(24).toString('hex');
   const routes = {
     '/look': () => onLook(),
@@ -12,6 +12,8 @@ export function startBridge({ onVisual, onLook }) {
       onVisual(String(title ?? ''), String(html ?? ''));
       return { ok: true };
     },
+    // A 3D scene: answers once the board ran the code (or gave up).
+    '/scene': ({ title, code }) => onScene(String(title ?? ''), String(code ?? '')),
   };
 
   const server = createServer(async (req, res) => {

@@ -54,6 +54,12 @@ You decide by yourself whether to TALK, SHOW, EXPLAIN${canLook ? ' or VISUALIZE'
   the sentence about it, not just the first one.
 ${canLook ? `  Call mcp__judith__show_visual (a self-contained HTML diagram, timeline, comparison, chart…) ONLY when the user asks
   for a diagram, a "schéma", a chart of something that is NOT on the screen. Never otherwise.
+- 3D: how a physical or spatial thing works (a jet engine in a video, a heart, a gearbox, a building) and a model
+  turning in space explains it better than marks → call mcp__judith__show_scene: a SCHEMATIC model built with the bricks,
+  then explain it part by part, with "scene <n>" right before the sentence about step n.
+  Certainty: if you are not sure what the object on the screen is (which plane, which engine), say what you think it is and
+  how sure you are, and explain the general principle; never invent a precise model name or figures.
+  It is a schematic, not the real object: say so in a few words.
 - VISUALIZE: when a richer explanation helps (an interactive diagram, a page, a document, a set of solutions to
   compare), make it with your usual tools (Artifact, Docs…). Judith shows it as a card and opens it in the browser
   herself: say in one sentence what you made. Never write a URL or a markdown link.
@@ -72,7 +78,7 @@ ring <left> <top> <right> <bottom> | <label>   ellipse around an element (icons,
 box <left> <top> <right> <bottom> | <label>    rectangle around an element (buttons, fields, panels, text blocks)
 shape <x1> <y1> <x2> <y2> <x3> <y3> ... | <label>   outline that hugs an irregular object (5 to 12 points, clockwise)
 arrow <x1> <y1> <x2> <y2> | <label>   hand-drawn arrow from one thing to another (a link, a flow, a cause); label optional
-step <short step>                   a step of a procedure, shown as a chip${boardLines}
+step <short step>                   a step of a procedure, shown as a chip${canLook ? '\nscene <n>                           moves the 3D scene (show_scene) to its step n' : ''}${boardLines}
 Coordinates: fractions (0..1) of the screenshot, x from the left, y from the top.
 For ring and box give the exact corners of the element itself, tight around it (not the area around it).
 Labels: at most 3 words. Mark only what is visible, as precisely as you can: at most 3 marks to show where to click,
@@ -134,6 +140,7 @@ export function describeTool(name, input = {}, language = 'fr') {
     return fr ? 'Je crée la page' : 'Creating the page';
   }
   switch (name.replace(/^mcp__judith__/, '')) {
+    case 'show_scene': return fr ? `Je modélise « ${short(input.title, 28)} » en 3D` : `Modelling "${input.title}" in 3D`;
     case 'show_visual': return fr ? `Je dessine « ${short(input.title, 28)} »` : `Drawing "${input.title}"`;
     case 'look_at_screen': return fr ? 'Je regarde ton écran' : 'Looking at your screen';
     case 'Read': return fr ? `Je lis ${file(input.file_path)}` : `Reading ${file(input.file_path)}`;

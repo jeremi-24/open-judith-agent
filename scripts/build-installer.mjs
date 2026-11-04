@@ -104,7 +104,9 @@ const skip = (rel) =>
   rel.endsWith('.map') ||
   /onnxruntime-node[\\/]bin[\\/]napi-v\d+[\\/](darwin|linux)/.test(rel) ||
   /onnxruntime-node[\\/]bin[\\/]napi-v\d+[\\/]win32[\\/]arm64/.test(rel) ||
-  /onnxruntime-web[\\/]dist[\\/].*\.wasm$/.test(rel);
+  /onnxruntime-web[\\/]dist[\\/].*\.wasm$/.test(rel) ||
+  // three.js: the 3D scene frame loads build/three.min.js only (~30 MB less).
+  (/^node_modules[\\/]three[\\/]/.test(rel) && !/^node_modules[\\/]three([\\/](package\.json|LICENSE|build([\\/]three\.min\.js)?))?$/.test(rel));
 for (const pkgDir of packages) {
   cpSync(join(root, pkgDir), join(app, pkgDir), { recursive: true, filter: (src) => !skip(relative(root, src)) });
 }

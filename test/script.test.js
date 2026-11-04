@@ -62,3 +62,9 @@ test('an arrow joins two points, its label is optional', () => {
   assert.equal(parseLine('arrow 0.1 0.2 0.1 0.2'), null);
   assert.equal(parseLine('arrow 0.1 0.2 0.5'), null);
 });
+
+test('scene <n> moves the 3D scene; anything else after "scene" is spoken', () => {
+  assert.deepEqual(parseLine('scene 2'), { type: 'scene', step: 2 });
+  assert.equal(parseLine('scene 0').type, 'say');
+  assert.equal(parseLine('scene du crime').type, 'say');
+});

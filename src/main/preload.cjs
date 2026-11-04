@@ -7,7 +7,7 @@ const EVENTS = [
   // overlay (and the notch, for 'zone')
   'mark', 'clear', 'scan', 'shift', 'select', 'zone',
   // board
-  'board', 'note', 'visual', 'activity', 'clear-board',
+  'board', 'note', 'visual', 'scene', 'scene-step', 'activity', 'clear-board',
 ];
 
 contextBridge.exposeInMainWorld('judith', {
@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('judith', {
   preview: (path) => ipcRenderer.send('judith:preview', path),
   closeBoard: () => ipcRenderer.send('judith:close-board'),
   resizeBoard: (height) => ipcRenderer.send('judith:resize-board', height),
+  // The 3D scene frame ran the model's code: { id, ok, error }.
+  sceneResult: (result) => ipcRenderer.send('judith:scene-result', result),
   on(event, listener) {
     if (EVENTS.includes(event)) ipcRenderer.on(`judith:${event}`, (_e, data) => listener(data));
   },

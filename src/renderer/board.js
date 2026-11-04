@@ -14,19 +14,13 @@ function render(text) {
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
 }
 
-// Visuals are untrusted HTML written by the model: they run in a sandboxed
-// frame without network, and report their height so the frame fits.
-const FIT = `<script>
-new ResizeObserver(() => parent.postMessage({ judithHeight: document.documentElement.scrollHeight }, '*'))
-  .observe(document.documentElement);
-<\/script>`;
-const LOCKDOWN = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src data:">`;
-
-function showVisual(name, html) {
+// Visuals are untrusted HTML written by the model: main serves each one from
+// judith-frame://visual/<id> with its own CSP (no network), in a sandboxed
+// frame that reports its height so the frame fits (src/main/frames.js).
+function showVisual(name, src) {
   visual.hidden = false;
   document.getElementById('visual-title').textContent = name;
-  const doc = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (h) => `${h}${LOCKDOWN}`) : `${LOCKDOWN}${html}`;
-  frame.srcdoc = `${doc}${FIT}`;
+  frame.src = src;
   frame.style.height = '280px';
 }
 window.addEventListener('message', (event) => {
@@ -46,7 +40,42 @@ window.judith.on('note', ({ text }) => {
   notes.append(li);
   li.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 });
-window.judith.on('visual', ({ title: name, html }) => showVisual(name, html));
+window.judith.on('visual', ({ title: name, src }) => showVisual(name, src));
+
+// 3D scenes: the model's code runs in a fresh sandboxed frame (scene.html,
+// served from judith-frame://scene/),
+// thrown away at each new scene. The frame says whether the code worked;
+// Judith passes it on, so the model can fix it or explain otherwise.
+const scene = document.getElementById('scene');
+const sceneBox = document.getElementById('scene-box');
+const seen = document.getElementById('seen');
+let sceneFrame = null;
+let sceneId = 0;
+let sceneCode = '';
+function showScene({ id, title: name, code, seenImage }) {
+  scene.hidden = false;
+  document.getElementById('scene-title').textContent = name;
+  seen.hidden = !seenImage;
+  if (seenImage) document.getElementById('seen-img').src = seenImage;
+  sceneId = id;
+  sceneCode = code;
+  sceneFrame?.remove();
+  sceneFrame = Object.assign(document.createElement('iframe'), { title: name, src: 'judith-frame://scene/scene.html' });
+  sceneFrame.setAttribute('sandbox', 'allow-scripts');
+  sceneBox.append(sceneFrame);
+  scene.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+window.addEventListener('message', (event) => {
+  if (!sceneFrame || event.source !== sceneFrame.contentWindow) return;
+  const data = event.data?.judithScene;
+  if (!data) return;
+  if (data.ready) return sceneFrame.contentWindow.postMessage({ judithCode: sceneCode }, '*');
+  if (data.warning) return window.judith.log(`[scene] ${String(data.warning).slice(0, 300)}`);
+  window.judith.sceneResult({ id: sceneId, ok: Boolean(data.ok), error: data.error ? String(data.error).slice(0, 600) : undefined });
+});
+window.judith.on('scene', showScene);
+// The voice reached "scene n": move to that step.
+window.judith.on('scene-step', ({ step }) => sceneFrame?.contentWindow.postMessage({ judithStep: step }, '*'));
 
 // One card per action; it turns green or red when Claude Code is done.
 const cards = new Map();
@@ -88,7 +117,10 @@ window.judith.on('clear-board', () => {
   subtitle.textContent = '';
   notes.replaceChildren();
   visual.hidden = true;
-  frame.srcdoc = '';
+  frame.removeAttribute('src');
+  scene.hidden = true;
+  sceneFrame?.remove();
+  sceneFrame = null;
   activity.hidden = true;
   actions.replaceChildren();
   cards.clear();
