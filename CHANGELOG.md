@@ -25,6 +25,13 @@ Judith now does one thing, well: she looks at your screen and explains it.
 - **Agent mode, guided**: "Agent, …" starts a loop. Judith gives one step, waits for the screen
   to change and settle (the user did it), looks again and gives the next one, until `done`.
   She never clicks. Stops on X / Esc / "arrête", after 12 steps or 3 minutes idle.
+- **Agent mode, autonomous** (opt-in, off by default): "Agent autonome, …" lets Judith click,
+  type, press keys and scroll herself through a small SendInput companion (`companions/hands`).
+  Every action is checked by `src/core/guard.js` on the real app and control: never in
+  terminals, password managers or on Judith; never a password or card number; "Vas-y / Non"
+  before deleting, sending, paying, installing…; moving the mouse or Ctrl+Alt+Escape stops her.
+- The notch reports its real size: the rest of its transparent window no longer counts as
+  Judith's (screen changes and clicks there are the user's apps).
 
 ### Fixed
 - HTML visuals (`show_visual`) could not run their scripts: a `srcdoc` frame inherited the

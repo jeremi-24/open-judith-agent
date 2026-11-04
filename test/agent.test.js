@@ -73,3 +73,22 @@ test("progress: Judith's own windows are never a change", () => {
   const states = [plain, plain, plain, menu, menu, menu].map((frame) => watch.push(frame, notch));
   assert.ok(states.every((s) => s === 'waiting'));
 });
+
+test('autonomous: only when allowed; otherwise she guides (and says so)', async () => {
+  const { agentRequest } = await import('../src/core/agent.js');
+  assert.deepEqual(agentRequest('Agent autonome, range mes onglets'), { goal: 'range mes onglets', autonomous: true });
+  assert.deepEqual(agentRequest('mode autonome : vide le cache'), { goal: 'vide le cache', autonomous: true });
+  assert.deepEqual(agentRequest('Agent, range mes onglets'), { goal: 'range mes onglets', autonomous: false });
+
+  let allowed = false;
+  const agent = createAgent({ canAct: () => allowed });
+  assert.match(agent.question('Agent autonome, range mes onglets'), /^\(Agent mode, step 1/);
+  assert.equal(agent.autonomous, false);
+  assert.equal(agent.refused, true);
+  allowed = true;
+  assert.match(agent.question('Agent autonome, range mes onglets'), /^\(Autonomous agent mode, step 1.*\nDo it yourself/s);
+  assert.equal(agent.autonomous, true);
+  assert.match(agent.next(), /Your actions are done/);
+  agent.stop();
+  assert.equal(agent.autonomous, false);
+});

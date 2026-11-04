@@ -89,6 +89,15 @@
     <div class="links" id="links"></div>
 
     <!-- Settings: which engine answers (Claude Code, Codex, Cursor, an API key). -->
+    <!-- Autonomous agent mode: a sensitive action waits for the user. -->
+    <section class="confirm" id="confirm" aria-live="assertive">
+      <p id="confirm-text"></p>
+      <div class="settings-actions">
+        <button type="button" id="confirm-no">Non</button>
+        <button type="button" id="confirm-yes" class="primary">Vas-y</button>
+      </div>
+    </section>
+
     <section class="settings" id="settings-panel" aria-label="Réglages de Judith">
       <div class="settings-head">
         <span class="label">Qui répond à Judith ?</span>
@@ -109,6 +118,12 @@
         <label for="api-key">Clé API <span>(chiffrée sur ce PC)</span></label>
         <input id="api-key" type="password" autocomplete="off" spellcheck="false">
       </div>
+      <label class="hands" id="hands-row">
+        <input type="checkbox" id="agent-hands">
+        <span><b>Mode agent autonome</b> : avec « Agent autonome, … », Judith clique et tape elle-même.
+          Elle demande avant de supprimer, envoyer ou payer, ne tape jamais de mot de passe, et s'arrête si tu bouges la souris.
+          <em id="hands-note"></em></span>
+      </label>
       <p class="settings-status" id="settings-status" aria-live="polite"></p>
       <div class="settings-actions">
         <button type="button" id="settings-test">Tester</button>

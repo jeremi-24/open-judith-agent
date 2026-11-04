@@ -70,21 +70,27 @@ for (const item of ['src', 'assets', 'LICENSE']) {
   if (existsSync(join(root, item))) cpSync(join(root, item), join(app, item), { recursive: true });
 }
 
-// The UI Automation companion (marks snap onto real controls). Built with the
-// .NET SDK when it is installed; without it Judith still works, marks just
-// keep the model's position.
-const eyesExe = join(root, 'companions', 'eyes', 'bin', 'Release', 'net48', 'judith-eyes.exe');
-try {
-  execFileSync('dotnet', ['build', join(root, 'companions', 'eyes'), '-c', 'Release', '--nologo', '-v', 'q'], { stdio: 'inherit' });
-} catch {
-  console.warn('  ! .NET SDK not found or build failed: judith-eyes.exe not rebuilt');
-}
-if (existsSync(eyesExe)) {
-  mkdirSync(join(app, 'companions'), { recursive: true });
-  cpSync(eyesExe, join(app, 'companions', 'judith-eyes.exe'));
-  console.log('  + judith-eyes.exe (UI Automation)');
-} else {
-  console.warn('  ! judith-eyes.exe missing: marks will not snap onto controls');
+// Native companions, built with the .NET SDK when it is installed. Without
+// them Judith still works: marks keep the model's position (eyes), and the
+// autonomous agent mode is unavailable (hands).
+const COMPANIONS = [
+  ['eyes', 'UI Automation', 'marks will not snap onto controls'],
+  ['hands', 'autonomous agent mode', 'the autonomous agent mode will be unavailable'],
+];
+for (const [name, role, without] of COMPANIONS) {
+  const exe = join(root, 'companions', name, 'bin', 'Release', 'net48', `judith-${name}.exe`);
+  try {
+    execFileSync('dotnet', ['build', join(root, 'companions', name), '-c', 'Release', '--nologo', '-v', 'q'], { stdio: 'inherit' });
+  } catch {
+    console.warn(`  ! .NET SDK not found or build failed: judith-${name}.exe not rebuilt`);
+  }
+  if (existsSync(exe)) {
+    mkdirSync(join(app, 'companions'), { recursive: true });
+    cpSync(exe, join(app, 'companions', `judith-${name}.exe`));
+    console.log(`  + judith-${name}.exe (${role})`);
+  } else {
+    console.warn(`  ! judith-${name}.exe missing: ${without}`);
+  }
 }
 
 // Production packages only (npm knows which), top-level folders.

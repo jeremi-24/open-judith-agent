@@ -9,6 +9,7 @@
 //   note Le MP4 se lit partout
 //   scene 2                (moves the 3D scene to its 2nd step)
 //   done                   (agent mode: the goal is reached)
+//   act click 0.42 0.18 | Exporter   (autonomous agent mode: Judith clicks herself)
 //
 // Coordinates are fractions (0..1) of the screenshot; ring and box take the
 // corners of the element (left top right bottom), or a single point.
@@ -25,6 +26,33 @@ function splitLabel(rest) {
 function numbers(text) {
   const parts = text.split(/[\s,]+/).filter(Boolean);
   return parts.every((p) => NUMBER.test(p)) ? parts.map(Number) : null;
+}
+
+// "click 0.4 0.2 | Exporter", "click 0.4 0.2 right | …", "type bonjour | Recherche",
+// "key ctrl+s", "scroll 0.5 0.5 -3" → { action, … } or null.
+export function parseAction(rest) {
+  const space = rest.trim().indexOf(' ');
+  const verb = (space < 0 ? rest.trim() : rest.trim().slice(0, space)).toLowerCase();
+  const args = space < 0 ? '' : rest.trim().slice(space + 1);
+  const [main, label] = splitLabel(args);
+  switch (verb) {
+    case 'click': {
+      const parts = main.split(/\s+/).filter(Boolean);
+      const button = ['right', 'double'].includes(parts[2]?.toLowerCase()) ? parts[2].toLowerCase() : 'left';
+      const n = numbers(parts.slice(0, 2).join(' '));
+      return n?.length === 2 ? { action: 'click', x: clamp01(n[0]), y: clamp01(n[1]), button, label } : null;
+    }
+    case 'type':
+      return main ? { action: 'type', text: main, label } : null;
+    case 'key':
+      return main ? { action: 'key', combo: main.toLowerCase().replace(/\s+/g, '') } : null;
+    case 'scroll': {
+      const n = numbers(main);
+      return n?.length === 3 ? { action: 'scroll', x: clamp01(n[0]), y: clamp01(n[1]), notches: Math.max(-15, Math.min(15, Math.round(n[2]))) } : null;
+    }
+    default:
+      return null;
+  }
 }
 
 export function parseLine(raw) {
@@ -83,6 +111,11 @@ export function parseLine(raw) {
       return rest.trim() ? { type: 'note', text: rest.trim() } : null;
     case 'clear':
       return { type: 'clear' };
+    case 'act': {
+      // Agent mode, autonomous: an action Judith does herself (checked by guard.js).
+      const action = parseAction(rest);
+      return action ? { type: 'act', ...action } : { type: 'say', text: line };
+    }
     case 'done':
       // Agent mode: the goal is reached (an optional last sentence is spoken).
       return { type: 'done', text: rest.trim() };

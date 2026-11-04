@@ -279,6 +279,7 @@ const providerSelect = document.getElementById('api-provider');
 const apiModel = document.getElementById('api-model');
 const apiKey = document.getElementById('api-key');
 const agentModel = document.getElementById('agent-model');
+const agentHands = document.getElementById('agent-hands');
 let settingsData = null;
 
 function setStatus(text, kind = '') {
@@ -337,6 +338,9 @@ function renderSettings(data) {
       return option;
     }),
   );
+  agentHands.checked = Boolean(data.agentHands);
+  agentHands.disabled = !data.handsAvailable;
+  document.getElementById('hands-note').textContent = data.handsAvailable ? '' : 'Indisponible : le compagnon judith-hands.exe n’est pas installé (Windows seulement).';
   apiModel.value = data.apiModel ?? '';
   agentModel.value = data.agentModel ?? '';
   apiKey.value = '';
@@ -344,7 +348,7 @@ function renderSettings(data) {
 }
 
 function formSettings() {
-  return { engine: chosenEngine(), apiProvider: providerSelect.value, apiModel: apiModel.value, apiKey: apiKey.value, agentModel: agentModel.value };
+  return { engine: chosenEngine(), apiProvider: providerSelect.value, apiModel: apiModel.value, apiKey: apiKey.value, agentModel: agentModel.value, agentHands: agentHands.checked };
 }
 
 async function openSettings() {
@@ -393,3 +397,34 @@ pauseButton.addEventListener('click', () => {
 notch.addEventListener('pointerenter', () => api.interactive(true));
 notch.addEventListener('pointerleave', () => api.interactive(false));
 showState('idle');
+
+// ----- autonomous agent mode: "Vas-y / Non" -----
+const confirmBox = document.getElementById('confirm');
+let stateBeforeConfirm = null;
+api.on('confirm', (request) => {
+  if (!request) {
+    if (notch.dataset.state === 'confirm') notch.dataset.state = stateBeforeConfirm ?? 'none';
+    api.notchState(notch.dataset.state);
+    return;
+  }
+  stateBeforeConfirm = notch.dataset.state === 'confirm' ? stateBeforeConfirm : notch.dataset.state;
+  document.getElementById('confirm-text').textContent = request.reason;
+  notch.dataset.state = 'confirm';
+  api.notchState('confirm');
+});
+// "Vas-y" with a real pointer press only: a stray Enter or Space on a focused
+// button must never approve an action. "Non" works any way.
+document.getElementById('confirm-yes').addEventListener('pointerdown', (event) => {
+  if (event.button === 0 && event.isTrusted) api.confirmAnswer(true);
+});
+onPress(document.getElementById('confirm-no'), () => api.confirmAnswer(false));
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && notch.dataset.state === 'confirm') api.confirmAnswer(false);
+});
+
+// Where the notch really is in its window: the rest shows the user's apps,
+// where Judith may look and (in autonomous mode) click.
+new ResizeObserver(() => {
+  const r = notch.getBoundingClientRect();
+  api.notchBox({ x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) });
+}).observe(notch);

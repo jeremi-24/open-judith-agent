@@ -15,3 +15,5 @@ docs/voix-essai/
 .tools/
 companions/eyes/bin/
 companions/eyes/obj/
+companions/hands/bin/
+companions/hands/obj/

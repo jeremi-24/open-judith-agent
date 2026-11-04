@@ -16,23 +16,31 @@ export const AGENT_NEXT = '(agent:next)';
 // Waiting for the user to act: after this, the loop ends by itself.
 export const AGENT_IDLE_MS = 3 * 60_000;
 
-// The special word: "Agent, …", "Mode agent : …" at the start of a question.
-const TRIGGER = /^\s*(?:(?:le\s+|en\s+)?mode\s+agent|agent)(?![\p{L}\p{N}])[\s,:;.!-]*/iu;
+// The special words: "Agent, …", "Mode agent : …" (guided), and "Agent
+// autonome, …", "Mode autonome : …" (Judith acts herself, when allowed).
+const TRIGGER = /^\s*(?:(?:le\s+|en\s+)?mode\s+(?:agent\s+)?autonome|agent\s+autonome|(?:le\s+|en\s+)?mode\s+agent|agent)(?![\p{L}\p{N}])[\s,:;.!-]*/iu;
 
-// The goal of an agent request, or null for an ordinary question.
-export function agentGoal(text) {
+// An agent request → { goal, autonomous }, or null for an ordinary question.
+export function agentRequest(text) {
   const t = String(text ?? '');
   const match = TRIGGER.exec(t);
   if (!match) return null;
   const goal = t.slice(match[0].length).trim();
-  return goal.length >= 3 ? goal : null;
+  return goal.length >= 3 ? { goal, autonomous: /autonome/i.test(match[0]) } : null;
 }
 
+// The goal of an agent request, or null for an ordinary question.
+export const agentGoal = (text) => agentRequest(text)?.goal ?? null;
+
 // The loop's state, and the question sent to the model at each step.
-export function createAgent({ maxSteps = AGENT_MAX_STEPS } = {}) {
+// canAct(): may Judith act herself now (the setting is on, the hands are
+// there)? Asked when an autonomous request starts; otherwise she guides.
+export function createAgent({ maxSteps = AGENT_MAX_STEPS, canAct = () => false } = {}) {
   let goal = null;
   let step = 0;
-  const frame = (body) => `(Agent mode, step ${step}/${maxSteps}) Goal: ${goal}\n${body}`;
+  let autonomous = false;
+  let refused = false; // asked for autonomous, but not allowed: guided instead
+  const frame = (body) => `(${autonomous ? 'Autonomous agent mode' : 'Agent mode'}, step ${step}/${maxSteps}) Goal: ${goal}\n${body}`;
   return {
     maxSteps,
     get active() {
@@ -44,14 +52,25 @@ export function createAgent({ maxSteps = AGENT_MAX_STEPS } = {}) {
     get step() {
       return step;
     },
+    get autonomous() {
+      return autonomous;
+    },
+    // The user asked for autonomous mode but it is off: say it once.
+    get refused() {
+      return refused;
+    },
     // A question from the user: starts the loop (special word), continues it
     // (an answer to Judith while it runs), or passes through unchanged.
     question(text) {
-      const newGoal = agentGoal(text);
-      if (newGoal) {
-        goal = newGoal;
+      const request = agentRequest(text);
+      refused = false;
+      if (request) {
+        goal = request.goal;
         step = 1;
-        return frame('Take me to this goal, one step at a time.');
+        autonomous = request.autonomous && canAct();
+        refused = request.autonomous && !autonomous;
+        if (refused) return frame("I asked you to do it yourself, but autonomous mode is off in Judith's settings: say so in a few words, then take me to this goal one step at a time.");
+        return frame(autonomous ? 'Do it yourself, one step at a time.' : 'Take me to this goal, one step at a time.');
       }
       if (goal == null) return text;
       if (step >= maxSteps) {
@@ -69,11 +88,16 @@ export function createAgent({ maxSteps = AGENT_MAX_STEPS } = {}) {
         return null;
       }
       step += 1;
-      return frame('The screen changed after your last step. Look at it now, then give the next step only (or a fix if it went wrong), or "done" if the goal is reached.');
+      return frame(
+        autonomous
+          ? 'Your actions are done. Look at the screen now: the next actions only (or a fix if it went wrong), or "done" if the goal is reached.'
+          : 'The screen changed after your last step. Look at it now, then give the next step only (or a fix if it went wrong), or "done" if the goal is reached.',
+      );
     },
     stop() {
       goal = null;
       step = 0;
+      autonomous = false;
     },
   };
 }
