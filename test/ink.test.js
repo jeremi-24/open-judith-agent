@@ -40,3 +40,16 @@ test('dark ink on light backgrounds, light ink on dark ones', () => {
   assert.ok(averageLuma(white, all) > 250);
   assert.equal(averageLuma(black, all), 0);
 });
+
+test('an arrow ends exactly on its target, with a head pointing at it', async () => {
+  const { arrowStroke } = await import('../src/core/ink.js');
+  const a = arrowStroke([100, 100], [400, 300], 7);
+  const last = a.points.at(-1);
+  assert.ok(Math.hypot(last[0] - 400, last[1] - 300) < 0.5);
+  assert.match(a.head, /^M[\d.]+ [\d.]+ L400 300 L[\d.]+ [\d.]+$/);
+  // Hand-drawn: bent, not a straight line, and the same seed draws the same arrow.
+  const middle = a.points[8];
+  const offLine = Math.abs((300 - 100) * middle[0] - (400 - 100) * middle[1] + 400 * 100 - 300 * 100) / Math.hypot(200, 300);
+  assert.ok(offLine > 3);
+  assert.equal(arrowStroke([100, 100], [400, 300], 7).d, a.d);
+});

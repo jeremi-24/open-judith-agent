@@ -70,6 +70,23 @@ for (const item of ['src', 'assets', 'LICENSE']) {
   if (existsSync(join(root, item))) cpSync(join(root, item), join(app, item), { recursive: true });
 }
 
+// The UI Automation companion (marks snap onto real controls). Built with the
+// .NET SDK when it is installed; without it Judith still works, marks just
+// keep the model's position.
+const eyesExe = join(root, 'companions', 'eyes', 'bin', 'Release', 'net48', 'judith-eyes.exe');
+try {
+  execFileSync('dotnet', ['build', join(root, 'companions', 'eyes'), '-c', 'Release', '--nologo', '-v', 'q'], { stdio: 'inherit' });
+} catch {
+  console.warn('  ! .NET SDK not found or build failed: judith-eyes.exe not rebuilt');
+}
+if (existsSync(eyesExe)) {
+  mkdirSync(join(app, 'companions'), { recursive: true });
+  cpSync(eyesExe, join(app, 'companions', 'judith-eyes.exe'));
+  console.log('  + judith-eyes.exe (UI Automation)');
+} else {
+  console.warn('  ! judith-eyes.exe missing: marks will not snap onto controls');
+}
+
 // Production packages only (npm knows which), top-level folders.
 const listed = execFileSync('npm', ['ls', '--omit=dev', '--all', '--parseable'], { cwd: root, encoding: 'utf8', shell: true })
   .split(/\r?\n/)

@@ -21,3 +21,26 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  # Judith's UI Automation companion (companions/eyes): built and smoke-tested
+  # on Windows, where .NET Framework 4.8 and UI Automation exist.
+  eyes:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet build companions/eyes -c Release
+      - name: Smoke test (ping, then a point)
+        shell: pwsh
+        run: |
+          $exe = "companions/eyes/bin/Release/net48/judith-eyes.exe"
+          $out = "ping`naround 1 10 10`n" | & $exe | Out-String
+          Write-Output $out
+          if ($out -notmatch '"ok":true') { throw "no answer to ping" }
+          if ($out -notmatch '"id":"1"') { throw "no answer to around" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: judith-eyes
+          path: companions/eyes/bin/Release/net48/judith-eyes.exe

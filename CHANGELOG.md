@@ -14,6 +14,10 @@ Judith now does one thing, well: she looks at your screen and explains it.
 - **Other engines**: OpenAI Codex, Cursor's agent, or an API key (Anthropic, OpenAI, Google
   Gemini, OpenRouter, OpenAI-compatible servers). "Automatique" picks what is installed.
   A gear in the notch lists them, tests them (text + image) and saves API keys encrypted.
+- **Precise marks**: a ring or box snaps onto the real control under it, thanks to a tiny
+  Windows UI Automation companion (`companions/eyes`, .NET Framework 4.8). Built by CI and by
+  `npm run dist` when the .NET SDK is installed; optional at run time.
+- **Diagrams on the screen**: hand-drawn arrows (`arrow`) join the parts she explains.
 - The notch window keeps a fixed size: smoother motion, and Stop / X work again in every
   state. The summon shortcut stops her while she thinks or speaks.
 

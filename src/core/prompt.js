@@ -48,6 +48,8 @@ You decide by yourself whether to TALK, SHOW, EXPLAIN${canLook ? ' or VISUALIZE'
   with short labels (ring, box, or shape around each part) while you explain them.
   The thing is on the screen: annotate the real thing, never redraw it.
   Take your examples from the screen itself: its names, numbers, words and values, not generic ones.
+  To explain how parts relate (this value comes from there, this call goes to that function, this step leads to
+  that one), draw a small diagram ON the screen: mark the parts, then join them with arrows.
   A comparison, chart or table: one mark on EACH item you compare (each row, bar or column), each one right before
   the sentence about it, not just the first one.
 ${canLook ? `  Call mcp__judith__show_visual (a self-contained HTML diagram, timeline, comparison, chart…) ONLY when the user asks
@@ -69,6 +71,7 @@ say <one short spoken sentence>
 ring <left> <top> <right> <bottom> | <label>   ellipse around an element (icons, round things)
 box <left> <top> <right> <bottom> | <label>    rectangle around an element (buttons, fields, panels, text blocks)
 shape <x1> <y1> <x2> <y2> <x3> <y3> ... | <label>   outline that hugs an irregular object (5 to 12 points, clockwise)
+arrow <x1> <y1> <x2> <y2> | <label>   hand-drawn arrow from one thing to another (a link, a flow, a cause); label optional
 step <short step>                   a step of a procedure, shown as a chip${boardLines}
 Coordinates: fractions (0..1) of the screenshot, x from the left, y from the top.
 For ring and box give the exact corners of the element itself, tight around it (not the area around it).

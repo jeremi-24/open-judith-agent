@@ -51,3 +51,14 @@ test('the reader emits each line once, as soon as it is complete', () => {
   reader.finish('say Un.\nring 0.1 0.1 0.2 0.2\nsay Deux.');
   assert.deepEqual(seen, ['say', 'mark', 'say']);
 });
+
+test('an arrow joins two points, its label is optional', () => {
+  const arrow = parseLine('arrow 0.1 0.2 0.5 0.6 | vient de là');
+  assert.equal(arrow.shape, 'arrow');
+  assert.deepEqual(arrow.points, [[0.1, 0.2], [0.5, 0.6]]);
+  assert.equal(arrow.label, 'vient de là');
+  assert.ok(Math.abs(arrow.x - 0.3) < 1e-9 && Math.abs(arrow.y - 0.4) < 1e-9);
+  assert.equal(parseLine('arrow 0.1 0.2 0.5 0.6').label, '');
+  assert.equal(parseLine('arrow 0.1 0.2 0.1 0.2'), null);
+  assert.equal(parseLine('arrow 0.1 0.2 0.5'), null);
+});

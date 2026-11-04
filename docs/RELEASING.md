@@ -8,6 +8,12 @@ The installer is built locally with two small tools, downloaded once into `.tool
 | rcedit 2.0.0 | `.tools/rcedit-x64.exe` | https://github.com/electron/rcedit/releases |
 | NSIS 3.10 | `.tools/nsis/nsis-3.10/makensis.exe` (unzipped) | https://nsis.sourceforge.io |
 
+The UI Automation companion (`companions/eyes`) is built with the
+[.NET SDK](https://dotnet.microsoft.com/download) (8 or later; it targets .NET Framework 4.8,
+which every Windows 10/11 has). Without the SDK the installer is still built, without
+`judith-eyes.exe`: marks then keep the model's position. CI builds it too (job `eyes`, artifact
+`judith-eyes`).
+
 Electron itself is not downloaded again: the build reuses `node_modules/electron/dist`.
 
 ## Build
