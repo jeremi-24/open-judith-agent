@@ -1235,11 +1235,15 @@ app.whenReady().then(async () => {
   available = await detectEngines(config.claudePath);
   startEngine();
 
-  // The idle notch ("Judith ●") is always at the top of the screen.
-  bubble.webContents.once('did-finish-load', () => {
+  // The idle notch ("Judith ●") is always at the top of the screen. The page
+  // may already be loaded by now (the engine detection above takes a few
+  // seconds): then "did-finish-load" has passed and would never come.
+  const showNotch = () => {
     placeBubble(cursorDisplay());
     bubble.showInactive();
-  });
+  };
+  if (bubble.webContents.isLoading()) bubble.webContents.once('did-finish-load', showNotch);
+  else showNotch();
 
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }));
   tray.setToolTip('Judith');
