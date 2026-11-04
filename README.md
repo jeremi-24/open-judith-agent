@@ -9,9 +9,13 @@
 
 ---
 
-Judith is a desktop mentor for Windows. Press a shortcut, ask a question, and Judith
-looks at your screen, **draws the answer right on top of your software** (rings,
-arrows, numbered steps) and explains it, in any app: VS Code, CapCut, Blender, Excel…
+Judith is a desktop mentor for Windows that does one thing: **she explains what is on your
+screen**. Press a shortcut, ask a question (about the whole screen or a zone you draw), and
+Judith **draws the answer right on top of your software** (rings, boxes, numbered steps)
+and explains it with examples taken from what you see, in any app: VS Code, CapCut,
+Blender, Excel…
+
+She points, you click: Judith never acts on your computer.
 
 She runs on **your own Claude Code**, so she shares its memory, skills and MCP
 connectors. She already knows your projects and your level on day one.
@@ -33,18 +37,12 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
 - **Talk to her**: the shortcut opens the notch and listens. Stop talking and she
   answers out loud. Speech-to-text runs locally (Whisper), and so does her neural voice
   (Piper "Siwis"): no cloud, no API key.
-- **She decides whether to show or to do**: "where is the export button?" → she circles it.
-  "open VLC" → she opens it. Opening apps, sites and folders is instant; editing a file
-  or running a command asks you first, right in the notch.
+- **She shows and explains**: "where is the export button?" → she circles it. "c'est quoi ça ?"
+  → she marks each part on the screen while explaining it, using the real names and values
+  on your screen. She never opens, edits, runs or sends anything.
 - **Show her a zone**: press **Ctrl + Alt + Shift + J** (or the frame button in the notch)
   and draw a rectangle around what you want to understand. Only that zone is sent, and
   she annotates it. Escape or a simple click cancels.
-- **She makes things**: ask for a document, a page or a design; Claude Code creates it with
-  your own tools (Docs, Artifacts…), Judith opens it in your browser and leaves a card in
-  the notch. She never reads a link aloud.
-- **She prepares, you send**: "take a screenshot and send it on WhatsApp" → she copies the
-  screen (or your zone) to the clipboard, saves it in Pictures\Judith, opens WhatsApp and shows
-  where to paste. You press Ctrl + V and send: she never sends messages for you.
 - **Session mode** *(planned)*: give her a goal, she guides you step by step, quizzes
   you and tracks what you have learned.
 
@@ -106,7 +104,6 @@ Judith reads `config.json` in her user data folder
 - `alwaysLook` (default `false`): Judith takes a screenshot only when the question needs it
   (her `look_at_screen` tool). `true` sends one with every question, slower.
 - `zoneShortcut` (default `Control+Alt+Shift+J`): summon Judith and draw the zone to explain.
-- `openCreations` (default `true`): open what Claude creates (document, page, design) in the browser.
 - `conversation` (default `true`): after answering, Judith listens for 5 more seconds.
 - `annotations`: `helpful` (default, draws only when it saves you searching), `none`, `always`.
 
@@ -143,13 +140,12 @@ A mark is only true for the screen Judith looked at. It is not drawn if that par
 screen already changed (you scrolled, clicked, switched window), and it disappears as soon as
 what is under it changes, or after a minute.
 
-### How Judith acts
+### What Judith is allowed to do
 
-Claude Code starts Judith's own MCP server (`src/mcp/server.js`) with four tools:
-`open_app`, `find_apps`, `open_url`, `open_path`. They, and reading files, need no
-confirmation. Any other tool (editing a file, running a command) goes through
-`--permission-prompt-tool`: the notch shows what Judith wants to do, you answer
-**Vas-y** or **Non**.
+Claude Code starts Judith's own MCP server (`src/mcp/server.js`) with two tools:
+`look_at_screen` and `show_visual`. Besides them, Judith may only read (`Read`, `Glob`,
+`Grep`, `WebSearch`, `WebFetch`). Every tool that changes something (editing files,
+running commands…) is refused: she explains and points, the user acts.
 
 ## Development
 

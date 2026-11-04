@@ -1,16 +1,13 @@
 // Local HTTP bridge between Judith's MCP server (started by Claude Code) and
-// the app: permission requests and visuals reach the screen through it.
+// the app: screenshots and visuals go through it.
 // Listens on 127.0.0.1 only, and every call must carry a random token.
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
-export function startBridge({ onApprove, onVisual, onLook, onCopyShot, onReminder }) {
+export function startBridge({ onVisual, onLook }) {
   const token = randomBytes(24).toString('hex');
   const routes = {
     '/look': () => onLook(),
-    '/copy-shot': () => onCopyShot(),
-    '/reminder': (body) => onReminder(body ?? {}),
-    '/approve': async ({ tool, input }) => ({ allow: await onApprove(tool, input ?? {}) }),
     '/visual': async ({ title, html }) => {
       onVisual(String(title ?? ''), String(html ?? ''));
       return { ok: true };

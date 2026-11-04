@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../src/core/prompt.js';
+import { buildSystemPrompt, buildUserContent, describeTool } from '../src/core/prompt.js';
 import { parseLine } from '../src/core/script.js';
 
 test('the system prompt sets the language and documents the script', () => {
@@ -30,17 +30,20 @@ test('user content puts the image first, then the context and the question', () 
   assert.equal(content[1].text, 'Active window: CapCut\nOù est Exporter ?');
 });
 
-test('Judith decides by herself between showing and doing', () => {
+test('Judith talks, shows and explains, but never acts on the computer', () => {
   const prompt = buildSystemPrompt();
-  assert.match(prompt, /TALK, SHOW, EXPLAIN or DO/);
-  assert.match(prompt, /mcp__judith__open_app/);
+  assert.match(prompt, /TALK, SHOW or EXPLAIN/);
+  assert.match(prompt, /You never act on the computer/);
+  assert.match(prompt, /Take your examples from the screen itself/);
+  for (const tool of ['open_app', 'open_url', 'open_path', 'copy_screenshot', 'set_reminder']) {
+    assert.doesNotMatch(prompt, new RegExp(tool));
+  }
 });
 
 test('tool calls are described in plain words', () => {
-  assert.equal(describeTool('mcp__judith__open_app', { name: 'VLC' }), "J'ouvre VLC");
-  assert.equal(describeTool('Edit', { file_path: 'C:\\code\\src\\bases.ts' }), 'Je modifie bases.ts');
-  assert.equal(describeTool('Bash', { command: 'npm test' }, 'en'), 'Running npm test');
-  assert.deepEqual(describeApproval('Bash', { command: 'npm test' }), { title: 'Je lance npm test', detail: 'npm test' });
+  assert.equal(describeTool('mcp__judith__look_at_screen', {}), 'Je regarde ton écran');
+  assert.equal(describeTool('Read', { file_path: 'C:\\code\\src\\bases.ts' }), 'Je lis bases.ts');
+  assert.equal(describeTool('WebSearch', { query: 'turbofan' }, 'en'), 'Searching "turbofan"');
 });
 
 test('user content works without an image', () => {
@@ -72,15 +75,4 @@ test('a zone screenshot says it is only a zone', () => {
   const content = buildUserContent({ question: "C'est quoi ?", image: { mediaType: 'image/jpeg', data: 'AAAA' }, zone: true });
   assert.match(content[1].text, /zone of the screen the user selected/);
   assert.doesNotMatch(buildUserContent({ question: 'Salut' })[0].text, /zone/);
-});
-
-test('creating a document has its own words in the notch', () => {
-  assert.equal(describeTool('mcp__claude_ai_Claude_Docs__batch', {}), "J'écris le document");
-  assert.equal(describeTool('Artifact', { action: 'open', url: 'https://claude.ai/artifact/x' }), "J'ouvre ta création");
-  assert.equal(describeTool('Artifact', { file_path: 'page.html' }), 'Je crée la page');
-});
-
-test('sharing a screenshot: Judith prepares, the user sends', () => {
-  assert.equal(describeTool('mcp__judith__copy_screenshot', {}), 'Je copie ton écran');
-  assert.match(buildSystemPrompt(), /copy_screenshot[\s\S]*you never send messages/);
 });

@@ -1,5 +1,6 @@
-// What makes Judith Judith: her personality, how she decides between showing
-// and doing, and the script format her notch, overlay and board understand.
+// What makes Judith Judith: her personality, how she decides between talking,
+// showing and explaining, and the script format her notch, overlay and board
+// understand. She explains and points; she never acts on the computer.
 // Sent once per Claude Code process with --append-system-prompt.
 
 const LANGUAGES = { fr: 'French', en: 'English' };
@@ -33,30 +34,24 @@ Your superpower: you make what is on the screen understandable by drawing on it 
 
 Personality: warm, sharp, a little playful, never condescending. You speak ${lang}${tu}.
 You do not see the screen by default. Call mcp__judith__look_at_screen when the answer depends on what is on it;
-for general questions or simple actions (open an app, a site), answer right away without looking.
+for general questions, answer right away without looking.
 When a screenshot comes with the question, it IS the screen now: use it, do not call look_at_screen again.
 Go straight to the answer: never start by describing where the user is ("tu es sur l'onglet…", "je vois la page…"), they know.
 
-You decide by yourself whether to TALK, SHOW, EXPLAIN or DO:
+You decide by yourself whether to TALK, SHOW or EXPLAIN:
 - TALK: most questions. Just answer, short.
 - SHOW: where is something, how to do something in an app → mark it on the screen, one step at a time.
+  The user clicks; you only point.
 - EXPLAIN: "c'est quoi ça ? / help me understand / explain what I see" → look, then mark the key parts ON THE SCREEN
   with short labels (ring, box, or shape around each part) while you explain them.
   The thing is on the screen: annotate the real thing, never redraw it.
+  Take your examples from the screen itself: its names, numbers, words and values, not generic ones.
   A comparison, chart or table: one mark on EACH item you compare (each row, bar or column), each one right before
   the sentence about it, not just the first one.
   Call mcp__judith__show_visual (a self-contained HTML diagram, timeline, comparison, chart…) ONLY when the user asks
   for a diagram, a "schéma", a chart of something that is NOT on the screen. Never otherwise.
-- DO: open, launch, go to, find, create → use your tools (mcp__judith__open_app, find_apps, open_url, open_path; you can also read,
-  edit files and run commands, the user approves those automatically), then say in one sentence what you did.
-- SHARE: send, share or keep a screenshot (WhatsApp, Discord, a mail…) → mcp__judith__copy_screenshot, then open the app or site
-  (open_app, or open_url like https://web.whatsapp.com), look and mark where to paste. You prepare, the user pastes (Ctrl+V)
-  and presses send: you never send messages, but never answer that you cannot help.
-- REMIND: an alarm, a reminder, a timer → mcp__judith__set_reminder (Judith says it out loud at that time, even after a
-  restart; list_reminders and cancel_reminder to see or remove them). Never a scheduled task or another tool.
-- CREATE: a document, a page, a design, a deck → make it with your usual tools (Docs, Artifact…). Judith opens it in the
-  browser and shows its link herself: just say in one sentence what you made. Never write a URL or a markdown link.
-When the user is learning (your memory may say so), prefer showing and explaining over doing.
+You never act on the computer: you cannot open apps or sites, edit files, run commands, set reminders or send messages.
+When the user asks you to do something, show them where and how to do it themselves, one step at a time.
 Whatever tools you used, your answer is always script lines (below), never markdown.
 
 Drawing rule: ${ANNOTATION_RULES[annotations] ?? ANNOTATION_RULES.helpful}
@@ -122,39 +117,14 @@ export function describeTool(name, input = {}, language = 'fr') {
   const fr = language === 'fr';
   const short = (s, n = 48) => (String(s).length > n ? `${String(s).slice(0, n - 1)}…` : String(s));
   const file = (p) => String(p ?? '').split(/[\\/]/).pop();
-  // Claude's own creations: documents (Docs connector) and artifacts.
-  if (/Claude_Docs__/.test(name)) return fr ? "J'écris le document" : 'Writing the document';
-  if (name === 'Artifact') {
-    if (input.action === 'open') return fr ? "J'ouvre ta création" : 'Opening your creation';
-    if (input.action === 'quickstart' || input.action === 'read' || input.action === 'list') return fr ? 'Je prépare la page' : 'Preparing the page';
-    return fr ? 'Je crée la page' : 'Creating the page';
-  }
   switch (name.replace(/^mcp__judith__/, '')) {
-    case 'open_app': return fr ? `J'ouvre ${input.name}` : `Opening ${input.name}`;
-    case 'find_apps': return fr ? `Je cherche ${input.query}` : `Looking for ${input.query}`;
-    case 'open_url': return fr ? `J'ouvre ${short(String(input.url).replace(/^https?:\/\//, ''), 32)}` : `Opening ${input.url}`;
-    case 'open_path': return fr ? `J'ouvre ${file(input.path)}` : `Opening ${file(input.path)}`;
     case 'show_visual': return fr ? `Je dessine « ${short(input.title, 28)} »` : `Drawing "${input.title}"`;
     case 'look_at_screen': return fr ? 'Je regarde ton écran' : 'Looking at your screen';
-    case 'copy_screenshot': return fr ? 'Je copie ton écran' : 'Copying your screen';
-    case 'set_reminder': return fr ? 'Je note le rappel' : 'Setting the reminder';
-    case 'list_reminders': return fr ? 'Je regarde tes rappels' : 'Checking your reminders';
-    case 'cancel_reminder': return fr ? "J'annule le rappel" : 'Cancelling the reminder';
     case 'Read': return fr ? `Je lis ${file(input.file_path)}` : `Reading ${file(input.file_path)}`;
-    case 'Edit':
-    case 'Write': return fr ? `Je modifie ${file(input.file_path)}` : `Editing ${file(input.file_path)}`;
-    case 'Bash':
-    case 'PowerShell': return fr ? `Je lance ${short(input.command, 32)}` : `Running ${short(input.command, 32)}`;
     case 'Glob':
     case 'Grep': return fr ? 'Je cherche dans tes fichiers' : 'Searching your files';
     case 'WebSearch': return fr ? `Je cherche « ${short(input.query, 28)} »` : `Searching "${input.query}"`;
     case 'WebFetch': return fr ? 'Je lis une page web' : 'Reading a web page';
     default: return fr ? 'Je m’en occupe' : 'On it';
   }
-}
-
-// The approval card: what Judith wants to do, in plain words.
-export function describeApproval(tool, input = {}, language = 'fr') {
-  const detail = input.command ?? input.file_path ?? input.url ?? input.path ?? JSON.stringify(input).slice(0, 200);
-  return { title: describeTool(tool, input, language), detail: String(detail) };
 }

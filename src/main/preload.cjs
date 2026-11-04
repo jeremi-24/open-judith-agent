@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const EVENTS = [
   // notch
-  'focus', 'idle', 'cancel-all', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale', 'marked', 'speech', 'link', 'reminder',
+  'focus', 'idle', 'cancel-all', 'ask', 'cmd', 'answer', 'error', 'tool', 'stale', 'marked', 'speech', 'link',
   // overlay (and the notch, for 'zone')
   'mark', 'clear', 'scan', 'shift', 'select', 'zone',
   // board
@@ -29,7 +29,6 @@ contextBridge.exposeInMainWorld('judith', {
   summon: () => ipcRenderer.send('judith:summon'),
   summonZone: () => ipcRenderer.send('judith:summon-zone'),
   close: () => ipcRenderer.send('judith:close'),
-  approve: (id, allow) => ipcRenderer.send('judith:approve', { id, allow }),
   // The pointer is over the notch (it takes the clicks) or not (they go through).
   interactive: (on) => ipcRenderer.send('judith:interactive', on),
   // The state the notch shows; the summon shortcut depends on it.

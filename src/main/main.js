@@ -1,15 +1,15 @@
-import { app, clipboard, ClipboardItem, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, session as sessions, shell, Tray } from 'electron';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { app, globalShortcut, ipcMain, Menu, nativeImage, screen, session as sessions, shell, Tray } from 'electron';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
 import { configPath, loadConfig } from './config.js';
 import { ensureVoice } from './models.js';
-import { captureDisplay, captureFull, captureSmall } from './capture.js';
+import { captureDisplay, captureSmall } from './capture.js';
 import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
-import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../core/prompt.js';
+import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
 import { averageLuma, bestShift, CHANGED, markCore, markRect, regionDiff, STALE } from '../core/pixels.js';
 import { inkFor } from '../core/ink.js';
@@ -18,9 +18,8 @@ import { isEcho, isGhost } from '../core/hallucinations.js';
 import { decodeWav } from '../core/audio.js';
 import { stripEmotions } from '../core/emotions.js';
 import { needsScreen } from '../core/needs-screen.js';
-import { findLinks, isCreation, speakable } from '../core/links.js';
+import { findLinks, speakable } from '../core/links.js';
 import { fromZone, toZone } from '../core/zone.js';
-import { addReminder, describeWhen, dueReminders } from '../core/reminders.js';
 import { shortcutAction } from '../core/shortcut.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -33,23 +32,11 @@ let bubble, overlay, board, tray, engine, warmingUp;
 
 // Tools Judith may use without asking: opening things, reading, showing.
 // Everything else (editing files, running commands) goes through the notch.
-const ALLOWED_TOOLS = [
-  'mcp__judith__open_app',
-  'mcp__judith__find_apps',
-  'mcp__judith__open_url',
-  'mcp__judith__open_path',
-  'mcp__judith__show_visual',
-  'mcp__judith__look_at_screen',
-  'mcp__judith__copy_screenshot',
-  'mcp__judith__set_reminder',
-  'mcp__judith__list_reminders',
-  'mcp__judith__cancel_reminder',
-  'Read',
-  'Glob',
-  'Grep',
-  'WebSearch',
-  'WebFetch',
-];
+const ALLOWED_TOOLS = ['mcp__judith__look_at_screen', 'mcp__judith__show_visual', 'Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch'];
+// Judith explains and points; she never acts on the computer. Tools that
+// change something are refused outright (headless Claude Code would refuse
+// any tool not allowed above anyway; this list makes it explicit).
+const DENIED_TOOLS = ['Bash', 'PowerShell', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'CronCreate', 'CronDelete', 'CronList'];
 
 // The display Judith works on, and a tiny copy of the screen as she last saw
 // it (to notice when it changes under her marks).
@@ -93,81 +80,6 @@ async function look(display) {
   const zone = session.zone;
   session.frame = zone;
   return withoutJudith(async () => ({ ...(await captureDisplay(display, zone)), small: await captureSmall(display) }));
-}
-
-// The copy_screenshot tool: the screen (or the zone the user drew) goes to
-// the clipboard, ready to paste in WhatsApp, Discord, a mail…, and is saved
-// as a PNG in Pictures\Judith. Judith never sends it herself.
-async function copyScreenshot() {
-  const display = session.display ?? cursorDisplay();
-  try {
-    const image = await withoutJudith(() => captureFull(display, session.zone));
-    const png = image.toPNG();
-    // Electron 44's clipboard follows the web API: items of Blobs, async.
-    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]);
-    const folder = join(app.getPath('pictures'), 'Judith');
-    mkdirSync(folder, { recursive: true });
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
-    const path = join(folder, `judith-${stamp}.png`);
-    writeFileSync(path, png);
-    const { width, height } = image.getSize();
-    console.log(`[judith] screenshot copied (${width}x${height}) and saved to ${path}`);
-    return { path, width, height, zone: Boolean(session.zone) };
-  } catch (error) {
-    console.error('[judith] copy screenshot failed:', error.message);
-    return { error: error.message };
-  }
-}
-
-// ----- reminders: Judith says them out loud at their time -----
-// Saved in reminders.json, so a restart loses nothing; one missed while
-// Judith was off is given as soon as she starts again.
-const REMINDER_CHECK_MS = 15_000;
-let reminders = [];
-const remindersPath = () => join(app.getPath('userData'), 'reminders.json');
-function saveReminders() {
-  try {
-    writeFileSync(remindersPath(), JSON.stringify(reminders, null, 2));
-  } catch (error) {
-    console.error('[judith] reminders not saved:', error.message);
-  }
-}
-function startReminders() {
-  try {
-    reminders = JSON.parse(readFileSync(remindersPath(), 'utf8'));
-  } catch {
-    reminders = [];
-  }
-  const check = () => {
-    const { due, rest } = dueReminders(reminders);
-    if (!due.length) return;
-    reminders = rest;
-    saveReminders();
-    for (const reminder of due) {
-      console.log(`[judith] reminder: ${reminder.text}`);
-      new Notification({ title: 'Judith · Rappel', body: reminder.text, icon: iconPath }).show();
-      send(bubble, 'reminder', { text: reminder.text });
-    }
-  };
-  check();
-  setInterval(check, REMINDER_CHECK_MS);
-}
-// The reminder tools (set, list, cancel), through the bridge.
-function reminderTool({ action, when, text, id }) {
-  if (action === 'set') {
-    const result = addReminder(reminders, { when, text });
-    if (result.error) return { error: result.error };
-    reminders = result.list;
-    saveReminders();
-    return { ...result.reminder, said: describeWhen(result.reminder.at) };
-  }
-  if (action === 'cancel') {
-    const before = reminders.length;
-    reminders = reminders.filter((r) => id !== 'all' && r.id !== id);
-    saveReminders();
-    return { cancelled: before - reminders.length };
-  }
-  return { reminders: reminders.map((r) => ({ ...r, said: describeWhen(r.at) })) };
 }
 
 // Summoning is instant: Judith looks at the screen only if the question needs
@@ -242,31 +154,13 @@ function summonWithZone() {
   pickZone();
 }
 
-// ----- what Claude creates: documents, artifacts, designs, pages -----
-// Claude Code would show them in its own app; Judith has no such pane, so
-// she shows a card in the notch and opens creations in the browser.
+// ----- links: a page or document named in an answer becomes a card -----
+// The voice says its title, never the URL; the user opens it with a click.
 let turnLinks = new Map();
-let openedCreation = false;
-// titled: the title comes from the answer ("[Mon doc](…)"), better than the
-// default one found in a tool result.
-function addLink(link, { titled = true } = {}) {
-  if (!/^https?:\/\//i.test(link.url)) return;
-  const known = turnLinks.get(link.url);
-  if (known && (!titled || known.title === link.title)) return;
+function addLink(link) {
+  if (!/^https?:\/\//i.test(link.url) || turnLinks.has(link.url)) return;
   turnLinks.set(link.url, link);
   send(bubble, 'link', { turn: activeTurn, ...link });
-}
-function openCreation(url) {
-  if (openedCreation || !config.openCreations) return;
-  openedCreation = true;
-  console.log(`[judith] opening ${url}`);
-  shell.openExternal(url);
-}
-// Creations named in a tool call or its result (Artifact publish/open, Docs…).
-function creationsIn(text) {
-  for (const link of findLinks(text, config.language)) {
-    if (link.creation) addLink(link, { titled: false });
-  }
 }
 
 // ----- voice in, cloud: Deepgram live listening (the user's own key) -----
@@ -657,7 +551,7 @@ function show(command) {
 }
 
 // Every action Claude Code takes appears on the board.
-const QUIET_TOOLS = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'ToolSearch', 'mcp__judith__find_apps', 'mcp__judith__approve', 'mcp__judith__look_at_screen']);
+const QUIET_TOOLS = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'ToolSearch', 'mcp__judith__look_at_screen']);
 const actions = new Map();
 function trackTool({ id, name, input }) {
   if (QUIET_TOOLS.has(name)) return;
@@ -741,7 +635,6 @@ async function ask(question, turn) {
   entry = { at: Date.now(), question, spoken: Boolean(lastHeardAt && Date.now() - lastHeardAt < 15000), tools: [], marks: 0 };
   timeline = { ask: Date.now(), heard: lastHeardAt };
   turnLinks = new Map();
-  openedCreation = false;
   await warmingUp;
   // The user may still be drawing the zone the question is about.
   if (zonePicking) await zonePicking;
@@ -783,9 +676,6 @@ async function ask(question, turn) {
       }),
     );
     reader.finish(result.streamed || result.text);
-    // A document or page was made but not opened: open the first one.
-    const creation = [...turnLinks.values()].find((link) => link.creation);
-    if (creation) openCreation(creation.url);
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
     journal({ outcome: 'answered', commands, firstVoiceMs: timeline?.voice ? timeline.voice - timeline.ask : null });
   } catch (error) {
@@ -805,33 +695,8 @@ function cancelTurn(turn) {
   console.log(`[judith] turn ${turn} cancelled`);
   currentReader = null;
   engine.cancel();
-  for (const id of [...approvals.keys()]) settleApproval(id, false);
   scanning = false;
   send(overlay, 'scan', false);
-}
-
-// ----- approvals: Claude Code wants to edit a file or run a command -----
-const approvals = new Map();
-let approvalId = 0;
-function requestApproval(tool, input) {
-  const id = ++approvalId;
-  console.log(`[judith] asks permission for ${tool}`);
-  send(bubble, 'approval', { id, ...describeApproval(tool, input, config.language) });
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => settleApproval(id, false), 120_000);
-    approvals.set(id, { resolve, timer });
-    const demo = process.env.JUDITH_DEMO_APPROVE;
-    if (demo) setTimeout(() => settleApproval(id, demo === 'yes'), 2500);
-  });
-}
-
-function settleApproval(id, allow) {
-  const pending = approvals.get(id);
-  if (!pending) return;
-  approvals.delete(id);
-  clearTimeout(pending.timer);
-  pending.resolve(allow);
-  send(bubble, 'approved', { id, allow });
 }
 
 function newConversation() {
@@ -891,7 +756,6 @@ app.whenReady().then(async () => {
   settleInstalledApp();
   startSpeech();
   startVoice();
-  startReminders();
 
   setCaptureProtection(config.hideFromScreenRecordings);
   bubble = createBubble();
@@ -901,10 +765,7 @@ app.whenReady().then(async () => {
   // Judith's tools run in an MCP server that Claude Code starts. Electron
   // itself runs it as plain Node, so no separate Node install is needed.
   const bridge = await startBridge({
-    onApprove: requestApproval,
     onLook: lookForJudith,
-    onCopyShot: copyScreenshot,
-    onReminder: reminderTool,
     onVisual: (title, html) => {
       showBoard();
       send(board, 'visual', { title, html });
@@ -937,10 +798,7 @@ app.whenReady().then(async () => {
       ...(config.effort ? ['--effort', config.effort] : []),
       '--mcp-config', mcpConfig,
       '--allowedTools', ALLOWED_TOOLS.join(','),
-      '--permission-prompt-tool', 'mcp__judith__approve',
-      // Claude Code's own scheduled prompts die with its session: reminders
-      // go through Judith (set_reminder), which keeps them on disk.
-      '--disallowedTools', 'CronCreate,CronDelete,CronList',
+      '--disallowedTools', DENIED_TOOLS.join(','),
     ],
   });
   // The warm-up answer stays silent: no reader is listening yet.
@@ -952,14 +810,8 @@ app.whenReady().then(async () => {
     console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
     send(bubble, 'tool', { turn: activeTurn, label: describeTool(tool.name, tool.input, config.language) });
     trackTool(tool);
-    creationsIn(JSON.stringify(tool.input ?? {}));
-    // Claude Code "opens" a creation in its own app: Judith opens the browser.
-    if (tool.name === 'Artifact' && tool.input?.action === 'open' && isCreation(String(tool.input.url))) openCreation(tool.input.url);
   });
-  engine.on('tool-result', (result) => {
-    trackResult(result);
-    creationsIn(result.output);
-  });
+  engine.on('tool-result', (result) => trackResult(result));
   engine.on('log', (text) => console.error('[claude]', text.trim()));
   // Starts Claude Code and loads its context now, so the first real question is fast.
   warmingUp = engine
@@ -1014,7 +866,6 @@ app.whenReady().then(async () => {
   ipcMain.on('judith:marked', () => send(bubble, 'marked'));
   // The notch reports the end of speech and the first spoken sentence.
   ipcMain.on('judith:timing', (_e, step) => (step === 'heard' ? (lastHeardAt = Date.now()) : mark(step)));
-  ipcMain.on('judith:approve', (_e, { id, allow }) => settleApproval(id, allow === true));
   // The pointer entered or left the notch: take the clicks, or let them through.
   ipcMain.on('judith:interactive', (_e, on) => setNotchInteractive(bubble, on === true));
   ipcMain.on('judith:notch-state', (_e, state) => (notchState = String(state)));
@@ -1041,7 +892,6 @@ app.whenReady().then(async () => {
   // Dev: JUDITH_DEMO="question" summons Judith and asks it at launch.
   // With JUDITH_DEMO_SHOT=file.jpg it also saves a screenshot and quits,
   // JUDITH_DEMO_WAIT ms after the answer (default 1500).
-  // JUDITH_DEMO_APPROVE=yes|no answers permission requests automatically.
   // JUDITH_DEMO_AUDIO=question.wav (16 kHz) goes through Whisper first.
   if (process.env.JUDITH_DEMO) {
     warmingUp.then(async () => {
