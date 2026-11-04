@@ -1,10 +1,13 @@
-// The welcome window: one screen at a time. The three settings screens save
-// as the user moves on (engine through the notch's own settings, the rest
-// through onboarding.save); every key is optional.
+// The welcome window: one screen at a time, one idea each. The three settings
+// screens save as the user moves on (engine through the notch's own settings,
+// the rest through onboarding.save); every key is optional.
 const api = window.judith;
 const $ = (id) => document.getElementById(id);
 const screens = [...document.querySelectorAll('.screen')];
-const NEXT_LABELS = ['Découvrir', 'Configurer', 'Continuer', 'Continuer', 'Continuer', 'Essayer maintenant'];
+const NEXT_LABELS = ['Découvrir', 'Suivant', 'Suivant', 'Continuer', 'Continuer', 'Continuer', 'Essayer maintenant'];
+const ENGINE = 3;
+const LISTEN = 4;
+const SHORTCUT = 5;
 let current = 0;
 let status = null;
 let engines = null;
@@ -28,10 +31,12 @@ function show(index) {
   });
   $('back').style.visibility = current === 0 ? 'hidden' : 'visible';
   $('next').textContent = NEXT_LABELS[current];
-  if (current !== 3) stopMic();
+  // The microphone listens on its own screen only, without a click.
+  if (current === LISTEN) startMic();
+  else stopMic();
 }
 
-const SAVES = { 2: saveEngine, 3: saveListening, 4: saveShortcuts };
+const SAVES = { [ENGINE]: saveEngine, [LISTEN]: saveListening, [SHORTCUT]: saveShortcuts };
 $('next').addEventListener('click', async () => {
   if (current === screens.length - 1) return api.onboarding.done({ tryNow: true });
   const save = SAVES[current];
@@ -60,13 +65,13 @@ function renderEngines() {
   const box = $('engines');
   const chosen = engines.configured ?? 'auto';
   const options = [
-    { id: 'auto', label: 'Automatique', tagline: `Le premier installé : ${engines.engine === 'api' ? 'une clé API' : (engines.engines.find((e) => e.id === engines.engine)?.label ?? 'aucun')}`, installed: true },
-    ...engines.engines.map((e) => ({ ...e, tagline: e.id === 'api' ? 'Anthropic, OpenAI, Gemini, OpenRouter… avec ta clé' : e.installed ? 'Installé sur ce PC' : 'Pas installé sur ce PC' })),
+    { id: 'auto', label: 'Automatique', tag: engines.engine === 'api' ? 'clé API' : (engines.engines.find((e) => e.id === engines.engine)?.label ?? 'aucun'), installed: true },
+    ...engines.engines.map((e) => ({ ...e, tag: e.id === 'api' ? 'ta clé' : e.installed ? 'installé' : 'absent' })),
   ];
   box.innerHTML = options
     .map(
       (o) => `<label class="option"><input type="radio" name="engine" value="${o.id}" ${o.id === chosen ? 'checked' : ''} ${o.installed ? '' : 'disabled'}>
-      <span><b>${o.label}</b><span class="tagline">${o.tagline}</span></span></label>`,
+      <b>${o.label}</b><span class="tag-pill ${o.installed && o.id !== 'api' && o.id !== 'auto' ? 'ok' : ''}">${o.tag}</span></label>`,
     )
     .join('');
   $('api-provider').innerHTML = engines.providers.map((p) => `<option value="${p.id}" ${p.id === engines.apiProvider ? 'selected' : ''}>${p.label}${p.hasKey ? ' (clé enregistrée)' : ''}</option>`).join('');
@@ -103,9 +108,12 @@ let micFrame = 0;
 async function startMic() {
   stopMic();
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    // The user left the screen while Windows was opening the mic.
+    if (current !== LISTEN) return stream.getTracks().forEach((t) => t.stop());
+    micStream = stream;
   } catch (error) {
-    return setStatus('mic-status', `Micro indisponible : ${error.message}. Vérifie Paramètres Windows → Confidentialité → Microphone.`, 'err');
+    return setStatus('mic-status', 'Micro bloqué : Paramètres Windows → Confidentialité → Microphone.', 'err');
   }
   const ctx = new AudioContext();
   const analyser = ctx.createAnalyser();
@@ -113,13 +121,13 @@ async function startMic() {
   ctx.createMediaStreamSource(micStream).connect(analyser);
   const data = new Float32Array(analyser.fftSize);
   let loudest = 0;
-  setStatus('mic-status', 'Parle un peu : la barre doit bouger.');
+  setStatus('mic-status', '');
   const tick = () => {
     analyser.getFloatTimeDomainData(data);
     const level = Math.sqrt(data.reduce((sum, v) => sum + v * v, 0) / data.length);
     loudest = Math.max(loudest, level);
-    $('meter').style.width = `${Math.min(100, level * 600)}%`;
-    if (loudest > 0.04) setStatus('mic-status', 'Je t\'entends bien.', 'ok');
+    $('pulse').style.transform = `scale(${(1 + Math.min(1, level * 9) * 0.7).toFixed(3)})`;
+    if (loudest > 0.04) setStatus('mic-status', 'Je t’entends bien ✓', 'ok');
     micFrame = requestAnimationFrame(tick);
   };
   tick();
@@ -130,9 +138,8 @@ function stopMic() {
   micStream?.getTracks().forEach((t) => t.stop());
   micStream?.stop?.();
   micStream = null;
-  $('meter').style.width = '0';
+  $('pulse').style.transform = '';
 }
-$('mic-test').addEventListener('click', startMic);
 document.querySelectorAll('input[name="stt"]').forEach((r) => r.addEventListener('change', syncDeepgram));
 function syncDeepgram() {
   $('deepgram').hidden = !$('stt-cloud').checked;
@@ -160,9 +167,10 @@ async function saveShortcuts() {
     $('shortcut').value = status.shortcut;
     return false;
   }
-  $('ready-shortcut').innerHTML = keys(status.shortcut);
+  $('ready-keys').innerHTML = keys(status.shortcut);
   return true;
 }
+$('shortcut').addEventListener('change', () => ($('shortcut-keys').innerHTML = keys($('shortcut').value)));
 
 // ----- start -----
 async function load() {
@@ -170,14 +178,15 @@ async function load() {
   renderEngines();
   $(status.listenMode === 'push' ? 'listen-push' : 'listen-auto').checked = true;
   $(status.speechInput === 'deepgram' ? 'stt-cloud' : 'stt-local').checked = true;
-  $('deepgram-note').textContent = status.deepgramSet ? 'déjà enregistrée, laisse vide pour la garder' : 'facultative';
+  if (status.deepgramSet) $('deepgram-key').placeholder = 'Clé déjà enregistrée';
   syncDeepgram();
   $('shortcut').innerHTML = status.shortcuts.map((s) => `<option value="${s}" ${s === status.shortcut ? 'selected' : ''}>${s.replace('Control', 'Ctrl').replace('Shift', 'Maj').replace(/\+/g, ' + ')}</option>`).join('');
-  $('zone-shortcut').innerHTML = keys(status.zoneShortcut);
-  $('ready-shortcut').innerHTML = keys(status.shortcut);
+  $('zone-keys').innerHTML = keys(status.zoneShortcut);
+  $('shortcut-keys').innerHTML = keys(status.shortcut);
+  $('ready-keys').innerHTML = keys(status.shortcut);
   $('start-windows').checked = status.startWithWindows;
   $('start-windows').disabled = !status.packaged;
-  $('start-note').hidden = status.packaged;
+  if (!status.packaged) $('start-windows').closest('label').title = 'Disponible dans la version installée';
 }
 show(0);
 load().catch((error) => setStatus('engine-status', `Réglages indisponibles : ${error.message}`, 'err'));
