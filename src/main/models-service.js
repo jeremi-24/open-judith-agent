@@ -13,6 +13,8 @@ import { fetchModels } from '../engine/model-sources.js';
 import { applyVerification, makeModel } from '../engine/models.js';
 
 export const CACHE_TTL_MS = 24 * 3600 * 1000;
+// After a failed list, the provider is left alone this long (a rate-limited provider must not be hammered).
+export const FAILURE_PAUSE_MS = 15_000;
 
 function readJson(file) {
   try {
@@ -38,6 +40,8 @@ function writeJson(file, data) {
 export function createModelsService({ dir, getKey = () => '', fetchImpl = fetch, now = () => Date.now(), timeoutMs = 15000, catalog = loadCatalog() }) {
   const cacheFile = join(dir, 'models-cache.json');
   const verifiedFile = join(dir, 'models-verified.json');
+  const lastCall = new Map(); // provider → when we last called it
+  const failures = new Map(); // provider → { at, error } of the last failed list
 
   const builtin = (provider) => (PROVIDERS[provider]?.models ?? []).map((m) => makeModel(provider, { id: m.id, name: m.label, source: 'builtin', hint: null }));
 
@@ -59,17 +63,38 @@ export function createModelsService({ dir, getKey = () => '', fetchImpl = fetch,
       if (fresh && !refresh) {
         return { ok: true, models: withVerification(provider, cached.models), source: 'cache', fetchedAt: cached.fetchedAt };
       }
+      // A list that just failed is not asked again at once (unless the user presses Actualiser).
+      const failure = failures.get(provider);
+      if (!refresh && failure && now() - failure.at < FAILURE_PAUSE_MS) {
+        if (cached && Array.isArray(cached.models)) return { ok: true, models: withVerification(provider, cached.models), source: 'cache', fetchedAt: cached.fetchedAt, stale: true, error: failure.error };
+        return { ok: false, models: withVerification(provider, builtin(provider)), source: 'builtin', fetchedAt: null, error: failure.error };
+      }
+      lastCall.set(provider, now());
       const result = await fetchModels({ provider, key: key || getKey(provider), baseUrl, fetchImpl, timeoutMs, now: now() });
+      lastCall.set(provider, now());
       if (result.ok) {
+        failures.delete(provider);
         const fetchedAt = now();
         writeJson(cacheFile, { ...cache, [cacheKey]: { fetchedAt, models: result.models } });
         return { ok: true, models: withVerification(provider, result.models), source: 'api', fetchedAt, partial: result.partial === true };
       }
       // The provider cannot be reached: the last list we had, else the built-in suggestions.
+      if (result.error.kind !== 'nokey') failures.set(provider, { at: now(), error: result.error });
       if (cached && Array.isArray(cached.models)) {
         return { ok: true, models: withVerification(provider, cached.models), source: 'cache', fetchedAt: cached.fetchedAt, stale: true, error: result.error };
       }
       return { ok: false, models: withVerification(provider, builtin(provider)), source: 'builtin', fetchedAt: null, error: result.error };
+    },
+
+    // Providers with a per-second limit (Mistral's free tier is one of the usual cases): wait
+    // until the last call to this provider is at least gapMs old, then the caller may call.
+    async waitTurn(provider, gapMs = 1100) {
+      const wait = (lastCall.get(provider) ?? 0) + gapMs - now();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, Math.min(wait, gapMs)));
+    },
+    // The caller has just called this provider (a test call): the next one keeps its distance.
+    touch(provider) {
+      lastCall.set(provider, now());
     },
 
     // A real test call (text + image, streamed) on this model succeeded or failed.

@@ -1179,10 +1179,21 @@ async function testEngine(input) {
   const startedAt = Date.now();
   const timer = setTimeout(() => probe.cancel(), 45000);
   try {
-    await probe.ask([
+    // The models list may have just been asked: a provider with a per-second limit would answer 429.
+    if (kind === 'api' && !custom) await models().waitTurn(provider);
+    const question = [
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: TEST_IMAGE } },
       { type: 'text', text: 'Test de connexion. Réponds seulement : say ok' },
-    ]);
+    ];
+    try {
+      await probe.ask(question);
+    } catch (error) {
+      // "Too many requests" is often passing: one more try after the wait the provider gives.
+      if (error.kind !== 'rate') throw error;
+      await wait(Math.min((error.retryAfter ?? 2) * 1000, 6000));
+      await probe.ask(question);
+    }
+    if (kind === 'api' && !custom) models().touch(provider);
     verified({ ok: true });
     return { ok: true, ms: Date.now() - startedAt };
   } catch (error) {

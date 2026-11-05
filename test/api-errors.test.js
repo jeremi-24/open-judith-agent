@@ -79,6 +79,15 @@ test('429: slow down (with the wait) or the free quota is spent', () => {
   assert.match(quota.message, /quota gratuit.*épuisé/);
 });
 
+test('429: the provider\'s own sentence is shown (rate limit or no capacity for this model), and the wait is kept', () => {
+  const capacity = explain(429, '{"message":"Service tier capacity exceeded for this model."}');
+  assert.equal(capacity.kind, 'rate');
+  assert.match(capacity.message, /\(429\) : Service tier capacity exceeded for this model\./);
+  assert.match(capacity.message, /choisis un autre modèle/);
+  assert.equal(explain(429, '', { retryAfter: 7 }).retryAfter, 7);
+  assert.equal(explain(429).retryAfter, null);
+});
+
 test('a local server (Ollama…): errors talk about the server, not the provider', () => {
   assert.match(explain(404, '', { custom: true }).message, /Le serveur ne connaît pas/);
   const refused = explainNetworkError({ spec: nvidia, error: Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }), base: 'http://localhost:11434/v1', custom: true });

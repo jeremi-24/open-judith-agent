@@ -31,7 +31,7 @@ export function explainHttpError({ spec, status, body, model, custom = false, re
   const label = spec.label;
   const detail = serverMessage(body);
   const withDetail = (text) => (detail ? `${text} (${detail})` : text);
-  const make = (kind, message) => Object.assign(new Error(message), { status, kind });
+  const make = (kind, message) => Object.assign(new Error(message), { status, kind, retryAfter });
 
   switch (status) {
     case 400:
@@ -58,7 +58,8 @@ export function explainHttpError({ spec, status, body, model, custom = false, re
       return make('size', `La capture d'écran est trop lourde pour ${label}. Réessaie avec une zone plus petite.`);
     case 429:
       if (QUOTA.test(detail)) return make('quota', `Ton quota gratuit chez ${label} est épuisé. Attends son renouvellement ou change de fournisseur.`);
-      return make('rate', `${label} reçoit trop de demandes de ta part : attends ${retryAfter ? `${retryAfter} s` : 'un instant'} puis réessaie.`);
+      // The provider's own sentence matters: "rate limit" (wait) and "capacity exceeded for this model" (another model) are not the same.
+      return make('rate', `${label} répond « trop de demandes » (429)${detail ? ` : ${detail}` : ''}. Si c'est passager, attends ${retryAfter ? `${retryAfter} s` : 'un instant'} puis réessaie ; sinon choisis un autre modèle.`);
     case 529:
       return make('server', `${label} est surchargé en ce moment. Réessaie dans un instant.`);
     default:

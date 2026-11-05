@@ -298,3 +298,36 @@ test('labels: tokens and prices as people read them', () => {
   assert.equal(priceLabel({ prompt: '0.000001', completion: '0.000003' }), '1 / 3 $ par million');
   assert.equal(priceLabel(null), '');
 });
+
+test('a list that just failed is not asked again at once, but the Actualiser button still tries', async () => {
+  let calls = 0;
+  const { svc, clock } = service({ http: () => (calls++, respond({}, 429)) });
+  const first = await svc.list({ provider: 'openai' });
+  assert.equal(first.ok, false);
+  const second = await svc.list({ provider: 'openai' });
+  assert.equal(calls, 1, 'no second call during the pause');
+  assert.equal(second.error.kind, 'http');
+  await svc.list({ provider: 'openai', refresh: true });
+  assert.equal(calls, 2);
+  clock.t += 16_000;
+  await svc.list({ provider: 'openai' });
+  assert.equal(calls, 3, 'after the pause it asks again');
+});
+
+test('a missing key is not a failure to remember: pasting the key lists at once', async () => {
+  const { svc } = service({ http: () => respond(OPENAI) }, () => '');
+  assert.equal((await svc.list({ provider: 'openai' })).error.kind, 'nokey');
+  assert.equal((await svc.list({ provider: 'openai', key: 'typed' })).ok, true);
+});
+
+test('waitTurn keeps a provider\'s calls apart, and does not wait when nothing was called', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'judith-wait-'));
+  const svc = createModelsService({ dir, getKey: () => 'k', fetchImpl: routes({ http: respond(OPENAI) }), catalog: null });
+  let started = Date.now();
+  await svc.waitTurn('openai', 300);
+  assert.ok(Date.now() - started < 100, 'nothing called yet: no wait');
+  svc.touch('openai');
+  started = Date.now();
+  await svc.waitTurn('openai', 300);
+  assert.ok(Date.now() - started >= 250, 'a call just happened: it waits');
+});

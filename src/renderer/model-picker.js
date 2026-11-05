@@ -137,7 +137,19 @@ export function createModelPicker({ mount, input, api, provider, key = () => '' 
   }
 
   // refreshList: ask the provider again (the button); otherwise the cache is enough.
-  async function load({ refreshList = false } = {}) {
+  // The same request already running (a key pasted, then the Test button…) is not sent twice.
+  let inflight = null;
+  function load({ refreshList = false } = {}) {
+    const signature = `${provider()}|${key()}|${refreshList}`;
+    if (inflight?.signature === signature) return inflight.promise;
+    const promise = run({ refreshList }).finally(() => {
+      if (inflight?.promise === promise) inflight = null;
+    });
+    inflight = { signature, promise };
+    return promise;
+  }
+
+  async function run({ refreshList }) {
     const id = provider();
     if (!id) return;
     const mine = ++loading;
