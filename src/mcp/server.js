@@ -60,7 +60,7 @@ server.registerTool(
     description:
       'Show a rich visual explanation next to the screen: a diagram, timeline, comparison, chart, mind map, annotated schema… ' +
       'Give a complete, self-contained HTML page (inline CSS and SVG, optional inline JS, no external files or network). ' +
-      'Design it for a 300 px wide panel, light background, clear labels in the user language.',
+      'Let it flow: no fixed width or height. The panel adapts to the content (300 to 760 px wide, as tall as needed), so a wide table or diagram is fine. Light background, clear labels in the user language.',
     inputSchema: { title: z.string(), html: z.string() },
   },
   async ({ title, html }) => {

@@ -13,6 +13,7 @@ import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOnboarding,
 import { chooseEngine, createEngine, ENGINES, PROVIDERS } from '../engine/engines.js';
 import { cleanKey } from '../engine/api-errors.js';
 import { LANGUAGES, normalizeLanguage, setLanguage, t } from '../core/i18n.js';
+import { fitBoard } from '../core/board-size.js';
 import { defaultModel } from '../engine/api.js';
 import { createModelsService } from './models-service.js';
 import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
@@ -635,15 +636,17 @@ function clearMarks() {
 
 // ----- the board: notes, visuals and what Claude Code did -----
 // Bottom-left corner, growing upwards: tabs and toolbars stay visible.
-function placeBoard(height) {
+// size: { width, height } as the board asks (a plain number is a height, as before).
+function placeBoard(size) {
   const { workArea } = session.display ?? cursorDisplay();
-  const h = Math.min(workArea.height - 120, Math.max(80, Math.ceil(height)));
-  board.setBounds({ x: workArea.x + 8, y: workArea.y + workArea.height - h - 8, width: BOARD_WIDTH, height: h });
+  const asked = typeof size === 'number' ? { height: size } : size ?? {};
+  const { width, height } = fitBoard({ width: asked.width ?? board.getBounds().width, height: asked.height }, workArea);
+  board.setBounds({ x: workArea.x + 8, y: workArea.y + workArea.height - height - 8, width, height });
 }
 
 function showBoard() {
   if (board.isVisible()) return;
-  placeBoard(board.getBounds().height);
+  placeBoard({ height: board.getBounds().height });
   board.showInactive();
 }
 
@@ -1538,7 +1541,7 @@ app.whenReady().then(async () => {
     send(board, 'clear-board');
     actions.clear();
   });
-  ipcMain.on('judith:resize-board', (_e, height) => placeBoard(height));
+  ipcMain.on('judith:resize-board', (_e, size) => placeBoard(size));
   for (const win of [bubble, overlay, board]) {
     win.webContents.on('console-message', (event) => {
       // ScriptProcessorNode still works; its deprecation notice is just noise.

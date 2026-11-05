@@ -27,7 +27,7 @@ const SCENE_FILES = {
 
 // Visuals report their height so the board can fit the frame to them.
 export const FIT = `<script>
-new ResizeObserver(() => parent.postMessage({ judithHeight: document.documentElement.scrollHeight }, '*'))
+new ResizeObserver(() => parent.postMessage({ judithHeight: document.documentElement.scrollHeight, judithWidth: document.documentElement.scrollWidth }, '*'))
   .observe(document.documentElement);
 </script>`;
 
