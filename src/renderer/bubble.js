@@ -1,8 +1,10 @@
 // The notch. It shows the conversation and forwards events to the
 // conversation manager, which alone decides what happens next.
+import { t, translateDocument } from '../core/i18n.js';
 import { createConversation } from '../core/conversation.js';
 import { createEars } from './ears.js';
 import { createModelPicker } from './model-picker.js';
+translateDocument(document);
 
 const notch = document.querySelector('.notch');
 const label = document.getElementById('label');
@@ -19,7 +21,7 @@ const voice = window.JudithVoice;
 const api = window.judith;
 
 // ----- display -----
-const LABELS = { listening: "J'écoute…", thinking: 'Je réfléchis…', speaking: 'Judith parle' };
+const LABELS = { listening: t("J'écoute…"), thinking: t('Je réfléchis…'), speaking: 'Judith parle' };
 const MOODS = { idle: 'listen', listening: 'listen', thinking: 'think', speaking: 'explain' };
 
 // Tiny, safe markdown: escape everything, then **bold** and `code`.
@@ -47,10 +49,10 @@ function showState(state, info = {}) {
 
   if (state === 'listening') {
     question.value = info.partial ?? '';
-    question.placeholder = info.followUp ? 'Autre chose ? Je t’écoute…' : info.continuation ? 'Je t’écoute, continue…' : 'Parle, ou écris ta question…';
+    question.placeholder = info.followUp ? t('Autre chose ? Je t’écoute…') : info.continuation ? t('Je t’écoute, continue…') : t('Parle, ou écris ta question…');
     question.focus();
   }
-  if (state === 'thinking') doing.textContent = info.heard ? `« ${info.heard} »` : 'Je réfléchis…';
+  if (state === 'thinking') doing.textContent = info.heard ? `« ${info.heard} »` : t('Je réfléchis…');
   if (message) {
     textBox.innerHTML = render(message);
     textBox.classList.toggle('error', Boolean(info.error));
@@ -141,7 +143,7 @@ const conversation = createConversation({
     resetAnswer();
     ears.start(info, (text) => conversation.heard(text, info), () => api.timing('heard')).catch((error) => {
       conversation.cancel();
-      showState('idle', { error: `Micro indisponible : ${error.message}. Écris ta question.` });
+      showState('idle', { error: t('Micro indisponible : {error}. Écris ta question.', { error: error.message }) });
     });
   },
   finishListening: () => ears.finish(),
@@ -204,7 +206,7 @@ const zonesBox = document.getElementById('zones');
 api.on('zones', (list) => {
   const zones = Array.isArray(list) ? list : [];
   zoneButton.setAttribute('aria-pressed', String(zones.length > 0));
-  zoneButton.title = zones.length ? 'Ajouter une autre zone (Ctrl+Alt+Maj+J)' : 'Choisir la zone à expliquer (Ctrl+Alt+Maj+J)';
+  zoneButton.title = zones.length ? t('Ajouter une autre zone (Ctrl+Alt+Maj+J)') : t('Choisir la zone à expliquer (Ctrl+Alt+Maj+J)');
   zonesBox.hidden = zones.length === 0;
   const known = new Map([...zonesBox.children].map((node) => [node.dataset.key, node]));
   zonesBox.replaceChildren(
@@ -226,7 +228,7 @@ api.on('zones', (list) => {
       const x = document.createElement('button');
       x.type = 'button';
       x.className = 'x';
-      x.setAttribute('aria-label', `Retirer la zone ${zone.n}`);
+      x.setAttribute('aria-label', t('Retirer la zone {n}', { n: zone.n }));
       x.innerHTML = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1L9 9M9 1L1 9"/></svg>';
       x.addEventListener('click', () => api.removeZone(i));
       node.append(n, x);
@@ -245,7 +247,7 @@ api.on('tool', ({ turn, label: text }) => {
 });
 api.on('stale', () => {
   if (conversation.state !== 'speaking') return;
-  textBox.innerHTML = "L'écran a bougé depuis que j'ai regardé : redemande-moi et je regarde à nouveau.";
+  textBox.innerHTML = t("L'écran a bougé depuis que j'ai regardé : redemande-moi et je regarde à nouveau.");
 });
 
 // ----- summon, type, stop, cancel -----
@@ -268,9 +270,9 @@ api.on('ask', (text) => conversation.typed(text));
 const idleName = document.querySelector('.idle-name');
 api.on('agent', ({ active, step, max, done, timeout, limit }) => {
   notch.classList.toggle('agent', Boolean(active));
-  idleName.textContent = active ? `Étape ${step}/${max}` : 'Judith';
+  idleName.textContent = active ? t('Étape {step}/{max}', { step, max }) : 'Judith';
   if (active) return;
-  const message = done ? 'Objectif atteint ✓' : timeout ? 'Je m’arrête là. Rappelle-moi si tu veux continuer.' : limit ? 'On a fait beaucoup d’étapes : je m’arrête là.' : '';
+  const message = done ? 'Objectif atteint ✓' : timeout ? t('Je m’arrête là. Rappelle-moi si tu veux continuer.') : limit ? t('On a fait beaucoup d’étapes : je m’arrête là.') : '';
   if (message && conversation.state !== 'thinking' && conversation.state !== 'speaking') showState('idle', { message });
 });
 function watchBetweenSteps() {
@@ -303,8 +305,8 @@ function gotIt() {
 }
 api.on('agent-next', ({ question: next, step, max }) => {
   gotIt();
-  idleName.textContent = `Étape ${step}/${max}`;
-  conversation.continueWith(next, `Étape ${step}/${max} : je regarde ce que tu as fait`);
+  idleName.textContent = t('Étape {step}/{max}', { step, max });
+  conversation.continueWith(next, t('Étape {step}/{max} : je regarde ce que tu as fait', { step, max }));
 });
 
 form.addEventListener('submit', (event) => {
@@ -373,21 +375,21 @@ function refreshFields() {
   apiFields.hidden = engine !== 'api';
   agentFields.hidden = engine !== 'codex' && engine !== 'cursor';
   const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
-  apiModel.placeholder = provider?.model ? `par défaut : ${provider.model}` : 'nom du modèle';
-  apiKey.placeholder = provider?.hasKey ? 'clé enregistrée (laisser vide pour la garder)' : provider?.keyPrefix ? `colle ta clé (${provider.keyPrefix}…)` : 'colle ta clé ici';
+  apiModel.placeholder = provider?.model ? t('par défaut : {model}', { model: provider.model }) : t('nom du modèle');
+  apiKey.placeholder = provider?.hasKey ? t('clé enregistrée (laisser vide pour la garder)') : provider?.keyPrefix ? t('colle ta clé ({keyPrefix}…)', { keyPrefix: provider.keyPrefix }) : t('colle ta clé ici');
   const hint = document.getElementById('api-hint');
   hint.replaceChildren();
   if (provider?.free) {
     const free = document.createElement('b');
-    free.textContent = 'Gratuit';
-    hint.append(free, ` : ${provider.freeNote}. Les limites sont celles du fournisseur et peuvent changer.`);
+    free.textContent = t('Gratuit');
+    hint.append(free, t(' : {freeNote}. Les limites sont celles du fournisseur et peuvent changer.', { freeNote: t(provider.freeNote) }));
   }
   document.getElementById('api-key-link').hidden = !provider?.keyUrl;
 }
 
 function renderSettings(data) {
   settingsData = data;
-  const options = [{ id: 'auto', label: 'Automatique', installed: true, auto: true }, ...data.engines];
+  const options = [{ id: 'auto', label: t('Automatique'), installed: true, auto: true }, ...data.engines];
   engineList.replaceChildren(
     ...options.map((engine) => {
       const row = document.createElement('label');
@@ -403,15 +405,15 @@ function renderSettings(data) {
         if (chosenEngine() === 'api') modelPicker.load();
       });
       const name = document.createElement('span');
-      name.textContent = engine.label;
+      name.textContent = t(engine.label);
       const note = document.createElement('span');
       note.className = 'note';
-      if (engine.auto) note.textContent = `en ce moment : ${data.engines.find((e) => e.id === data.engine)?.label ?? data.engine}`;
-      else if (engine.id === 'api') note.textContent = 'sans mémoire de tes projets';
+      if (engine.auto) note.textContent = t('en ce moment : {find}', { find: data.engines.find((e) => e.id === data.engine)?.label ?? data.engine });
+      else if (engine.id === 'api') note.textContent = t('sans mémoire de tes projets');
       else if (engine.installed) {
-        note.textContent = 'installé';
+        note.textContent = t('installé');
         note.classList.add('ok');
-      } else note.textContent = 'non installé';
+      } else note.textContent = t('non installé');
       row.append(input, name, note);
       return row;
     }),
@@ -427,7 +429,7 @@ function renderSettings(data) {
   );
   agentHands.checked = Boolean(data.agentHands);
   agentHands.disabled = !data.handsAvailable;
-  document.getElementById('hands-note').textContent = data.handsAvailable ? '' : 'Indisponible : le compagnon judith-hands.exe n’est pas installé (Windows seulement).';
+  document.getElementById('hands-note').textContent = data.handsAvailable ? '' : t('Indisponible : le compagnon judith-hands.exe n’est pas installé (Windows seulement).');
   apiModel.value = data.apiModel ?? '';
   agentModel.value = data.agentModel ?? '';
   apiKey.value = '';
@@ -443,7 +445,7 @@ async function openSettings() {
   conversation.cancel();
   notch.dataset.state = 'settings';
   api.notchState('settings');
-  setStatus('Je regarde ce qui est installé…');
+  setStatus(t('Je regarde ce qui est installé…'));
   renderSettings(await api.settings.get());
   setStatus('');
 }
@@ -468,10 +470,10 @@ document.getElementById('settings-close').addEventListener('click', closeSetting
 document.getElementById('settings-test').addEventListener('click', async (event) => {
   const button = event.currentTarget;
   button.disabled = true;
-  setStatus('Je teste : une question et une petite image…');
+  setStatus(t('Je teste : une question et une petite image…'));
   const result = await api.settings.test(formSettings());
   button.disabled = false;
-  if (result.ok) setStatus(`Ça marche : réponse en ${(result.ms / 1000).toFixed(1)} s.`, 'ok');
+  if (result.ok) setStatus(t('Ça marche : réponse en {value} s.', { value: (result.ms / 1000).toFixed(1) }), 'ok');
   else setStatus(result.error, 'error');
   // The test may have proved (or ruled out) vision for this model.
   if (chosenEngine() === 'api') modelPicker.load();
@@ -504,7 +506,7 @@ document.getElementById('settings-save').addEventListener('click', async (event)
   renderSettings(result.settings);
   setStatus('');
   conversation.summon();
-  toast('Enregistré');
+  toast(t('Enregistré'));
 });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && notch.dataset.state === 'settings') return closeSettings();
@@ -513,7 +515,7 @@ document.addEventListener('keydown', (event) => {
 pauseButton.addEventListener('click', () => {
   voice.setPaused(!voice.paused);
   pauseButton.setAttribute('aria-pressed', String(voice.paused));
-  pauseButton.setAttribute('aria-label', voice.paused ? 'Reprendre' : 'Pause');
+  pauseButton.setAttribute('aria-label', voice.paused ? t('Reprendre') : t('Pause'));
   notch.classList.toggle('talking', !voice.paused);
 });
 

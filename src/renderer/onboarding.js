@@ -2,11 +2,13 @@
 // screens save as the user moves on (the AI through the notch's own settings,
 // the shortcut through onboarding.save); listening keeps its defaults (they
 // are in the notch's settings). Every key is optional.
+import { t, translateDocument } from '../core/i18n.js';
 import { createModelPicker } from './model-picker.js';
+translateDocument(document);
 const api = window.judith;
 const $ = (id) => document.getElementById(id);
 const screens = [...document.querySelectorAll('.screen')];
-const NEXT_LABELS = ['Découvrir', 'Suivant', 'Suivant', 'Continuer', 'Continuer', 'Essayer maintenant'];
+const NEXT_LABELS = [t('Découvrir'), 'Suivant', 'Suivant', 'Continuer', 'Continuer', 'Essayer maintenant'];
 const ENGINE = 3;
 const SHORTCUT = 4;
 let current = 0;
@@ -17,12 +19,12 @@ let engines = null;
 const keys = (accelerator) =>
   String(accelerator ?? '')
     .split('+')
-    .map((k) => `<kbd>${{ Control: 'Ctrl', Shift: 'Maj', Space: 'Espace' }[k] ?? k}</kbd>`)
+    .map((k) => `<kbd>${{ Control: 'Ctrl', Shift: t('Maj'), Space: t('Espace') }[k] ?? k}</kbd>`)
     .join('');
 
 // ----- navigation -----
 const dots = $('dots');
-dots.innerHTML = screens.map((s) => `<li title="${s.dataset.title}"></li>`).join('');
+dots.innerHTML = screens.map((s) => `<li title="${t(s.dataset.title)}"></li>`).join('');
 function show(index) {
   current = Math.max(0, Math.min(screens.length - 1, index));
   screens.forEach((s, i) => (s.hidden = i !== current));
@@ -48,6 +50,11 @@ $('next').addEventListener('click', async () => {
 });
 $('back').addEventListener('click', () => show(current - 1));
 $('skip').addEventListener('click', () => api.onboarding.done({}));
+// FR | EN: the main process saves it and every window (this one included) redraws in it.
+for (const button of document.querySelectorAll('.lang button')) {
+  button.setAttribute('aria-pressed', String(button.dataset.lang === api.language));
+  button.addEventListener('click', () => button.dataset.lang !== api.language && api.setLanguage(button.dataset.lang));
+}
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') api.onboarding.done({});
 });
@@ -62,10 +69,10 @@ function setStatus(id, text, kind = '') {
 const installed = (id) => engines.engines.some((e) => e.id === id && e.installed);
 function renderEngines() {
   const options = [
-    { id: 'claude-code', label: "J'ai Claude Code" },
-    { id: 'codex', label: "J'ai Codex" },
-    { id: 'api', label: "J'ai une clé API" },
-    { id: 'none', label: "Je n'ai rien de tout ça" },
+    { id: 'claude-code', label: t("J'ai {name}", { name: 'Claude Code' }) },
+    { id: 'codex', label: t("J'ai {name}", { name: 'Codex' }) },
+    { id: 'api', label: t("J'ai une clé API") },
+    { id: 'none', label: t("Je n'ai rien de tout ça") },
   ];
   // Pre-selected: what is configured, else what is installed, else nothing.
   const configured = engines.configured && engines.configured !== 'auto' ? engines.configured : null;
@@ -74,12 +81,12 @@ function renderEngines() {
     .map((o) => {
       const found = o.id !== 'api' && o.id !== 'none' && installed(o.id);
       return `<label class="option"><input type="radio" name="engine" value="${o.id}" ${o.id === chosen ? 'checked' : ''}>
-      <b>${o.label}</b>${found ? '<span class="tag-pill ok">détecté</span>' : ''}</label>`;
+      <b>${o.label}</b>${found ? `<span class="tag-pill ok">${t('détecté')}</span>` : ''}</label>`;
     })
     .join('');
   // Without any key yet, the free NVIDIA endpoints are the way in.
   const preselected = engines.providers.some((p) => p.hasKey) ? engines.apiProvider : 'nvidia';
-  $('api-provider').innerHTML = engines.providers.map((p) => `<option value="${p.id}" ${p.id === preselected ? 'selected' : ''}>${p.label}${p.free ? ' · gratuit' : ''}${p.hasKey ? ' (clé enregistrée)' : ''}</option>`).join('');
+  $('api-provider').innerHTML = engines.providers.map((p) => `<option value="${p.id}" ${p.id === preselected ? 'selected' : ''}>${p.label}${p.free ? ` · ${t('gratuit')}` : ''}${p.hasKey ? ` (${t('clé enregistrée')})` : ''}</option>`).join('');
   $('api-provider').addEventListener('change', syncProvider);
   $('engines').addEventListener('change', syncEngine);
   syncEngine();
@@ -102,7 +109,7 @@ $('models-more').addEventListener('toggle', () => $('models-more').open && model
 $('api-key').addEventListener('change', () => chosenEngine() === 'api' && modelPicker.load());
 function syncProvider() {
   const p = provider();
-  $('api-key').placeholder = p?.keyPrefix ? `Colle ta clé (${p.keyPrefix}…)` : 'Colle ta clé';
+  $('api-key').placeholder = p?.keyPrefix ? t('Colle ta clé ({keyPrefix}…)', { keyPrefix: p.keyPrefix }) : t('Colle ta clé');
   $('get-provider-key').hidden = !p?.keyUrl;
   setStatus('engine-status', p?.free ? `Gratuit : ${p.freeNote}.` : '');
   loadModels();
@@ -114,7 +121,7 @@ function syncEngine() {
   $('models-more').hidden = engine !== 'api';
   $('none').hidden = engine !== 'none';
   if (engine === 'api') return syncProvider();
-  setStatus('engine-status', (engine === 'claude-code' || engine === 'codex') && !installed(engine) ? 'Pas trouvé sur ce PC : installe-le, puis relance Judith.' : '');
+  setStatus('engine-status', (engine === 'claude-code' || engine === 'codex') && !installed(engine) ? t('Pas trouvé sur ce PC : installe-le, puis relance Judith.') : '');
 }
 function engineInput() {
   const engine = chosenEngine();
@@ -124,13 +131,13 @@ function engineInput() {
   return input;
 }
 $('engine-test').addEventListener('click', async () => {
-  setStatus('engine-status', 'Test en cours…');
+  setStatus('engine-status', t('Test en cours…'));
   $('engine-test').disabled = true;
   const result = await api.settings.test(engineInput()).catch((error) => ({ ok: false, error: error.message }));
   $('engine-test').disabled = false;
   // The test may have proved (or ruled out) vision for this model.
   if (chosenEngine() === 'api') modelPicker.load();
-  setStatus('engine-status', result.ok ? `Ça marche (${(result.ms / 1000).toFixed(1)} s) ✓` : `Ça ne marche pas : ${result.error}`, result.ok ? 'ok' : 'err');
+  setStatus('engine-status', result.ok ? t('Ça marche ({value} s) ✓', { value: (result.ms / 1000).toFixed(1) }) : t('Ça ne marche pas : {error}', { error: result.error }), result.ok ? 'ok' : 'err');
 });
 $('get-claude').addEventListener('click', () => api.openLink('https://docs.claude.com/en/docs/claude-code/setup'));
 $('get-key').addEventListener('click', () => api.openLink(engines.providers.find((p) => p.id === 'nvidia')?.keyUrl ?? 'https://build.nvidia.com'));
@@ -161,12 +168,12 @@ $('shortcut').addEventListener('change', () => ($('shortcut-keys').innerHTML = k
 async function load() {
   [status, engines] = await Promise.all([api.onboarding.status(), api.settings.get()]);
   renderEngines();
-  $('shortcut').innerHTML = status.shortcuts.map((s) => `<option value="${s}" ${s === status.shortcut ? 'selected' : ''}>${s.replace('Control', 'Ctrl').replace('Shift', 'Maj').replace(/\+/g, ' + ')}</option>`).join('');
+  $('shortcut').innerHTML = status.shortcuts.map((s) => `<option value="${s}" ${s === status.shortcut ? 'selected' : ''}>${s.replace('Control', 'Ctrl').replace('Shift', t('Maj')).replace(/\+/g, ' + ')}</option>`).join('');
   $('shortcut-keys').innerHTML = keys(status.shortcut);
   $('ready-keys').innerHTML = keys(status.shortcut);
   $('start-windows').checked = status.startWithWindows;
   $('start-windows').disabled = !status.packaged;
-  if (!status.packaged) $('start-windows').closest('label').title = 'Disponible dans la version installée';
+  if (!status.packaged) $('start-windows').closest('label').title = t('Disponible dans la version installée');
 }
 show(0);
-load().catch((error) => setStatus('engine-status', `Réglages indisponibles : ${error.message}`, 'err'));
+load().catch((error) => setStatus('engine-status', t('Réglages indisponibles : {error}', { error: error.message }), 'err'));

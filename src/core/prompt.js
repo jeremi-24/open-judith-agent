@@ -22,6 +22,38 @@ ${EMOTION_TAGS.map((t) => `[${t}]`).join(' ')}. [break] is a short pause.
 Use them like a good teacher would: [excited] when the user succeeds, [whispering] for a tip, [break] before the key point.
 At most 2 tags per answer, never on every sentence, never in labels, steps or notes. Tags are in English, the words in the user language.`;
 
+// The examples are in the user's language: a model copies their language.
+const EXAMPLES = {
+  fr: `Example:
+box 0.88 0.035 0.94 0.07 | Exporter
+step Clique sur Exporter
+say Le bouton **Exporter** est en haut à droite.
+step Choisis MP4
+say Ensuite, choisis **MP4** dans la liste des formats.
+
+Example (explain a comparison):
+box 0.12 0.40 0.62 0.45 | Anthropic
+say Anthropic arrive en tête avec 42 %.
+box 0.12 0.47 0.62 0.52 | OpenAI
+say OpenAI suit avec 31 %, l'écart se creuse.
+box 0.12 0.54 0.62 0.59 | Google
+say Google ferme la marche à 18 %.`,
+  en: `Example:
+box 0.88 0.035 0.94 0.07 | Export
+step Click Export
+say The **Export** button is at the top right.
+step Choose MP4
+say Then pick **MP4** in the format list.
+
+Example (explain a comparison):
+box 0.12 0.40 0.62 0.45 | Anthropic
+say Anthropic leads with 42%.
+box 0.12 0.47 0.62 0.52 | OpenAI
+say OpenAI follows with 31%, the gap widens.
+box 0.12 0.54 0.62 0.59 | Google
+say Google brings up the rear at 18%.`,
+};
+
 // board: false hides the notes board (its commands are not even offered).
 // canLook: the engine can call Judith's tools (Claude Code). Other engines get
 // the screenshot with every question, and cannot call show_visual or make artifacts.
@@ -68,7 +100,7 @@ ${canLook ? `  Call mcp__judith__show_visual (a self-contained HTML diagram, tim
 When the user asks you to do something, show them where and how to do it themselves, one step at a time.
 OFFER TO GUIDE: when doing what the user asks takes several steps on the screen (setting something up, installing,
   creating, exporting, configuring in an app…) and you are not in agent mode, give the first step as usual, then a last
-  say line that offers to follow them to the end (e.g. "Tu veux que je te suive jusqu'au bout ?"), then
+  say line that offers to follow them to the end (e.g. ${language === 'fr' ? '"Tu veux que je te suive jusqu\'au bout ?"' : '"Do you want me to guide you all the way?"'}), then
   "propose <the goal in a few words>". Never for a question of understanding (what is, why, how does it work), nor for
   something done in one or two clicks.
 AGENT MODE: a question starting with "(Agent mode, step n/N) Goal: …" means you guide the user to that goal, in a loop.
@@ -112,20 +144,7 @@ At most 4 "say" lines, each under 20 words. Use **bold** for button and menu nam
 
 ${EMOTION_RULE}` : ''}
 
-Example:
-box 0.88 0.035 0.94 0.07 | Exporter
-step Clique sur Exporter
-say Le bouton **Exporter** est en haut à droite.
-step Choisis MP4
-say Ensuite, choisis **MP4** dans la liste des formats.
-
-Example (explain a comparison):
-box 0.12 0.40 0.62 0.45 | Anthropic
-say Anthropic arrive en tête avec 42 %.
-box 0.12 0.47 0.62 0.52 | OpenAI
-say OpenAI suit avec 31 %, l'écart se creuse.
-box 0.12 0.54 0.62 0.59 | Google
-say Google ferme la marche à 18 %.`;
+${EXAMPLES[language] ?? EXAMPLES.en}`;
 }
 
 // pointer: where the mouse was when Judith was called, as fractions of the

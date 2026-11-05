@@ -7,6 +7,10 @@ const GHOSTS = [
   /^(bon|ok|oui|non|euh|hum|ah)[\s.!?]*$/i,
   /^thanks? (for watching|you)[\s.!]*$/i,
   /amara\.org/i,
+  /^(thank you|thanks)( so much| very much)?[\s.!]*$/i,
+  /^(bye|goodbye|see you( later| next time)?)[\s.!]*$/i,
+  /^(subtitles by|transcribed by|captions by)/i,
+  /^(okay|ok|yes|no|uh|um|hmm|oh)[\s.!?]*$/i,
   /^(au revoir|à bientôt|bonne soirée|bonne journée)[\s.!]*$/i,
 ];
 

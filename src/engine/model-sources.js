@@ -11,6 +11,7 @@
 //
 // A parser returns what its API says and nothing more: the rest stays unknown
 // (see models.js). fetchModels never throws.
+import { t } from '../core/i18n.js';
 import { PROVIDERS } from './api.js';
 import { flag, makeModel, SUPPORTED, UNKNOWN, UNSUPPORTED } from './models.js';
 
@@ -150,11 +151,11 @@ const FALLBACK = { keyRequired: false, list: (base) => `${base}/models`, parse: 
 // ----- errors, in plain words (never the key, never a URL carrying it) -----
 function httpError(status, label) {
   const make = (kind, message) => ({ kind, message, status });
-  if (status === 401 || status === 403) return make('auth', `${label} refuse ta clé : vérifie qu'elle est complète et valide. Tu peux quand même saisir un modèle à la main.`);
-  if (status === 404) return make('http', `${label} ne propose pas de liste de modèles à cette adresse. Saisis le modèle à la main.`);
-  if (status === 429) return make('http', `${label} limite les demandes : réessaie dans un instant.`);
-  if (status >= 500) return make('http', `${label} a un problème de son côté (erreur ${status}). Réessaie dans un moment.`);
-  return make('http', `${label} a répondu ${status}. Saisis le modèle à la main si besoin.`);
+  if (status === 401 || status === 403) return make('auth', t("{label} refuse ta clé : vérifie qu'elle est complète et valide. Tu peux quand même saisir un modèle à la main.", { label }));
+  if (status === 404) return make('http', t('{label} ne propose pas de liste de modèles à cette adresse. Saisis le modèle à la main.', { label }));
+  if (status === 429) return make('http', t('{label} limite les demandes : réessaie dans un instant.', { label }));
+  if (status >= 500) return make('http', t('{label} a un problème de son côté (erreur {status}). Réessaie dans un moment.', { label, status }));
+  return make('http', t('{label} a répondu {status}. Saisis le modèle à la main si besoin.', { label, status }));
 }
 
 // → { ok: true, models } or { ok: false, error: { kind, message } }. Never throws.
@@ -167,7 +168,7 @@ export async function fetchModels({ provider, key = '', baseUrl = '', fetchImpl 
   const label = custom ? 'Le serveur' : spec.label;
   const cleaned = String(key ?? '').trim();
   if (source.keyRequired && !cleaned && !custom) {
-    return { ok: false, error: { kind: 'nokey', message: `Colle ta clé ${spec.label} pour voir ses modèles. Tu peux déjà saisir un modèle à la main.` } };
+    return { ok: false, error: { kind: 'nokey', message: t('Colle ta clé {spec} pour voir ses modèles. Tu peux déjà saisir un modèle à la main.', { spec: spec.label }) } };
   }
   const base = (baseUrl || spec.baseUrl).replace(/\/+$/, '');
   const authVariants = source.auth ? source.auth(cleaned) : cleaned && source.sendKey !== false ? [{ authorization: `Bearer ${cleaned}` }] : [{}];
@@ -191,13 +192,13 @@ export async function fetchModels({ provider, key = '', baseUrl = '', fetchImpl 
         try {
           json = await response.json();
         } catch {
-          failure = { kind: 'malformed', message: `${label} a répondu autre chose qu'une liste de modèles. Saisis le modèle à la main.` };
+          failure = { kind: 'malformed', message: t("{label} a répondu autre chose qu'une liste de modèles. Saisis le modèle à la main.", { label }) };
         }
         break;
       } catch (error) {
         failure = controller.signal.aborted
-          ? { kind: 'timeout', message: `${label} ne répond pas à temps. Vérifie ta connexion, ou saisis le modèle à la main.` }
-          : { kind: 'network', message: `Je n'arrive pas à joindre ${label}. Vérifie ta connexion internet, ou saisis le modèle à la main.` };
+          ? { kind: 'timeout', message: t('{label} ne répond pas à temps. Vérifie ta connexion, ou saisis le modèle à la main.', { label }) }
+          : { kind: 'network', message: t("Je n'arrive pas à joindre {label}. Vérifie ta connexion internet, ou saisis le modèle à la main.", { label }) };
         break;
       } finally {
         clearTimeout(timer);
@@ -206,17 +207,17 @@ export async function fetchModels({ provider, key = '', baseUrl = '', fetchImpl 
     if (!json) {
       // A later page failing keeps the models already read.
       if (page > 0 && models.length) return { ok: true, models, partial: true };
-      return { ok: false, error: failure ?? { kind: 'malformed', message: `${label} n'a rien répondu d'utilisable.` } };
+      return { ok: false, error: failure ?? { kind: 'malformed', message: t("{label} n'a rien répondu d'utilisable.", { label }) } };
     }
     if (!isObject(json) || !Array.isArray(json[source.shape])) {
       if (page > 0 && models.length) return { ok: true, models, partial: true };
-      return { ok: false, error: { kind: 'malformed', message: `${label} a répondu autre chose qu'une liste de modèles. Saisis le modèle à la main.` } };
+      return { ok: false, error: { kind: 'malformed', message: t("{label} a répondu autre chose qu'une liste de modèles. Saisis le modèle à la main.", { label }) } };
     }
     let parsed;
     try {
       parsed = source.parse(json, ctx);
     } catch {
-      return { ok: false, error: { kind: 'malformed', message: `La liste de ${label} est illisible. Saisis le modèle à la main.` } };
+      return { ok: false, error: { kind: 'malformed', message: t('La liste de {label} est illisible. Saisis le modèle à la main.', { label }) } };
     }
     models.push(...parsed.filter(Boolean));
     url = source.next?.(url, json) ?? null;

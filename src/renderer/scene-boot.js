@@ -8,6 +8,12 @@ const caption = document.getElementById('caption');
 const count = document.getElementById('count');
 const failed = document.getElementById('error');
 const reply = (data) => parent.postMessage({ judithScene: data }, '*');
+// This frame cannot reach Judith: the board gives the language in the URL.
+if (new URLSearchParams(location.search).get('lang') === 'en') {
+  document.getElementById('prev')?.setAttribute('aria-label', 'Previous step');
+  document.getElementById('next')?.setAttribute('aria-label', 'Next step');
+  failed.textContent = 'The 3D scene could not be displayed.';
+}
 
 let stage = null;
 

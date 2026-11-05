@@ -6,6 +6,7 @@ const SCREEN_WORDS = [
   'vois', 'voit', 'regarde', 'montre', 'montre-moi', 'où est', 'ou est', 'où se trouve', 'où je', 'clique', 'cliquer',
   'affiche', 'page', 'fenêtre', 'onglet', 'image', 'photo', 'graphique', 'tableau', 'schéma', 'erreur', 'message',
   'screen', 'this', 'that', 'here', 'where is', 'show me', 'see',
+  'these', 'those', 'button', 'tab', 'window', 'chart', 'graph', 'table', 'error', 'picture', 'image', 'page', 'look', 'click', 'where',
 ];
 const escape = (w) => w.replace(/[-]/g, '\\-');
 const PATTERN = new RegExp(`(^|[\\s'’,.!?«"])(${SCREEN_WORDS.map(escape).join('|')})(?=$|[\\s'’,.!?»"])`, 'i');

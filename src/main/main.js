@@ -12,6 +12,7 @@ import { captureDisplay, captureSmall, captureThumb, captureZones } from './capt
 import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOnboarding, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
 import { chooseEngine, createEngine, ENGINES, PROVIDERS } from '../engine/engines.js';
 import { cleanKey } from '../engine/api-errors.js';
+import { LANGUAGES, normalizeLanguage, setLanguage, t } from '../core/i18n.js';
 import { defaultModel } from '../engine/api.js';
 import { createModelsService } from './models-service.js';
 import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
@@ -36,6 +37,11 @@ import { AGENT_IDLE_MS, AGENT_NEXT, createAgent, createProgressWatch } from '../
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const config = loadConfig();
+setLanguage(config.language);
+// Answered before any page draws, so each one starts in the right language.
+ipcMain.on('judith:language', (event) => {
+  event.returnValue = config.language;
+});
 const root = join(import.meta.dirname, '..', '..');
 // The installer adds a version with transparent rounded corners (tray, notifications).
 const iconPath = [join(root, 'assets', 'icon-rounded.png'), join(root, 'assets', 'icon.png')].find(existsSync);
@@ -171,7 +177,7 @@ async function makeThumb(zone) {
 function pickZone() {
   if (zonePicking) return zonePicking;
   if ((session.zones ?? []).length >= MAX_ZONES) {
-    send(bubble, 'notice', `${MAX_ZONES} zones au maximum : retire-en une avec sa croix.`);
+    send(bubble, 'notice', t('{max} zones au maximum : retire-en une avec sa croix.', { max: MAX_ZONES }));
     return Promise.resolve(null);
   }
   const display = session.display ?? cursorDisplay();
@@ -262,7 +268,7 @@ function creationsIn(text) {
 
 // ----- voice in, cloud: Deepgram live listening (the user's own key) -----
 // Words Judith should hear right, whatever the accent.
-const KEYTERMS = ['Judith', 'Claude Code', 'GitHub', 'VS Code', 'VLC', 'CapCut', 'Blender', 'pull request', "capture d'écran", 'WhatsApp', 'Discord'];
+const KEYTERMS = ['Judith', 'Claude Code', 'GitHub', 'VS Code', 'VLC', 'CapCut', 'Blender', 'pull request', "capture d'écran", 'screenshot', 'WhatsApp', 'Discord'];
 function liveEars() {
   const key = config.deepgramKey || process.env.DEEPGRAM_API_KEY;
   if (config.speechInput !== 'deepgram' || !key) return null;
@@ -295,7 +301,7 @@ function startSpeech() {
 }
 
 function transcribe(audio) {
-  if (!speech || !speechReady) return Promise.reject(new Error("La voix n'est pas encore prête, écris ta question."));
+  if (!speech || !speechReady) return Promise.reject(new Error(t("La voix n'est pas encore prête, écris ta question.")));
   const id = ++speechJob;
   return new Promise((resolve, reject) => {
     speechJobs.set(id, { resolve, reject });
@@ -441,6 +447,8 @@ function streamVoice(text) {
 }
 
 function speakLocal(text) {
+  // Siwis speaks French only: in English the notch uses Windows' English voices (or a cloud voice).
+  if (config.language !== 'fr') return Promise.resolve(null);
   if (!tts || !ttsReady) return Promise.resolve(null); // the notch falls back to Windows voices
   const id = ++ttsJob;
   if (process.env.JUDITH_DEMO) console.log('[judith] says', JSON.stringify(text.slice(0, 50)));
@@ -961,7 +969,7 @@ async function ask(question, turn) {
   if (wasAgent && !agent.active) agentState({ limit: true });
   if (asked == null) {
     // "Non" to the offer to guide: no question for the model.
-    if (agent.declined) send(bubble, 'cmd', { type: 'say', text: "D'accord, je reste dans le coin.", turn });
+    if (agent.declined) send(bubble, 'cmd', { type: 'say', text: t("D'accord, je reste dans le coin."), turn });
     return send(bubble, 'answer', { turn });
   }
   const inAgent = agent.active;
@@ -1128,7 +1136,7 @@ function startEngine() {
   // would cost the user API credits for nothing).
   warmingUp =
     engineKind === 'claude-code'
-      ? engine.ask([{ type: 'text', text: 'Réponds seulement : say prête.' }]).catch((error) => console.error('[judith] warm-up failed:', error.message))
+      ? engine.ask([{ type: 'text', text: 'Reply only: say ready.' }]).catch((error) => console.error('[judith] warm-up failed:', error.message))
       : Promise.resolve();
 }
 
@@ -1183,7 +1191,7 @@ async function testEngine(input) {
     if (kind === 'api' && !custom) await models().waitTurn(provider);
     const question = [
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: TEST_IMAGE } },
-      { type: 'text', text: 'Test de connexion. Réponds seulement : say ok' },
+      { type: 'text', text: 'Connection test. Reply only: say ok' },
     ];
     try {
       await probe.ask(question);
@@ -1198,7 +1206,7 @@ async function testEngine(input) {
     return { ok: true, ms: Date.now() - startedAt };
   } catch (error) {
     verified({ ok: false, kind: error.kind });
-    return { ok: false, error: error.cancelled ? 'Pas de réponse en 45 s.' : error.message, kind: error.kind };
+    return { ok: false, error: error.cancelled ? t('Pas de réponse en 45 s.') : error.message, kind: error.kind };
   } finally {
     clearTimeout(timer);
     probe.stop();
@@ -1237,6 +1245,7 @@ function onboardingStatus() {
     shortcut: config.shortcut,
     zoneShortcut: config.zoneShortcut,
     shortcuts: [...new Set([config.shortcut, ...SHORTCUT_CHOICES])],
+    language: config.language,
     listenMode: config.listenMode,
     speechInput: config.speechInput,
     deepgramSet: Boolean(config.deepgramKey),
@@ -1268,12 +1277,30 @@ function saveOnboarding(input = {}) {
   if (typeof input.startWithWindows === 'boolean' && app.isPackaged) app.setLoginItemSettings({ openAtLogin: input.startWithWindows });
   const shortcutOk = typeof input.shortcut === 'string' ? setShortcut(input.shortcut) : true;
   buildTrayMenu();
-  return { ok: shortcutOk, error: shortcutOk ? null : `Le raccourci ${input.shortcut} est déjà pris par une autre appli.`, status: onboardingStatus() };
+  return { ok: shortcutOk, error: shortcutOk ? null : t('Le raccourci {shortcut} est déjà pris par une autre appli.', { shortcut: input.shortcut }), status: onboardingStatus() };
 }
 function finishOnboarding({ tryNow = false } = {}) {
   writeFileSync(onboardedPath(), new Date().toISOString());
   onboarding?.close();
   if (tryNow) setTimeout(summon, 500);
+}
+
+// A new language: saved, the engine's prompt and the speech recognition restart in it,
+// every window redraws in it, the tray menu follows. Called from the welcome window and the tray.
+function changeLanguage(next) {
+  const language = normalizeLanguage(next);
+  if (language === config.language) return;
+  config.language = language;
+  saveConfig({ language });
+  setLanguage(language);
+  if (speech) {
+    speech.terminate();
+    speechReady = false;
+    startSpeech();
+  }
+  startEngine();
+  buildTrayMenu();
+  for (const win of [bubble, overlay, board, onboarding]) if (win && !win.isDestroyed()) win.reload();
 }
 
 function newConversation() {
@@ -1284,12 +1311,16 @@ function newConversation() {
 function buildTrayMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: `Demander à Judith (${config.shortcut})`, click: summon },
-      { label: 'Nouvelle conversation', click: newConversation },
-      { label: 'Ouvrir la configuration', click: () => shell.openPath(configPath()) },
-      { label: "Revoir l'accueil", click: openOnboarding },
+      { label: t('Demander à Judith ({shortcut})', { shortcut: config.shortcut }), click: summon },
+      { label: t('Nouvelle conversation'), click: newConversation },
+      { label: t('Ouvrir la configuration'), click: () => shell.openPath(configPath()) },
+      { label: t("Revoir l'accueil"), click: openOnboarding },
       {
-        label: 'Appuyer pour parler (lieu bruyant)',
+        label: t('Langue / Language'),
+        submenu: LANGUAGES.map((code) => ({ label: { fr: 'Français', en: 'English' }[code], type: 'radio', checked: config.language === code, click: () => changeLanguage(code) })),
+      },
+      {
+        label: t('Appuyer pour parler (lieu bruyant)'),
         type: 'checkbox',
         checked: config.listenMode === 'push',
         click: (item) => {
@@ -1301,14 +1332,14 @@ function buildTrayMenu() {
       ...(app.isPackaged
         ? [
             {
-              label: 'Démarrer avec Windows',
+              label: t('Démarrer avec Windows'),
               type: 'checkbox',
               checked: app.getLoginItemSettings().openAtLogin,
               click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
             },
           ]
         : []),
-      { label: 'Quitter', role: 'quit' },
+      { label: t('Quitter'), role: 'quit' },
     ]),
   );
 }
@@ -1424,6 +1455,10 @@ app.whenReady().then(async () => {
     console.error(`[judith] shortcut ${config.zoneShortcut} is already taken`);
   }
 
+  ipcMain.handle('judith:set-language', (_e, language) => {
+    changeLanguage(language);
+    return config.language;
+  });
   ipcMain.handle('judith:onboarding-status', () => onboardingStatus());
   ipcMain.handle('judith:onboarding-save', (_e, input) => saveOnboarding(input));
   ipcMain.on('judith:onboarding-done', (_e, info) => finishOnboarding(info ?? {}));
@@ -1478,7 +1513,7 @@ app.whenReady().then(async () => {
     const baseUrl = provider === config.apiProvider ? config.apiBaseUrl || '' : '';
     return models()
       .list({ provider, baseUrl, key: typeof input.apiKey === 'string' ? cleanKey(input.apiKey) : '', refresh: input.refresh === true })
-      .catch(() => ({ ok: false, models: [], source: 'builtin', fetchedAt: null, error: { kind: 'http', message: 'La liste des modèles est indisponible. Saisis le modèle à la main.' } }));
+      .catch(() => ({ ok: false, models: [], source: 'builtin', fetchedAt: null, error: { kind: 'http', message: t('La liste des modèles est indisponible. Saisis le modèle à la main.') } }));
   });
   ipcMain.handle('judith:settings-test', (_e, input) => testEngine(input).catch((error) => ({ ok: false, error: error.message })));
   ipcMain.handle('judith:settings-save', (_e, input) => {

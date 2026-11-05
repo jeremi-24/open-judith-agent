@@ -1,5 +1,7 @@
 // The board: notes and visuals Judith builds while she explains, and the
 // list of everything Claude Code did (commands, files, visuals).
+import { getLanguage, t, translateDocument } from '../core/i18n.js';
+translateDocument(document);
 const title = document.getElementById('title');
 const subtitle = document.getElementById('subtitle');
 const notes = document.getElementById('notes');
@@ -60,7 +62,7 @@ function showScene({ id, title: name, code, seenImage }) {
   sceneId = id;
   sceneCode = code;
   sceneFrame?.remove();
-  sceneFrame = Object.assign(document.createElement('iframe'), { title: name, src: 'judith-frame://scene/scene.html' });
+  sceneFrame = Object.assign(document.createElement('iframe'), { title: name, src: `judith-frame://scene/scene.html?lang=${getLanguage()}` });
   sceneFrame.setAttribute('sandbox', 'allow-scripts');
   sceneBox.append(sceneFrame);
   scene.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -97,7 +99,7 @@ window.judith.on('activity', (item) => {
   }
   if (item.output && !card.querySelector('details')) {
     const details = document.createElement('details');
-    details.innerHTML = '<summary>Voir le résultat</summary><pre></pre>';
+    details.innerHTML = `<summary>${t('Voir le résultat')}</summary><pre></pre>`;
     details.querySelector('pre').textContent = item.output;
     card.append(details);
   }
@@ -105,7 +107,7 @@ window.judith.on('activity', (item) => {
     const buttons = document.createElement('div');
     buttons.className = 'act-buttons';
     const add = (text, onClick) => buttons.append(Object.assign(document.createElement('button'), { type: 'button', textContent: text, onclick: onClick }));
-    if (item.previewable) add('Aperçu ici', () => window.judith.preview(item.file));
+    if (item.previewable) add(t('Aperçu ici'), () => window.judith.preview(item.file));
     add('Ouvrir', () => window.judith.openPath(item.file));
     card.append(buttons);
   }
@@ -113,7 +115,7 @@ window.judith.on('activity', (item) => {
 });
 
 window.judith.on('clear-board', () => {
-  title.textContent = 'Judith';
+  title.textContent = t('Judith');
   subtitle.textContent = '';
   notes.replaceChildren();
   visual.hidden = true;

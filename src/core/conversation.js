@@ -10,6 +10,7 @@
 // anything: they report events here and execute the effects they are given.
 // Each question gets a turn number; late events from a cancelled turn are
 // ignored. That is what prevents loops, double answers and mic/voice fights.
+import { t } from './i18n.js';
 import { isGoodbye, isIncomplete } from './turn.js';
 
 // fx = {
@@ -101,25 +102,25 @@ export function createConversation(fx, options = {}) {
     // At rest, the user started talking to her (words already recognised):
     // keep them and listen for the rest of the sentence.
     overheard(text) {
-      const t = String(text ?? '').trim();
-      if (state !== 'idle' || !t) return false;
-      if (isGoodbye(t)) {
+      const said = String(text ?? '').trim();
+      if (state !== 'idle' || !said) return false;
+      if (isGoodbye(said)) {
         fx.clearScreen();
-        set('idle', { message: 'À plus !' });
+        set('idle', { message: t('À plus !') });
         return true;
       }
-      prefix = t;
-      listen({ continuation: true, partial: t });
+      prefix = said;
+      listen({ continuation: true, partial: said });
       return true;
     },
 
     // A question typed in the notch.
     typed(text) {
-      const t = String(text ?? '').trim();
-      if (!t) return;
+      const said = String(text ?? '').trim();
+      if (!said) return;
       if (state === 'thinking' || state === 'speaking') stopAll();
       fx.stopListening();
-      think(t);
+      think(said);
     },
 
     // Agent mode: the user did the step, Judith asks herself the next one.
@@ -139,14 +140,14 @@ export function createConversation(fx, options = {}) {
       const full = [prefix, String(text ?? '').trim()].filter(Boolean).join(' ');
       if (!text) {
         if (prefix) return think(prefix);
-        return set('idle', followUp ? {} : { message: "Je n'ai rien entendu." });
+        return set('idle', followUp ? {} : { message: t("Je n'ai rien entendu.") });
       }
       // "Arrête.", "Allez, salut." after an answer or over Judith's voice: the
       // conversation is over, nothing to ask. (Right after the shortcut,
       // "Salut" is a hello.)
       if ((followUp || bargeIn) && isGoodbye(full)) {
         fx.clearScreen();
-        return set('idle', { message: 'À plus !' });
+        return set('idle', { message: t('À plus !') });
       }
       // A pause in the middle of a sentence: keep listening for the rest, once.
       if (isIncomplete(full) && !prefix) {

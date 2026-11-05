@@ -3,8 +3,10 @@
 // is not exactly the end); the badge and the label pop in after. The ink is
 // dark on light backgrounds and light on dark ones. Marks are drawn one
 // after the other, never at the same time.
+import { t, translateDocument } from '../core/i18n.js';
 import { arrowStroke, handStroke, outlinePoints } from '../core/ink.js';
 import { zoneFrom } from '../core/zone.js';
+translateDocument(document);
 
 const canvas = document.getElementById('canvas');
 const labels = document.getElementById('labels');
@@ -248,7 +250,7 @@ function showZones(list) {
       frame.className = 'zone-frame fixed';
       const tag = document.createElement('span');
       tag.className = zones.length > 1 ? 'zone-tag numbered' : 'zone-tag';
-      tag.textContent = zones.length > 1 ? String(i + 1) : 'Zone partagée';
+      tag.textContent = zones.length > 1 ? String(i + 1) : t('Zone partagée');
       frame.append(tag);
       place(frame, z);
       return frame;

@@ -78,6 +78,12 @@ screenshot with every question. Codex runs in its read-only sandbox and Cursor w
 neither can change your files. Their prompt is written to a temporary file (deleted after the
 answer) so no text ever goes on a command line.
 
+## Languages
+
+French and English. On a first start Judith takes the language of Windows; change it with the
+**FR | EN** switch of the welcome window or **Langue / Language** in the tray menu.
+See [docs/I18N.md](docs/I18N.md) to add a sentence or a language.
+
 ## Install
 
 1. Download `Judith-Setup-<version>.exe` from the

@@ -23,6 +23,8 @@
 // @property {'api' | 'builtin' | 'manual'} source   where the entry comes from
 // @property {boolean} verified            a real test call (text + image, streamed) succeeded or failed on it
 
+import { t } from '../core/i18n.js';
+
 export const SUPPORTED = 'supported';
 export const UNSUPPORTED = 'unsupported';
 export const UNKNOWN = 'unknown';
@@ -143,7 +145,7 @@ export function priceLabel(pricing) {
   const prompt = Number(pricing.prompt);
   const completion = Number(pricing.completion);
   if (!Number.isFinite(prompt) || !Number.isFinite(completion)) return '';
-  if (prompt === 0 && completion === 0) return 'gratuit';
+  if (prompt === 0 && completion === 0) return t('gratuit');
   const per = (v) => `${+(v * 1_000_000).toFixed(2)}`;
-  return `${per(prompt)} / ${per(completion)} $ par million`;
+  return t('{prompt} / {completion} $ par million', { prompt: per(prompt), completion: per(completion) });
 }

@@ -47,6 +47,9 @@ button.primary { background: linear-gradient(135deg, var(--accent), var(--sky));
 button.primary:hover { filter: brightness(1.08); }
 button.primary:disabled { opacity: 0.5; cursor: default; }
 button.link { padding: 6px 4px; color: var(--sky); }
+.lang { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
+.lang button { padding: 3px 11px; border: 0; background: none; color: var(--muted); font: 700 12px var(--font-mono); letter-spacing: 0.06em; }
+.lang button[aria-pressed="true"] { background: var(--accent-deep); color: #fff; }
 .skip, .back { color: var(--muted); }
 .skip:hover, .back:hover { color: var(--fg); }
 .nav { display: flex; justify-content: space-between; align-items: center; padding: 14px 40px 22px; }

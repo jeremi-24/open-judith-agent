@@ -9,6 +9,7 @@
 // model claims: a page that says "click here, it is safe" changes nothing.
 // Everything is lower-cased and without accents before matching.
 
+import { t } from './i18n.js';
 const plain = (text) =>
   String(text ?? '')
     .normalize('NFD')
@@ -67,36 +68,36 @@ export function checkAction(action, context = {}) {
   const control = context.control ?? null;
   const name = plain(control?.name);
   const label = plain(action.label);
-  const what = control?.name || action.label || 'cet élément';
+  const what = control?.name || action.label || t('cet élément');
 
-  if ((context.count ?? 0) >= MAX_ACTIONS) return { verdict: 'block', reason: `J'ai déjà fait ${MAX_ACTIONS} actions : je m'arrête là.` };
-  if (context.onJudith) return { verdict: 'block', reason: 'Je ne clique jamais sur mes propres fenêtres.' };
-  if (!app) return { verdict: 'block', reason: "Je ne sais pas quelle application est au premier plan : je n'agis pas." };
-  if (BLOCKED_APPS.has(app)) return { verdict: 'block', reason: `Je n'agis pas dans ${context.app.process} (applications sensibles, terminaux et moi-même).` };
+  if ((context.count ?? 0) >= MAX_ACTIONS) return { verdict: 'block', reason: t("J'ai déjà fait {maxActions} actions : je m'arrête là.", { maxActions: MAX_ACTIONS }) };
+  if (context.onJudith) return { verdict: 'block', reason: t('Je ne clique jamais sur mes propres fenêtres.') };
+  if (!app) return { verdict: 'block', reason: t("Je ne sais pas quelle application est au premier plan : je n'agis pas.") };
+  if (BLOCKED_APPS.has(app)) return { verdict: 'block', reason: t("Je n'agis pas dans {process} (applications sensibles, terminaux et moi-même).", { process: context.app.process }) };
 
   switch (action.type) {
     case 'click': {
-      if (SENSITIVE.test(name) || SENSITIVE.test(label)) return { verdict: 'confirm', reason: `Cliquer sur « ${what} » ?` };
+      if (SENSITIVE.test(name) || SENSITIVE.test(label)) return { verdict: 'confirm', reason: t('Cliquer sur « {what} » ?', { what }) };
       // Without UI Automation, Judith cannot know what is really under the click.
-      if (!control) return { verdict: 'confirm', reason: `Cliquer sur « ${what} » ? (je ne peux pas vérifier ce bouton)` };
+      if (!control) return { verdict: 'confirm', reason: t('Cliquer sur « {what} » ? (je ne peux pas vérifier ce bouton)', { what }) };
       return { verdict: 'allow' };
     }
     case 'type': {
-      if (SECRET_FIELD.test(name) || SECRET_FIELD.test(label)) return { verdict: 'block', reason: "Je ne tape jamais de mot de passe ni de code : c'est à toi." };
-      if (CARD_NUMBER.test(String(action.text ?? ''))) return { verdict: 'block', reason: 'Je ne tape pas de numéro de carte.' };
-      if (String(action.text ?? '').length > 500) return { verdict: 'confirm', reason: 'Taper un long texte ?' };
+      if (SECRET_FIELD.test(name) || SECRET_FIELD.test(label)) return { verdict: 'block', reason: t("Je ne tape jamais de mot de passe ni de code : c'est à toi.") };
+      if (CARD_NUMBER.test(String(action.text ?? ''))) return { verdict: 'block', reason: t('Je ne tape pas de numéro de carte.') };
+      if (String(action.text ?? '').length > 500) return { verdict: 'confirm', reason: t('Taper un long texte ?') };
       return { verdict: 'allow' };
     }
     case 'key': {
       const key = normalizeKey(action.combo);
-      if (!KEYS.has(key) && !KEYS_TO_CONFIRM.has(key)) return { verdict: 'block', reason: `Je n'utilise pas le raccourci ${action.combo}.` };
-      if (KEYS_TO_CONFIRM.has(key)) return { verdict: 'confirm', reason: `Appuyer sur ${action.combo} ?` };
-      if (key === 'enter' && (MESSAGING_APPS.has(app) || MESSAGING_TITLE.test(title))) return { verdict: 'confirm', reason: 'Appuyer sur Entrée (ça peut envoyer un message) ?' };
+      if (!KEYS.has(key) && !KEYS_TO_CONFIRM.has(key)) return { verdict: 'block', reason: t("Je n'utilise pas le raccourci {combo}.", { combo: action.combo }) };
+      if (KEYS_TO_CONFIRM.has(key)) return { verdict: 'confirm', reason: t('Appuyer sur {combo} ?', { combo: action.combo }) };
+      if (key === 'enter' && (MESSAGING_APPS.has(app) || MESSAGING_TITLE.test(title))) return { verdict: 'confirm', reason: t('Appuyer sur Entrée (ça peut envoyer un message) ?') };
       return { verdict: 'allow' };
     }
     case 'scroll':
       return { verdict: 'allow' };
     default:
-      return { verdict: 'block', reason: 'Action inconnue.' };
+      return { verdict: 'block', reason: t('Action inconnue.') };
   }
 }

@@ -8,6 +8,7 @@
 //   3. confirm with the user when asked; "Non" stops the step
 //   4. show:   a mark where she is about to act (the user sees it coming)
 //   5. do it;  "user" (the mouse moved) stops everything
+import { t } from './i18n.js';
 import { checkAction, MAX_ACTIONS_PER_STEP } from './guard.js';
 
 // fx = {
@@ -29,8 +30,8 @@ export async function runActions(actions, fx, state = { count: 0, lastControl: n
     if (check.verdict === 'confirm' && !(await fx.confirm(check.reason, action))) return { done, stopped: 'declined', reason: check.reason };
     await fx.show?.(action, target);
     const result = await fx.perform(action, target);
-    if (result?.error === 'user') return { done, stopped: 'user', reason: 'Tu as bougé la souris : je te rends la main.' };
-    if (result?.error) return { done, stopped: 'error', reason: `Je n'ai pas pu le faire (${result.error}).` };
+    if (result?.error === 'user') return { done, stopped: 'user', reason: t('Tu as bougé la souris : je te rends la main.') };
+    if (result?.error) return { done, stopped: 'error', reason: t("Je n'ai pas pu le faire ({error}).", { error: result.error }) };
     state.count += 1;
     if (action.action === 'click') state.lastControl = target.control ?? null;
     done += 1;

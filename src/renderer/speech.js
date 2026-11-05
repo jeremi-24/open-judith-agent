@@ -6,7 +6,8 @@
 window.JudithVoice = (() => {
   const synth = window.speechSynthesis;
   // Female voices only: Judith keeps one voice, whatever happens.
-  const PREFERRED = ['Julie', 'Hortense', 'Denise'];
+  const LANGUAGE = window.judith?.language === 'en' ? 'en' : 'fr';
+  const PREFERRED = LANGUAGE === 'en' ? ['Aria', 'Jenny', 'Zira', 'Hazel', 'Susan', 'Sonia'] : ['Julie', 'Hortense', 'Denise'];
   let windowsVoice = null;
   let enabled = true;
   let onIdle = () => {};
@@ -24,8 +25,8 @@ window.JudithVoice = (() => {
     const voices = synth.getVoices().filter((v) => v.lang.toLowerCase().startsWith(lang));
     windowsVoice = PREFERRED.map((name) => voices.find((v) => v.name.includes(name))).find(Boolean) ?? voices.find((v) => !/Paul|Henri|Claude/.test(v.name)) ?? null;
   }
-  pickWindowsVoice('fr');
-  synth.addEventListener('voiceschanged', () => pickWindowsVoice('fr'));
+  pickWindowsVoice(LANGUAGE);
+  synth.addEventListener('voiceschanged', () => pickWindowsVoice(LANGUAGE));
 
   const plain = (text) => text.replace(/\*\*|`/g, '').replace(/\s+/g, ' ').trim();
   // Emotion tags stay for the main process (Fish acts them), never for Windows voices.
@@ -123,7 +124,7 @@ window.JudithVoice = (() => {
     return new Promise((resolve) => {
       const utterance = new SpeechSynthesisUtterance(spoken(sentence));
       if (windowsVoice) utterance.voice = windowsVoice;
-      utterance.lang = windowsVoice?.lang ?? 'fr-FR';
+      utterance.lang = windowsVoice?.lang ?? (LANGUAGE === 'en' ? 'en-US' : 'fr-FR');
       utterance.rate = 1.08;
       utterance.onend = resolve;
       utterance.onerror = resolve;

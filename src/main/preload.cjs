@@ -11,6 +11,9 @@ const EVENTS = [
 ];
 
 contextBridge.exposeInMainWorld('judith', {
+  // 'fr' or 'en', known before the page draws (the main process answers at once).
+  language: ipcRenderer.sendSync('judith:language'),
+  setLanguage: (language) => ipcRenderer.invoke('judith:set-language', language),
   ask: (question, turn) => ipcRenderer.invoke('judith:ask', question, turn),
   // Stop this turn (X, or the user talks over Judith).
   cancel: (turn) => ipcRenderer.send('judith:cancel', turn),

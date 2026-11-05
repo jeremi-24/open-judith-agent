@@ -2,6 +2,7 @@ import { app } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { detectLanguage } from '../core/i18n.js';
 
 export const DEFAULTS = {
   // Who answers: "auto" (Claude Code, else Codex, else Cursor, else an API key),
@@ -86,8 +87,10 @@ export function loadConfig() {
   const path = configPath();
   if (!existsSync(path)) {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify(DEFAULTS, null, 2)}\n`);
-    return { ...DEFAULTS };
+    // First start: Judith speaks the language of Windows (French, else English).
+    const first = { ...DEFAULTS, language: detectLanguage(Intl.DateTimeFormat().resolvedOptions().locale) };
+    writeFileSync(path, `${JSON.stringify(first, null, 2)}\n`);
+    return first;
   }
   try {
     return { ...DEFAULTS, ...JSON.parse(readFileSync(path, 'utf8')) };

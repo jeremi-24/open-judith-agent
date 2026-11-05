@@ -9,6 +9,7 @@
 // A bare model has no memory of the user's projects and no tools: it cannot
 // call look_at_screen, so Judith sends the screenshot with every question
 // (canLook = false).
+import { t } from '../core/i18n.js';
 import { EventEmitter } from 'node:events';
 import { cleanKey, explainHttpError, explainNetworkError, explainStreamError } from './api-errors.js';
 
@@ -81,7 +82,7 @@ export function buildRequest({ provider, model, key, baseUrl, system, history = 
   if (!spec) throw new Error(`Unknown provider: ${provider}`);
   const base = (baseUrl || spec.baseUrl).replace(/\/+$/, '');
   const chosen = model || defaultModel(provider);
-  if (!chosen) throw new Error(`Choisis un modèle pour ${spec.label} dans les réglages (son nom, comme sur son site).`);
+  if (!chosen) throw new Error(t('Choisis un modèle pour {label} dans les réglages (son nom, comme sur son site).', { label: spec.label }));
   if (spec.protocol === 'anthropic') {
     return {
       url: `${base}/messages`,
@@ -172,7 +173,7 @@ export class ApiEngine extends EventEmitter {
   async ask(content) {
     if (this.pending) throw new Error('Judith is already answering');
     const { provider, model, key, baseUrl, systemPrompt, maxTurns } = this.options;
-    if (!cleanKey(key)) throw new Error(`Pas de clé API pour ${PROVIDERS[provider]?.label ?? provider} : ajoute-la dans les réglages de Judith.`);
+    if (!cleanKey(key)) throw new Error(t('Pas de clé API pour {label} : ajoute-la dans les réglages de Judith.', { label: PROVIDERS[provider]?.label ?? provider }));
     const request = buildRequest({ provider, model, key, baseUrl, system: systemPrompt, history: this.history, content });
     const controller = new AbortController();
     const pending = { controller, text: '' };
@@ -213,7 +214,7 @@ export class ApiEngine extends EventEmitter {
         throw explainNetworkError({ spec, error, base: baseUrl, custom });
       }
       // A "thinking" model can spend its whole budget thinking and say nothing.
-      if (!pending.text.trim()) throw Object.assign(new Error(`${spec.label} n'a rien répondu. Si c'est un modèle qui « réfléchit », essaie-en un autre dans les réglages.`), { kind: 'empty' });
+      if (!pending.text.trim()) throw Object.assign(new Error(t("{label} n'a rien répondu. Si c'est un modèle qui « réfléchit », essaie-en un autre dans les réglages.", { label: spec.label })), { kind: 'empty' });
       this.history.push({ role: 'user', text: textOf(content) }, { role: 'assistant', text: pending.text });
       this.history = this.history.slice(-2 * maxTurns);
       return { text: pending.text, streamed: pending.text, durationMs: Date.now() - startedAt };
