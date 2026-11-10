@@ -10,7 +10,17 @@ export const VOICES = {
     model: 'fr_FR-siwis-medium.onnx',
     url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-siwis-medium.tar.bz2',
   },
+  // Kristin: LibriVox recording, public domain.
+  kristin: {
+    folder: 'vits-piper-en_US-kristin-medium',
+    model: 'en_US-kristin-medium.onnx',
+    url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-kristin-medium.tar.bz2',
+  },
 };
+
+// The local voice that speaks a language (Siwis is French only).
+export const LOCAL_VOICE_FOR = { fr: 'siwis', en: 'kristin' };
+export const localVoiceFor = (language) => LOCAL_VOICE_FOR[language] ?? LOCAL_VOICE_FOR.fr;
 
 function extract(archive, into) {
   return new Promise((resolve, reject) => {

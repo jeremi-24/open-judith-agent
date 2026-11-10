@@ -131,7 +131,8 @@ Judith reads `config.json` in her user data folder
   so point it where you usually run `claude`. In JSON, write paths with `/` or `\\`.
 - `voiceInput`: listen as soon as Judith is summoned. The Whisper model (~80 MB) is
   downloaded once on first launch, then everything stays offline.
-- `voice`: `siwis` (local neural voice, ~65 MB downloaded once) or `windows`
+- `voice`: local neural voice (Siwis in French, Kristin in English, ~65 MB each,
+  downloaded once for the language you use) or `windows`
   (the system voices, more robotic). `voiceSpeed`: 1 = normal.
 - `hideFromScreenRecordings`: keep `true` for privacy; set `false` to film demos with OBS.
 - `alwaysLook` (default `false`): Judith takes a screenshot only when the question needs it
@@ -284,6 +285,8 @@ from captures.
 - Voice: [Piper](https://github.com/rhasspy/piper) `fr_FR-siwis-medium`, trained on the
   [SIWIS French Speech Synthesis Database](https://datashare.is.ed.ac.uk/handle/10283/2353)
   (CC BY 4.0), run with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0).
+- English voice: Piper `en_US-kristin-medium`, trained on a [LibriVox](https://librivox.org)
+  recording (public domain).
 - Speech recognition: [Whisper](https://github.com/openai/whisper) through
   [Transformers.js](https://github.com/huggingface/transformers.js).
 - Model capabilities (images, tools, open weights, limits): the [models.dev](https://models.dev)

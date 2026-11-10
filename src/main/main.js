@@ -7,7 +7,7 @@ import { startBridge } from './bridge.js';
 import { configPath, loadConfig, saveConfig } from './config.js';
 import { getKey, hasKey, setKey } from './secrets.js';
 import { detectEngines } from './detect.js';
-import { ensureVoice } from './models.js';
+import { ensureVoice, localVoiceFor } from './models.js';
 import { captureDisplay, captureSmall, captureThumb, captureZones } from './capture.js';
 import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOnboarding, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
 import { chooseEngine, createEngine, ENGINES, PROVIDERS } from '../engine/engines.js';
@@ -316,11 +316,16 @@ let ttsReady = false;
 let ttsJob = 0;
 const ttsJobs = new Map();
 async function startVoice() {
-  // Siwis also backs up the cloud voice when it fails.
+  // The local voice of the language also backs up the cloud voice when it fails.
+  if (tts) {
+    tts.removeAllListeners('exit');
+    tts.kill();
+    tts = null;
+    ttsReady = false;
+  }
   if (!config.voice || config.voice === 'windows') return;
   try {
-    // A cloud voice keeps Siwis ready as its backup.
-    const local = config.voice === 'elevenlabs' || config.voice === 'fish' ? 'siwis' : config.voice;
+    const local = localVoiceFor(config.language);
     const voice = await ensureVoice(local, join(app.getPath('userData'), 'models'));
     tts = fork(join(import.meta.dirname, 'tts-process.js'), [], {
       serialization: 'advanced', // typed arrays cross the pipe as they are
@@ -448,8 +453,7 @@ function streamVoice(text) {
 }
 
 function speakLocal(text) {
-  // Siwis speaks French only: in English the notch uses Windows' English voices (or a cloud voice).
-  if (config.language !== 'fr') return Promise.resolve(null);
+  // Until the voice of the language is loaded, the notch uses Windows voices.
   if (!tts || !ttsReady) return Promise.resolve(null); // the notch falls back to Windows voices
   const id = ++ttsJob;
   if (process.env.JUDITH_DEMO) console.log('[judith] says', JSON.stringify(text.slice(0, 50)));
@@ -1302,6 +1306,7 @@ function changeLanguage(next) {
     startSpeech();
   }
   startEngine();
+  startVoice();
   buildTrayMenu();
   for (const win of [bubble, overlay, board, onboarding]) if (win && !win.isDestroyed()) win.reload();
 }
