@@ -472,6 +472,11 @@ document.getElementById('api-key-link').addEventListener('click', () => {
   const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
   if (provider?.keyUrl) api.openLink(provider.keyUrl);
 });
+// The language of Judith (screen, voice, listening): changing it reloads the windows.
+for (const button of document.querySelectorAll('.lang button')) {
+  button.setAttribute('aria-pressed', String(button.dataset.lang === api.language));
+  button.addEventListener('click', () => button.dataset.lang !== api.language && api.setLanguage(button.dataset.lang));
+}
 document.getElementById('settings').addEventListener('click', openSettings);
 document.getElementById('settings-close').addEventListener('click', closeSettings);
 document.getElementById('settings-test').addEventListener('click', async (event) => {
