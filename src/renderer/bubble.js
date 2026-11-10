@@ -355,6 +355,9 @@ const providerSelect = document.getElementById('api-provider');
 const apiModel = document.getElementById('api-model');
 const apiKey = document.getElementById('api-key');
 const agentModel = document.getElementById('agent-model');
+const claudeFields = document.getElementById('claude-fields');
+const claudeModel = document.getElementById('claude-model');
+const claudeEffort = document.getElementById('claude-effort');
 const agentHands = document.getElementById('agent-hands');
 let settingsData = null;
 // The provider's models, asked on demand; the typed id (apiModel) always stays.
@@ -374,6 +377,8 @@ function refreshFields() {
   const engine = chosenEngine();
   apiFields.hidden = engine !== 'api';
   agentFields.hidden = engine !== 'codex' && engine !== 'cursor';
+  // Automatic: the fields of the engine that answers right now.
+  claudeFields.hidden = (engine === 'auto' ? settingsData?.engine : engine) !== 'claude-code';
   const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
   apiModel.placeholder = provider?.model ? t('par défaut : {model}', { model: provider.model }) : t('nom du modèle');
   apiKey.placeholder = provider?.hasKey ? t('clé enregistrée (laisser vide pour la garder)') : provider?.keyPrefix ? t('colle ta clé ({keyPrefix}…)', { keyPrefix: provider.keyPrefix }) : t('colle ta clé ici');
@@ -432,13 +437,15 @@ function renderSettings(data) {
   document.getElementById('hands-note').textContent = data.handsAvailable ? '' : t('Indisponible : le compagnon judith-hands.exe n’est pas installé (Windows seulement).');
   apiModel.value = data.apiModel ?? '';
   agentModel.value = data.agentModel ?? '';
+  claudeModel.value = data.model ?? '';
+  claudeEffort.value = data.effort ?? 'low';
   apiKey.value = '';
   refreshFields();
   if (chosenEngine() === 'api') modelPicker.load();
 }
 
 function formSettings() {
-  return { engine: chosenEngine(), apiProvider: providerSelect.value, apiModel: apiModel.value, apiKey: apiKey.value, agentModel: agentModel.value, agentHands: agentHands.checked };
+  return { engine: chosenEngine(), apiProvider: providerSelect.value, apiModel: apiModel.value, apiKey: apiKey.value, agentModel: agentModel.value, model: claudeModel.value, effort: claudeEffort.value, agentHands: agentHands.checked };
 }
 
 async function openSettings() {

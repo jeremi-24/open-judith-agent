@@ -118,6 +118,19 @@
       </div>
       <div class="settings-body">
       <fieldset class="engine-list" id="engine-list"><legend class="sr-only">Moteur</legend></fieldset>
+      <div class="fields" id="claude-fields" hidden>
+        <label for="claude-model">Modèle de Claude <span>(haiku : rapide, opus : plus fin)</span></label>
+        <input id="claude-model" list="claude-models" autocomplete="off" spellcheck="false">
+        <datalist id="claude-models"><option value="haiku"></option><option value="sonnet"></option><option value="opus"></option></datalist>
+        <label for="claude-effort">Effort de réflexion <span>(bas : réponse rapide)</span></label>
+        <select id="claude-effort">
+          <option value="low">Bas</option>
+          <option value="medium">Moyen</option>
+          <option value="high">Haut</option>
+          <option value="xhigh">Très haut</option>
+          <option value="max">Maximum</option>
+        </select>
+      </div>
       <div class="fields" id="agent-fields" hidden>
         <label for="agent-model">Modèle <span>(vide : celui par défaut de l'agent)</span></label>
         <input id="agent-model" autocomplete="off" spellcheck="false">

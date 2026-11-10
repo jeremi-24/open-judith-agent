@@ -4,7 +4,8 @@ import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
-import { configPath, loadConfig, saveConfig } from './config.js';
+import { configPath, DEFAULTS, loadConfig, saveConfig } from './config.js';
+import { checkClaudeSettings } from '../core/claude-settings.js';
 import { getKey, hasKey, setKey } from './secrets.js';
 import { detectEngines } from './detect.js';
 import { ensureVoice, localVoiceFor } from './models.js';
@@ -1109,7 +1110,7 @@ function engineOptions(kind, overrides = {}) {
     systemPrompt: buildSystemPrompt({ language: settings.language, annotations: settings.annotations, emotions: settings.voice === 'fish', board: settings.board, canLook }),
     // Speed: little thinking for a conversation, and Judith's tools loaded up
     // front (no ToolSearch round trip before looking at the screen).
-    claude: { claudePath: settings.claudePath, model: settings.model, extraArgs: claudeArgs, env: { ENABLE_TOOL_SEARCH: 'false' } },
+    claude: { claudePath: settings.claudePath, model: settings.model, extraArgs: [...claudeEffortArgs(settings.effort), ...claudeArgs], env: { ENABLE_TOOL_SEARCH: 'false' } },
     api: { provider: settings.apiProvider, model: settings.apiModel, baseUrl: settings.apiBaseUrl, key: overrides.apiKey || getKey(settings.apiProvider) },
     agentModel: settings.agentModel,
   };
@@ -1157,15 +1158,19 @@ function engineSettings() {
     apiProvider: config.apiProvider,
     apiModel: config.apiModel,
     agentModel: config.agentModel,
+    model: config.model,
+    effort: config.effort,
     agentHands: config.agentHands,
     handsAvailable: Boolean(hands?.available),
   };
 }
 
-const SETTING_KEYS = ['engine', 'apiProvider', 'apiModel', 'apiBaseUrl', 'agentModel'];
+const SETTING_KEYS = ['engine', 'apiProvider', 'apiModel', 'apiBaseUrl', 'agentModel', 'model', 'effort'];
+const claudeEffortArgs = (effort) => (effort ? ['--effort', effort] : []);
 function pickSettings(input = {}) {
   const out = {};
   for (const key of SETTING_KEYS) if (typeof input[key] === 'string') out[key] = input[key].trim();
+  Object.assign(out, checkClaudeSettings(out, DEFAULTS.model));
   if (out.engine && out.engine !== 'auto' && !ENGINES[out.engine]) throw new Error(`Unknown engine: ${out.engine}`);
   if (out.apiProvider && !PROVIDERS[out.apiProvider]) throw new Error(`Unknown provider: ${out.apiProvider}`);
   if (typeof input.agentHands === 'boolean') out.agentHands = input.agentHands;
@@ -1433,7 +1438,6 @@ app.whenReady().then(async () => {
   hands = createHands({ exe: process.platform === 'win32' ? findHands(root) : null, log: (text) => console.log(`[hands] ${text}`) });
   console.log(`[judith] hands (autonomous agent mode): ${hands.available ? (config.agentHands ? 'on' : 'installed, off in the settings') : 'not installed'}`);
   claudeArgs = [
-    ...(config.effort ? ['--effort', config.effort] : []),
     '--mcp-config', mcpConfig,
     '--allowedTools', ALLOWED_TOOLS.join(','),
     '--disallowedTools', DENIED_TOOLS.join(','),
