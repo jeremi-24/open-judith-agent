@@ -17,6 +17,12 @@ const PROFILES = {
 };
 const NO_SPEECH_MS = { normal: 7000, continuation: 1600, followUp: 5000 };
 const MAX_MS = 30000;
+// Push to talk: the user ends the question (shortcut or Stop), never silence.
+const PUSH_MAX_MS = 120000;
+// Talking over Judith: a sound that looks like speech is transcribed for this
+// long, and only real words (not music, not her own echo) interrupt her.
+const CONFIRM_MS = 1200;
+const words = (text) => String(text ?? '').split(/\s+/).filter((w) => /\p{L}{2,}/u.test(w)).length;
 
 const toPcm16 = (frame) => {
   const pcm = new Int16Array(frame.length);
@@ -33,6 +39,7 @@ export function createEars({ transcribe, filter, onLevel = () => {}, onPartial =
   let session = null;
   let attempt = 0;
   let watcher = null;
+  let push = false;
 
   function openDeepgram(onText, onFinal, onFail) {
     const params = new URLSearchParams({
@@ -116,7 +123,7 @@ export function createEars({ transcribe, filter, onLevel = () => {}, onPartial =
     if (stt?.provider === 'deepgram' && stt.key) {
       deepgram = openDeepgram(
         (text) => onPartial(text),
-        () => finish(false),
+        () => !push && finish(false),
         () => {
           // Network problem: Whisper takes over with the audio kept so far.
           deepgram = null;
@@ -133,8 +140,12 @@ export function createEars({ transcribe, filter, onLevel = () => {}, onPartial =
       const event = vad.push(level, ms);
       if (event === 'start') spoke = true;
       // Local mode ends on our VAD; Deepgram ends on its own detection.
-      if (event === 'end' && !deepgram) finish(true);
       const elapsed = performance.now() - startedAt;
+      if (push) {
+        if (elapsed > PUSH_MAX_MS) finish();
+        return;
+      }
+      if (event === 'end' && !deepgram) finish(true);
       if ((!spoke && elapsed > NO_SPEECH_MS[kind]) || elapsed > MAX_MS) finish();
     });
 
@@ -157,15 +168,44 @@ export function createEars({ transcribe, filter, onLevel = () => {}, onPartial =
     } catch {
       return;
     }
-    const vad = createVad(PROFILES.watch);
+    let vad = createVad(PROFILES.watch);
+    let heard = null; // frames since a sound that looks like speech
+    let heardMs = 0;
+    let checking = false;
+    const confirm = async () => {
+      checking = true;
+      const audio = concat(heard);
+      heard = null;
+      let text = '';
+      try {
+        text = await filter(await transcribe(audio), { bargeIn: true });
+      } catch {}
+      checking = false;
+      vad = createVad(PROFILES.watch);
+      if (watcher && words(text) >= 2) onSpeech(text);
+    };
     watcher = onFrames((frame, level, ms) => {
-      if (vad.push(level, ms) === 'start') onSpeech();
+      if (checking) return;
+      if (heard) {
+        heard.push(frame);
+        heardMs += ms;
+        if (heardMs >= CONFIRM_MS) confirm();
+        return;
+      }
+      if (vad.push(level, ms) === 'start') {
+        heard = [preroll(), frame];
+        heardMs = 0;
+      }
     });
   }
 
   return {
     configure(next) {
       stt = next ?? null;
+    },
+    // Push to talk on or off (noisy places).
+    setPush(on) {
+      push = Boolean(on);
     },
     start,
     finish: () => session?.finish(),

@@ -7,6 +7,10 @@
 //   say Ensuite, choisis le format MP4.
 //   board Exporter une vidéo | Les réglages qui comptent
 //   note Le MP4 se lit partout
+//   scene 2                (moves the 3D scene to its 2nd step)
+//   zone 2                 (several zones: the drawing lines that follow are in zone 2)
+//   done                   (agent mode: the goal is reached)
+//   act click 0.42 0.18 | Exporter   (autonomous agent mode: Judith clicks herself)
 //
 // Coordinates are fractions (0..1) of the screenshot; ring and box take the
 // corners of the element (left top right bottom), or a single point.
@@ -23,6 +27,33 @@ function splitLabel(rest) {
 function numbers(text) {
   const parts = text.split(/[\s,]+/).filter(Boolean);
   return parts.every((p) => NUMBER.test(p)) ? parts.map(Number) : null;
+}
+
+// "click 0.4 0.2 | Exporter", "click 0.4 0.2 right | …", "type bonjour | Recherche",
+// "key ctrl+s", "scroll 0.5 0.5 -3" → { action, … } or null.
+export function parseAction(rest) {
+  const space = rest.trim().indexOf(' ');
+  const verb = (space < 0 ? rest.trim() : rest.trim().slice(0, space)).toLowerCase();
+  const args = space < 0 ? '' : rest.trim().slice(space + 1);
+  const [main, label] = splitLabel(args);
+  switch (verb) {
+    case 'click': {
+      const parts = main.split(/\s+/).filter(Boolean);
+      const button = ['right', 'double'].includes(parts[2]?.toLowerCase()) ? parts[2].toLowerCase() : 'left';
+      const n = numbers(parts.slice(0, 2).join(' '));
+      return n?.length === 2 ? { action: 'click', x: clamp01(n[0]), y: clamp01(n[1]), button, label } : null;
+    }
+    case 'type':
+      return main ? { action: 'type', text: main, label } : null;
+    case 'key':
+      return main ? { action: 'key', combo: main.toLowerCase().replace(/\s+/g, '') } : null;
+    case 'scroll': {
+      const n = numbers(main);
+      return n?.length === 3 ? { action: 'scroll', x: clamp01(n[0]), y: clamp01(n[1]), notches: Math.max(-15, Math.min(15, Math.round(n[2]))) } : null;
+    }
+    default:
+      return null;
+  }
 }
 
 export function parseLine(raw) {
@@ -45,6 +76,30 @@ export function parseLine(raw) {
       const [y1, y2] = [Math.min(top, bottom), Math.max(top, bottom)];
       return { type: 'mark', shape: word, x: (x1 + x2) / 2, y: (y1 + y2) / 2, w: x2 - x1, h: y2 - y1, label };
     }
+    case 'arrow': {
+      // A hand-drawn arrow from one thing to another: a link, a flow, a cause.
+      const [coords, label] = splitLabel(rest);
+      const n = numbers(coords);
+      if (!n || n.length !== 4) return null;
+      const [x1, y1, x2, y2] = n.map(clamp01);
+      if (x1 === x2 && y1 === y2) return null;
+      return { type: 'mark', shape: 'arrow', points: [[x1, y1], [x2, y2]], x: (x1 + x2) / 2, y: (y1 + y2) / 2, w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), label };
+    }
+    case 'underline': {
+      // A line under a word, a title or a number: left, the y just under the
+      // text, right (four numbers, as for a box, are read as its bottom edge).
+      const [coords, label] = splitLabel(rest);
+      const n = numbers(coords);
+      if (!n || (n.length !== 3 && n.length !== 4)) return null;
+      const [a, y1, b, y2 = y1] = n.map(clamp01);
+      const [x1, x2] = [Math.min(a, b), Math.max(a, b)];
+      if (x1 === x2) return null;
+      const y = Math.max(y1, y2);
+      // The mark's own box is the line of text above the stroke: that is the
+      // content it belongs to (and what is watched for changes).
+      const TEXT = 0.024;
+      return { type: 'mark', shape: 'underline', points: [[x1, y], [x2, y]], x: (x1 + x2) / 2, y: Math.max(0, y - TEXT / 2), w: x2 - x1, h: TEXT, label };
+    }
     case 'shape': {
       const [coords, label] = splitLabel(rest);
       const n = numbers(coords);
@@ -59,6 +114,16 @@ export function parseLine(raw) {
     }
     case 'step':
       return rest.trim() ? { type: 'step', text: rest.trim() } : null;
+    case 'scene': {
+      // The voice reached step n of the 3D scene (1-based).
+      const n = Number(rest.trim());
+      return Number.isInteger(n) && n >= 1 ? { type: 'scene', step: n } : { type: 'say', text: line };
+    }
+    case 'zone': {
+      // Several zones were shared: the next drawing lines are in zone n (1-based).
+      const n = Number(rest.trim());
+      return Number.isInteger(n) && n >= 1 ? { type: 'zone', n } : { type: 'say', text: line };
+    }
     case 'board': {
       const [title, subtitle] = splitLabel(rest);
       return title ? { type: 'board', title, subtitle } : null;
@@ -67,6 +132,17 @@ export function parseLine(raw) {
       return rest.trim() ? { type: 'note', text: rest.trim() } : null;
     case 'clear':
       return { type: 'clear' };
+    case 'act': {
+      // Agent mode, autonomous: an action Judith does herself (checked by guard.js).
+      const action = parseAction(rest);
+      return action ? { type: 'act', ...action } : { type: 'say', text: line };
+    }
+    case 'propose':
+      // A task in several steps: Judith offers to guide it to the end.
+      return rest.trim() ? { type: 'propose', goal: rest.trim() } : null;
+    case 'done':
+      // Agent mode: the goal is reached (an optional last sentence is spoken).
+      return { type: 'done', text: rest.trim() };
     default:
       // Not a command: Judith says it.
       return { type: 'say', text: line };

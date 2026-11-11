@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { findLinks, isCreation, speakable } from '../src/core/links.js';
-import { fromZone, toZone, zoneFrom, zonePixels } from '../src/core/zone.js';
+import { MAX_ZONES, addZone, frameOf, fromZone, removeZone, toZone, zoneFrom, zonePixels } from '../src/core/zone.js';
 
 const ANSWER = 'Document de test créé : [Document de test](https://claude.ai/artifact/K77JhqN9zisbQS4MizgoU1). Tu peux le lire.';
 
@@ -31,4 +31,19 @@ test('marks and pointer go between zone and display coordinates', () => {
   assert.deepEqual([inside.x, inside.y].map((v) => +v.toFixed(6)), [0.5, 0.5]);
   assert.equal(toZone({ x: 0.1, y: 0.4 }, zone), null);
   assert.deepEqual(zonePixels(zone, { width: 1920, height: 1080 }), { x: 960, y: 216, width: 960, height: 432 });
+});
+
+test('several zones: added in order, at most four, removable, found by number', () => {
+  const z = (n) => ({ x1: n / 10, y1: 0, x2: n / 10 + 0.1, y2: 0.2 });
+  let zones = [];
+  for (let n = 1; n <= MAX_ZONES + 2; n++) zones = addZone(zones, z(n));
+  assert.equal(zones.length, MAX_ZONES);
+  assert.deepEqual(zones[3], z(4), 'the fifth is refused, nothing is replaced');
+  assert.deepEqual(addZone(zones, null), zones);
+  assert.deepEqual(removeZone(zones, 1).map((v) => v.x1), [0.1, 0.3, 0.4]);
+  assert.deepEqual(frameOf(zones, 2), z(2));
+  assert.deepEqual(frameOf(zones), z(1), 'no "zone" line: the first zone');
+  assert.deepEqual(frameOf(zones, 9), z(1), 'an unknown number: the first zone');
+  assert.equal(frameOf([], 1), null);
+  assert.equal(frameOf(undefined, 1), null);
 });

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Judith's UI Automation companion. .NET Framework 4.8 is part of
+       Windows 10/11, so the exe needs no runtime and stays tiny.
+       Build: dotnet build companions/eyes -c Release
+       Output: companions/eyes/bin/Release/net48/judith-eyes.exe -->
+  <PropertyGroup>
+    <!-- WinExe: no console window flashes; stdin/stdout still work when piped. -->
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>judith-eyes</AssemblyName>
+    <RootNamespace>JudithEyes</RootNamespace>
+    <LangVersion>7.3</LangVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
+    <Reference Include="WindowsBase" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The .NET Framework reference assemblies, so any machine with the
+         .NET SDK can build it (no Visual Studio needed). -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

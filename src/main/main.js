@@ -1,16 +1,24 @@
-import { app, clipboard, ClipboardItem, globalShortcut, ipcMain, Menu, nativeImage, Notification, screen, session as sessions, shell, Tray } from 'electron';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { app, globalShortcut, ipcMain, Menu, nativeImage, protocol, screen, session as sessions, shell, Tray } from 'electron';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
-import { configPath, loadConfig } from './config.js';
-import { ensureVoice } from './models.js';
-import { captureDisplay, captureFull, captureSmall } from './capture.js';
-import { BOARD_WIDTH, createBoard, createBubble, createOverlay, setCaptureProtection } from './windows.js';
+import { DEFAULTS, loadConfig, saveConfig } from './config.js';
+import { checkClaudeSettings } from '../core/claude-settings.js';
+import { detectClaude } from './detect.js';
+import { ensureVoice, localVoiceFor } from './models.js';
+import { captureDisplay, captureSmall, captureThumb, captureZones } from './capture.js';
+import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOnboarding, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
 import { ClaudeCodeEngine } from '../engine/claude-code.js';
-import { buildSystemPrompt, buildUserContent, describeApproval, describeTool } from '../core/prompt.js';
+import { LANGUAGES, normalizeLanguage, setLanguage, t } from '../core/i18n.js';
+import { fitBoard } from '../core/board-size.js';
+import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
+import { markBox, pickSnap, snapMark } from '../core/snap.js';
+import { createEyes, findEyes } from './eyes.js';
+import { createHands, findHands } from './hands.js';
+import { runActions } from '../core/pilot.js';
 import { averageLuma, bestShift, CHANGED, markCore, markRect, regionDiff, STALE } from '../core/pixels.js';
 import { inkFor } from '../core/ink.js';
 import { createScriptReader } from '../core/script.js';
@@ -19,40 +27,51 @@ import { decodeWav } from '../core/audio.js';
 import { stripEmotions } from '../core/emotions.js';
 import { needsScreen } from '../core/needs-screen.js';
 import { findLinks, isCreation, speakable } from '../core/links.js';
-import { fromZone, toZone } from '../core/zone.js';
-import { addReminder, describeWhen, dueReminders } from '../core/reminders.js';
+import { MAX_ZONES, addZone, frameOf, fromZone, removeZone, toZone } from '../core/zone.js';
+import { shortcutAction } from '../core/shortcut.js';
+import { createVisualStore, FRAME_SCHEME, resolveFrame } from './frames.js';
+import { AGENT_IDLE_MS, AGENT_NEXT, createAgent, createProgressWatch } from '../core/agent.js';
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const config = loadConfig();
+setLanguage(config.language);
+// Answered before any page draws, so each one starts in the right language.
+ipcMain.on('judith:language', (event) => {
+  event.returnValue = config.language;
+});
 const root = join(import.meta.dirname, '..', '..');
 // The installer adds a version with transparent rounded corners (tray, notifications).
 const iconPath = [join(root, 'assets', 'icon-rounded.png'), join(root, 'assets', 'icon.png')].find(existsSync);
 let bubble, overlay, board, tray, engine, warmingUp;
+// Windows UI Automation, to snap marks onto the real controls (optional).
+let eyes = null;
 
 // Tools Judith may use without asking: opening things, reading, showing.
 // Everything else (editing files, running commands) goes through the notch.
 const ALLOWED_TOOLS = [
-  'mcp__judith__open_app',
-  'mcp__judith__find_apps',
-  'mcp__judith__open_url',
-  'mcp__judith__open_path',
-  'mcp__judith__show_visual',
   'mcp__judith__look_at_screen',
-  'mcp__judith__copy_screenshot',
-  'mcp__judith__set_reminder',
-  'mcp__judith__list_reminders',
-  'mcp__judith__cancel_reminder',
+  'mcp__judith__show_visual',
+  'mcp__judith__show_scene',
   'Read',
   'Glob',
   'Grep',
   'WebSearch',
   'WebFetch',
+  // Visual explanations Claude Code makes with the user's own tools: artifacts
+  // (pages, diagrams) and documents. They publish content; they do not touch
+  // the computer. Judith shows them as a card and opens them in the browser.
+  'Artifact',
+  'mcp__claude_ai_Claude_Docs',
 ];
+// Judith explains and points; she never acts on the computer. Tools that
+// change something are refused outright (headless Claude Code would refuse
+// any tool not allowed above anyway; this list makes it explicit).
+const DENIED_TOOLS = ['Bash', 'PowerShell', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'CronCreate', 'CronDelete', 'CronList'];
 
 // The display Judith works on, and a tiny copy of the screen as she last saw
 // it (to notice when it changes under her marks).
-let session = { display: null, reference: null };
+let session = { display: null, reference: null, zones: [], thumbs: [], frames: [] };
 
 function send(win, event, data) {
   if (win && !win.isDestroyed()) win.webContents.send(`judith:${event}`, data);
@@ -73,93 +92,29 @@ async function withoutJudith(capture) {
   } finally {
     bubble.setOpacity(1);
     board.setOpacity(1);
-    if (session.zone || shownMarks.length) overlay.showInactive();
+    if (session.zones?.length || shownMarks.length) showOverlay();
   }
 }
 
-// With a zone drawn by the user, only that zone is sent: Claude's coordinates
-// are then fractions of the zone (session.frame) until the next look.
-// The tiny reference copy is taken the same way as the later checks, so
-// only real changes count.
+// The overlay is shown without focus; the notch (and its X) must stay above it,
+// or the full-screen overlay would sit over the buttons.
+function showOverlay() {
+  overlay.showInactive();
+  bubble.moveTop();
+}
+
+// With zones drawn by the user, only those zones are sent (one image each):
+// Claude's coordinates are then fractions of a zone (session.frames) until
+// the next look. The tiny reference copy is taken the same way as the later
+// checks, so only real changes count.
 async function look(display) {
-  const zone = session.zone;
-  session.frame = zone;
-  return withoutJudith(async () => ({ ...(await captureDisplay(display, zone)), small: await captureSmall(display) }));
-}
-
-// The copy_screenshot tool: the screen (or the zone the user drew) goes to
-// the clipboard, ready to paste in WhatsApp, Discord, a mail…, and is saved
-// as a PNG in Pictures\Judith. Judith never sends it herself.
-async function copyScreenshot() {
-  const display = session.display ?? cursorDisplay();
-  try {
-    const image = await withoutJudith(() => captureFull(display, session.zone));
-    const png = image.toPNG();
-    // Electron 44's clipboard follows the web API: items of Blobs, async.
-    await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]);
-    const folder = join(app.getPath('pictures'), 'Judith');
-    mkdirSync(folder, { recursive: true });
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
-    const path = join(folder, `judith-${stamp}.png`);
-    writeFileSync(path, png);
-    const { width, height } = image.getSize();
-    console.log(`[judith] screenshot copied (${width}x${height}) and saved to ${path}`);
-    return { path, width, height, zone: Boolean(session.zone) };
-  } catch (error) {
-    console.error('[judith] copy screenshot failed:', error.message);
-    return { error: error.message };
-  }
-}
-
-// ----- reminders: Judith says them out loud at their time -----
-// Saved in reminders.json, so a restart loses nothing; one missed while
-// Judith was off is given as soon as she starts again.
-const REMINDER_CHECK_MS = 15_000;
-let reminders = [];
-const remindersPath = () => join(app.getPath('userData'), 'reminders.json');
-function saveReminders() {
-  try {
-    writeFileSync(remindersPath(), JSON.stringify(reminders, null, 2));
-  } catch (error) {
-    console.error('[judith] reminders not saved:', error.message);
-  }
-}
-function startReminders() {
-  try {
-    reminders = JSON.parse(readFileSync(remindersPath(), 'utf8'));
-  } catch {
-    reminders = [];
-  }
-  const check = () => {
-    const { due, rest } = dueReminders(reminders);
-    if (!due.length) return;
-    reminders = rest;
-    saveReminders();
-    for (const reminder of due) {
-      console.log(`[judith] reminder: ${reminder.text}`);
-      new Notification({ title: 'Judith · Rappel', body: reminder.text, icon: iconPath }).show();
-      send(bubble, 'reminder', { text: reminder.text });
-    }
-  };
-  check();
-  setInterval(check, REMINDER_CHECK_MS);
-}
-// The reminder tools (set, list, cancel), through the bridge.
-function reminderTool({ action, when, text, id }) {
-  if (action === 'set') {
-    const result = addReminder(reminders, { when, text });
-    if (result.error) return { error: result.error };
-    reminders = result.list;
-    saveReminders();
-    return { ...result.reminder, said: describeWhen(result.reminder.at) };
-  }
-  if (action === 'cancel') {
-    const before = reminders.length;
-    reminders = reminders.filter((r) => id !== 'all' && r.id !== id);
-    saveReminders();
-    return { cancelled: before - reminders.length };
-  }
-  return { reminders: reminders.map((r) => ({ ...r, said: describeWhen(r.at) })) };
+  const zones = session.zones ?? [];
+  session.frames = zones;
+  return withoutJudith(async () => {
+    if (!zones.length) return { ...(await captureDisplay(display)), small: await captureSmall(display) };
+    const { images } = await captureZones(display, zones);
+    return { images, mediaType: images[0].mediaType, data: images[0].data, small: await captureSmall(display) };
+  });
 }
 
 // Summoning is instant: Judith looks at the screen only if the question needs
@@ -171,27 +126,58 @@ async function summon() {
   const cursor = screen.getCursorScreenPoint();
   const { x, y, width, height } = display.bounds;
   const pointer = { x: (cursor.x - x) / width, y: (cursor.y - y) / height };
-  session = { display, reference: null, pointer, zone: null, frame: null };
-  send(overlay, 'zone', null);
+  session = { display, reference: null, pointer, zones: [], thumbs: [], frames: [] };
+  publishZones();
 
-  bubbleAtRest = false; // the open notch is glued to the top edge
-  placeBubble(display, bubble.getBounds());
+  placeBubble(display);
   bubble.show();
   bubble.focus();
   const ears = liveEars();
   // No conversation in demo mode: nobody is there to answer.
-  const conversation = config.conversation && !process.env.JUDITH_DEMO;
-  send(bubble, 'focus', { conversation, interruptions: config.interruptions, stt: ears });
+  // Push to talk: listening ends only on the shortcut (or Stop), so music and
+  // voices around never decide when the question ends; no follow-up listening.
+  const push = config.listenMode === 'push';
+  const conversation = config.conversation && !push && !process.env.JUDITH_DEMO;
+  send(bubble, 'focus', { conversation, interruptions: config.interruptions && !push, stt: ears, push });
 }
 
-// ----- the zone: the user draws the part of the screen to explain -----
+// ----- the zones: the user draws the parts of the screen to explain -----
 // The overlay catches the mouse while the user drags a rectangle (Escape or
 // a simple click cancels); then it only shows the zone's frame. Judith keeps
 // listening meanwhile: "c'est quoi ça ?" can be said while drawing.
+// A second zone does not replace the first: the first stays, numbered, as a
+// thumbnail in the notch, and so on up to MAX_ZONES. The conversation ending
+// (or the thumbnail's cross) removes them.
 let zonePicking = null;
 let settleZone = null;
+
+// The zones go to the overlay (numbered frames) and to the notch (thumbnails).
+function publishZones() {
+  send(overlay, 'zones', session.zones ?? []);
+  send(bubble, 'zones', (session.zones ?? []).map((zone, i) => ({ n: i + 1, thumb: session.thumbs?.[i] ?? '' })));
+}
+
+// A small picture of the zone just drawn, for its thumbnail.
+async function makeThumb(zone) {
+  const display = session.display ?? cursorDisplay();
+  try {
+    const thumb = await withoutJudith(() => captureThumb(display, zone));
+    const i = session.zones.indexOf(zone);
+    if (i >= 0) {
+      session.thumbs[i] = thumb;
+      publishZones();
+    }
+  } catch (error) {
+    console.error('[judith] thumbnail failed:', error.message);
+  }
+}
+
 function pickZone() {
   if (zonePicking) return zonePicking;
+  if ((session.zones ?? []).length >= MAX_ZONES) {
+    send(bubble, 'notice', t('{max} zones au maximum : retire-en une avec sa croix.', { max: MAX_ZONES }));
+    return Promise.resolve(null);
+  }
   const display = session.display ?? cursorDisplay();
   session.display = display;
   overlay.setBounds(display.bounds);
@@ -208,39 +194,55 @@ function pickZone() {
       overlay.setIgnoreMouseEvents(true);
       overlay.setFocusable(false);
       send(overlay, 'select', false);
-      session.zone = zone;
-      send(overlay, 'zone', zone);
-      send(bubble, 'zone', Boolean(zone));
-      if (!zone && !shownMarks.length) overlay.hide();
-      if (zone) console.log(`[judith] zone ${JSON.stringify(Object.values(zone).map((v) => +v.toFixed(3)))}`);
+      const zones = addZone(session.zones ?? [], zone);
+      const added = zones.length > (session.zones ?? []).length;
+      session.zones = zones;
+      if (added) session.thumbs = [...(session.thumbs ?? []), ''];
+      publishZones();
+      if (!session.zones.length && !shownMarks.length) overlay.hide();
+      if (zone) console.log(`[judith] zone ${session.zones.length}: ${JSON.stringify(Object.values(zone).map((v) => +v.toFixed(3)))}`);
       bubble.focus();
       resolve(zone);
+      if (added) makeThumb(zone);
     };
   });
   return zonePicking;
 }
 
-// The conversation is over (or cancelled): the zone goes, the marks stay.
+// The conversation is over (or cancelled): the zones go, the marks stay.
 function dropZone() {
-  if (settleZone) return settleZone(null);
-  if (!session.zone) return;
-  session.zone = null;
-  send(overlay, 'zone', null);
-  send(bubble, 'zone', false);
+  if (settleZone) settleZone(null);
+  if (!session.zones?.length) return;
+  session.zones = [];
+  session.thumbs = [];
+  publishZones();
   if (!shownMarks.length) overlay.hide();
 }
 
+// The cross of a thumbnail: that zone goes, the others are renumbered.
+function dropOneZone(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= (session.zones?.length ?? 0)) return;
+  session.zones = removeZone(session.zones, index);
+  session.thumbs = removeZone(session.thumbs ?? [], index);
+  publishZones();
+  if (!session.zones.length && !shownMarks.length) overlay.hide();
+}
+
+// The zone shortcut: summons Judith and draws a zone; during a conversation it
+// adds a zone to the ones already drawn.
 function summonWithZone() {
+  if (notchState !== 'none' && notchState !== 'settings' && session.display) return void pickZone();
   summon();
   pickZone();
 }
 
-// ----- what Claude creates: documents, artifacts, designs, pages -----
+// ----- what Claude creates: artifacts, visuals, documents, pages -----
 // Claude Code would show them in its own app; Judith has no such pane, so
-// she shows a card in the notch and opens creations in the browser.
+// she shows a card in the notch and opens the creation in the browser.
+// Links named in an answer become cards too (opened by the user's click).
 let turnLinks = new Map();
 let openedCreation = false;
-// titled: the title comes from the answer ("[Mon doc](…)"), better than the
+// titled: the title comes from the answer ("[Mon schéma](…)"), better than the
 // default one found in a tool result.
 function addLink(link, { titled = true } = {}) {
   if (!/^https?:\/\//i.test(link.url)) return;
@@ -264,7 +266,7 @@ function creationsIn(text) {
 
 // ----- voice in, cloud: Deepgram live listening (the user's own key) -----
 // Words Judith should hear right, whatever the accent.
-const KEYTERMS = ['Judith', 'Claude Code', 'GitHub', 'VS Code', 'VLC', 'CapCut', 'Blender', 'pull request', "capture d'écran", 'WhatsApp', 'Discord'];
+const KEYTERMS = ['Judith', 'Claude Code', 'GitHub', 'VS Code', 'VLC', 'CapCut', 'Blender', 'pull request', "capture d'écran", 'screenshot', 'WhatsApp', 'Discord'];
 function liveEars() {
   const key = config.deepgramKey || process.env.DEEPGRAM_API_KEY;
   if (config.speechInput !== 'deepgram' || !key) return null;
@@ -297,7 +299,7 @@ function startSpeech() {
 }
 
 function transcribe(audio) {
-  if (!speech || !speechReady) return Promise.reject(new Error("La voix n'est pas encore prête, écris ta question."));
+  if (!speech || !speechReady) return Promise.reject(new Error(t("La voix n'est pas encore prête, écris ta question.")));
   const id = ++speechJob;
   return new Promise((resolve, reject) => {
     speechJobs.set(id, { resolve, reject });
@@ -311,11 +313,16 @@ let ttsReady = false;
 let ttsJob = 0;
 const ttsJobs = new Map();
 async function startVoice() {
-  // Siwis also backs up the cloud voice when it fails.
+  // The local voice of the language also backs up the cloud voice when it fails.
+  if (tts) {
+    tts.removeAllListeners('exit');
+    tts.kill();
+    tts = null;
+    ttsReady = false;
+  }
   if (!config.voice || config.voice === 'windows') return;
   try {
-    // A cloud voice keeps Siwis ready as its backup.
-    const local = config.voice === 'elevenlabs' || config.voice === 'fish' ? 'siwis' : config.voice;
+    const local = localVoiceFor(config.language);
     const voice = await ensureVoice(local, join(app.getPath('userData'), 'models'));
     tts = fork(join(import.meta.dirname, 'tts-process.js'), [], {
       serialization: 'advanced', // typed arrays cross the pipe as they are
@@ -443,6 +450,7 @@ function streamVoice(text) {
 }
 
 function speakLocal(text) {
+  // Until the voice of the language is loaded, the notch uses Windows voices.
   if (!tts || !ttsReady) return Promise.resolve(null); // the notch falls back to Windows voices
   const id = ++ttsJob;
   if (process.env.JUDITH_DEMO) console.log('[judith] says', JSON.stringify(text.slice(0, 50)));
@@ -454,14 +462,15 @@ function speakLocal(text) {
 
 // ----- the notch -----
 // Glued to the very top of the screen, always centered.
-// At rest, a pill a few pixels below the top edge: what is right under
-// the edge (tabs, title bars) stays clickable.
-const REST_GAP = 6;
-let bubbleAtRest = true;
-function placeBubble(display, { width, height }) {
+// The window is a fixed transparent stage: it is only moved, never resized.
+// At rest the pill sits a few pixels below the edge (bubble.css), and the
+// stage lets clicks through around it, so tabs and title bars stay clickable.
+function placeBubble(display) {
   const { x, y, width: screenWidth } = display.bounds;
-  bubble.setBounds({ x: Math.round(x + (screenWidth - width) / 2), y: y + (bubbleAtRest ? REST_GAP : 0), width, height });
+  bubble.setPosition(Math.round(x + (screenWidth - BUBBLE_WIDTH) / 2), y);
 }
+// The notch's state as the page shows it (none, listening, thinking, speaking).
+let notchState = 'none';
 
 // Back to the small idle notch.
 function hide() {
@@ -482,6 +491,10 @@ let shownMarks = [];
 let watcher = null;
 let lastSmall = null; // { at, shot }: one tiny capture serves several marks
 let scanning = false;
+// With "hideFromScreenRecordings": false (to film demos), Judith's windows are
+// in the captures: her own strokes would look like a screen that changed, and
+// the next marks would be dropped. Marks are then not compared with the screen.
+const inkIsCaptured = () => !config.hideFromScreenRecordings;
 
 async function screenNow(display) {
   if (lastSmall && Date.now() - lastSmall.at < 400) return lastSmall.shot;
@@ -491,12 +504,41 @@ async function screenNow(display) {
 }
 
 // Judith's own windows move and change: never compare what is under them.
+// The notch's visible rect inside its (bigger, transparent) window, sent by the
+// notch itself: the rest of that window shows the user's apps.
+let notchBox = null;
 function ownAreas(display) {
   const { x, y, width, height } = display.bounds;
   return [bubble, board]
     .filter((w) => w.isVisible())
-    .map((w) => w.getBounds())
+    .map((w) => {
+      const b = w.getBounds();
+      return w === bubble && notchBox ? { x: b.x + notchBox.x, y: b.y + notchBox.y, width: notchBox.width, height: notchBox.height } : b;
+    })
     .map((b) => ({ x1: (b.x - x) / width, y1: (b.y - y) / height, x2: (b.x + b.width - x) / width, y2: (b.y + b.height - y) / height }));
+}
+
+// A ring or box lands on the real control under it: the model's box is only
+// approximate (often ~30 px off on small icons); Windows knows the exact one.
+async function snapToControl(mark, display) {
+  if (!eyes?.available || (mark.shape !== 'ring' && mark.shape !== 'box') || !(mark.w > 0 && mark.h > 0)) return mark;
+  const { bounds } = display;
+  const onWindows = process.platform === 'win32';
+  const dip = { x: Math.round(bounds.x + mark.x * bounds.width), y: Math.round(bounds.y + mark.y * bounds.height) };
+  const point = onWindows ? screen.dipToScreenPoint(dip) : dip;
+  const elements = await eyes.around(point.x, point.y);
+  if (!elements?.length) return mark;
+  const candidates = elements.map((e) => {
+    const r = onWindows ? screen.screenToDipRect(null, { x: e.x, y: e.y, width: e.w, height: e.h }) : { x: e.x, y: e.y, width: e.w, height: e.h };
+    return {
+      name: e.name,
+      type: e.type,
+      rect: { x1: (r.x - bounds.x) / bounds.width, y1: (r.y - bounds.y) / bounds.height, x2: (r.x + r.width - bounds.x) / bounds.width, y2: (r.y + r.height - bounds.y) / bounds.height },
+    };
+  });
+  const rect = pickSnap(markBox(mark), mark.label, candidates);
+  if (rect) console.log(`[judith] mark "${mark.label}" snapped onto the real control`);
+  return snapMark(mark, rect);
 }
 
 async function drawMark(mark) {
@@ -508,7 +550,7 @@ async function drawMark(mark) {
     send(overlay, 'scan', false);
     await wait(150);
   }
-  if (session.reference) {
+  if (session.reference && !inkIsCaptured()) {
     const now = await screenNow(display).catch(() => null);
     // The content may have moved a little (icons re-centred, a small scroll):
     // the mark follows it. If it is nowhere near, the mark is dropped.
@@ -533,9 +575,10 @@ async function drawMark(mark) {
       return;
     }
   }
+  mark = await snapToControl(mark, display);
   if (!overlay.isVisible()) {
     overlay.setBounds(bounds);
-    overlay.showInactive();
+    showOverlay();
   }
   // The ink that stays readable on what is under the mark.
   const ground = session.reference ?? (await screenNow(display).catch(() => null));
@@ -556,6 +599,8 @@ function watchMarks(display) {
   watcher = setTimeout(async function tick() {
     if (!shownMarks.length) return;
     if (Date.now() - startedAt > MARK_LIFETIME_MS) return clearMarks();
+    // Her own ink is in the captures: only the lifetime ends the marks.
+    if (inkIsCaptured()) return void (watcher = setTimeout(tick, WATCH_EVERY_MS));
     try {
       const now = await captureSmall(display);
       if (!baseline) baseline = now;
@@ -593,20 +638,22 @@ function clearMarks() {
   shownMarks = [];
   send(overlay, 'clear');
   // The frame of the zone the user drew stays.
-  if (!session.zone && !zonePicking) overlay?.hide();
+  if (!session.zones?.length && !zonePicking && !piloting) overlay?.hide();
 }
 
 // ----- the board: notes, visuals and what Claude Code did -----
 // Bottom-left corner, growing upwards: tabs and toolbars stay visible.
-function placeBoard(height) {
+// size: { width, height } as the board asks (a plain number is a height, as before).
+function placeBoard(size) {
   const { workArea } = session.display ?? cursorDisplay();
-  const h = Math.min(workArea.height - 120, Math.max(80, Math.ceil(height)));
-  board.setBounds({ x: workArea.x + 8, y: workArea.y + workArea.height - h - 8, width: BOARD_WIDTH, height: h });
+  const asked = typeof size === 'number' ? { height: size } : size ?? {};
+  const { width, height } = fitBoard({ width: asked.width ?? board.getBounds().width, height: asked.height }, workArea);
+  board.setBounds({ x: workArea.x + 8, y: workArea.y + workArea.height - height - 8, width, height });
 }
 
 function showBoard() {
   if (board.isVisible()) return;
-  placeBoard(board.getBounds().height);
+  placeBoard({ height: board.getBounds().height });
   board.showInactive();
 }
 
@@ -629,12 +676,45 @@ function preview(path) {
       .replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
     html = `<pre style="font:12px/1.5 Consolas,monospace;white-space:pre-wrap;margin:0">${escaped}</pre>`;
   }
+  showVisualFrame(name, html);
+}
+
+// ----- 3D scenes (show_scene) -----
+// The board runs the model's code in a sandboxed frame and says whether it
+// worked; the tool waits for that, so the model can fix its code or explain
+// with words and marks instead. Code that hangs (an endless loop) freezes the
+// board: after SCENE_TIMEOUT its renderer is crashed and reloaded.
+const SCENE_TIMEOUT = 5000;
+let sceneWait = null;
+let sceneCount = 0;
+function showScene(title, code) {
+  sceneWait?.resolve({ ok: false, error: 'replaced by a newer scene' });
+  const id = ++sceneCount;
   showBoard();
-  send(board, 'visual', { title: name, html });
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (sceneWait?.id !== id) return;
+      sceneWait = null;
+      console.warn('[judith] 3D scene timed out: reloading the board');
+      board.webContents.forcefullyCrashRenderer();
+      board.reload();
+      resolve({ ok: false, error: `The scene did not answer within ${SCENE_TIMEOUT / 1000} s (endless loop or too heavy) and was stopped.` });
+    }, SCENE_TIMEOUT);
+    sceneWait = {
+      id,
+      resolve: (result) => {
+        clearTimeout(timer);
+        sceneWait = null;
+        resolve(result);
+      },
+    };
+    send(board, 'scene', { id, title, code, seenImage: lastSeen });
+  });
 }
 
 // What Judith's script asks to show, when its sentence starts.
 function show(command) {
+  if (command.type === 'scene') return send(board, 'scene-step', { step: command.step });
   if (command.type === 'mark') return drawMark(command);
   if (command.type === 'clear') return clearMarks();
   if ((command.type === 'board' || command.type === 'note') && !config.board) return;
@@ -649,7 +729,7 @@ function show(command) {
 }
 
 // Every action Claude Code takes appears on the board.
-const QUIET_TOOLS = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'ToolSearch', 'mcp__judith__find_apps', 'mcp__judith__approve', 'mcp__judith__look_at_screen']);
+const QUIET_TOOLS = new Set(['Read', 'Glob', 'Grep', 'TodoWrite', 'ToolSearch', 'mcp__judith__look_at_screen']);
 const actions = new Map();
 function trackTool({ id, name, input }) {
   if (QUIET_TOOLS.has(name)) return;
@@ -684,18 +764,29 @@ let lastAsk = null;
 // Everything sent to the notch carries it, so a cancelled turn is ignored.
 let activeTurn = 0;
 // The look_at_screen tool: capture, then a dashed scan while Judith reads it.
+// lastSeen: that screenshot, shown as "Ce que j'ai vu" next to a 3D scene.
+let lastSeen = null;
 async function lookForJudith() {
   mark('look');
   const display = session.display ?? cursorDisplay();
   try {
     const shot = await look(display);
     session.reference = shot.small;
+    lastSeen = `data:${shot.mediaType};base64,${shot.data}`;
     overlay.setBounds(display.bounds);
-    overlay.showInactive();
+    showOverlay();
     scanning = true;
     send(overlay, 'scan', true);
-    const zone = Boolean(session.frame);
-    return { data: shot.data, mediaType: shot.mediaType, pointer: toZone(session.pointer, session.frame), zone };
+    const frames = session.frames ?? [];
+    return {
+      data: shot.data,
+      mediaType: shot.mediaType,
+      // Several zones: one image each (the first is also data / mediaType).
+      images: shot.images ?? [{ data: shot.data, mediaType: shot.mediaType }],
+      pointer: frames.length > 1 ? null : toZone(session.pointer, frames[0] ?? null),
+      zone: frames.length > 0,
+      zones: frames.length,
+    };
   } catch (error) {
     console.error('[judith] look failed:', error.message);
     return {};
@@ -728,8 +819,174 @@ function journal(fields) {
   } catch {}
 }
 
+// ----- agent mode, guided: step, wait for the user to do it, next step -----
+const agent = createAgent({ canAct: () => Boolean(config.agentHands && hands?.available) });
+let agentWatch = null;
+// Often enough that the next step comes soon after the user acts: with the
+// watch's 2 learning and 2 settling frames, 0.8 s each.
+const AGENT_WATCH_EVERY_MS = 400;
+
+function agentState(extra = {}) {
+  send(bubble, 'agent', { active: agent.active, step: agent.step, max: agent.maxSteps, ...extra });
+}
+
+function stopAgent(extra = {}) {
+  clearTimeout(agentWatch);
+  agentWatch = null;
+  endPiloting();
+  if (!agent.active) return;
+  console.log(`[judith] agent mode ends at step ${agent.step}${extra.done ? ' (goal reached)' : ''}`);
+  agent.stop();
+  agentState(extra);
+}
+
+// After a step: watch the screen until the user has done it (it changed, then
+// settled), then the notch asks the next step. Judith's own voice and windows
+// never count; nothing is watched while she thinks or speaks.
+function waitForUser(display) {
+  clearTimeout(agentWatch);
+  const watch = createProgressWatch();
+  const since = Date.now();
+  agentWatch = setTimeout(async function tick() {
+    if (!agent.active) return;
+    if (Date.now() - since > AGENT_IDLE_MS) return stopAgent({ timeout: true });
+    if (notchState !== 'thinking' && notchState !== 'speaking') {
+      try {
+        const progress = watch.push(await captureSmall(display), ownAreas(display));
+        if (progress === 'changed') {
+          if (agent.step >= agent.maxSteps) return stopAgent({ limit: true });
+          agentWatch = null;
+          console.log('[judith] agent mode: the screen changed, next step');
+          return send(bubble, 'agent-next', { question: AGENT_NEXT, step: agent.step + 1, max: agent.maxSteps });
+        }
+      } catch {}
+    }
+    agentWatch = setTimeout(tick, AGENT_WATCH_EVERY_MS);
+  }, AGENT_WATCH_EVERY_MS);
+}
+
+// ----- agent mode, autonomous: Judith acts herself, within the guardrails -----
+// Opt-in (config.agentHands), with the "hands" companion. While she pilots:
+// a frame around the screen and a banner say so; Ctrl+Alt+Escape, X, Esc or
+// moving the mouse stop her at once; sensitive actions wait for "Vas-y".
+let hands = null;
+const STOP_SHORTCUT = 'Control+Alt+Escape';
+let piloting = false;
+let pilotAborted = false;
+let pilot = { count: 0, lastControl: null };
+let lastActPoint = null;
+
+function startPiloting() {
+  if (piloting) return;
+  piloting = true;
+  pilotAborted = false;
+  pilot = { count: 0, lastControl: null };
+  hands.reset();
+  globalShortcut.register(STOP_SHORTCUT, () => {
+    console.log('[judith] pilot stopped by the shortcut');
+    send(bubble, 'cancel-all');
+    stopAgent({ stopped: true });
+  });
+  const display = session.display ?? cursorDisplay();
+  overlay.setBounds(display.bounds);
+  showOverlay();
+  send(overlay, 'piloting', true);
+}
+
+function endPiloting() {
+  if (!piloting) return;
+  piloting = false;
+  pilotAborted = true; // an action still running is the last one
+  answerConfirm?.(false);
+  globalShortcut.unregister(STOP_SHORTCUT);
+  send(overlay, 'piloting', false);
+  if (!shownMarks.length && !session.zones?.length && !zonePicking) overlay.hide();
+}
+
+// The notch asks "Vas-y / Non" for a sensitive action (30 s, then no).
+let answerConfirm = null;
+function askConfirmation(reason) {
+  answerConfirm?.(false);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => done(false), 30_000);
+    const done = (yes) => {
+      clearTimeout(timer);
+      answerConfirm = null;
+      send(bubble, 'confirm', null);
+      resolve(Boolean(yes) && !pilotAborted);
+    };
+    answerConfirm = done;
+    send(bubble, 'confirm', { reason });
+  });
+}
+
+// A point of the model's screenshot → display fractions and physical pixels.
+function actPoint(action, display) {
+  const p = fromZone({ x: action.x, y: action.y, w: 0, h: 0 }, frameOf(session.frames, action.zone));
+  const { bounds } = display;
+  const dip = { x: Math.round(bounds.x + p.x * bounds.width), y: Math.round(bounds.y + p.y * bounds.height) };
+  return { fraction: p, physical: process.platform === 'win32' ? screen.dipToScreenPoint(dip) : dip };
+}
+
+async function runPilot(actions, display) {
+  startPiloting();
+  const result = await runActions(
+    actions,
+    {
+      async locate(action) {
+        if (action.action === 'click' || action.action === 'scroll') {
+          const { fraction, physical } = actPoint(action, display);
+          const onJudith = ownAreas(display).some((r) => fraction.x >= r.x1 && fraction.x <= r.x2 && fraction.y >= r.y1 && fraction.y <= r.y2);
+          const [app, elements] = await Promise.all([hands.at(physical.x, physical.y), eyes?.available ? eyes.around(physical.x, physical.y) : null]);
+          return { app: app.error ? null : app, control: elements?.[0] ?? null, onJudith, point: physical, fraction };
+        }
+        // Keys and text go to the app in the foreground.
+        const app = await hands.foreground();
+        return { app: app.error ? null : app, control: null, onJudith: false };
+      },
+      confirm: (reason) => askConfirmation(reason),
+      async show(action, target) {
+        if (!target.fraction) return;
+        // Where she is about to click: the user sees it coming.
+        send(overlay, 'mark', { ...toPixels({ type: 'mark', shape: 'ring', x: target.fraction.x, y: target.fraction.y, w: 0.028, h: 0.045, label: action.label ?? '' }, display.bounds), ink: 'dark', seed: pilot.count + 1 });
+        await wait(450);
+      },
+      async perform(action, target) {
+        if (pilotAborted) return { error: 'user' };
+        console.log(`[judith] act ${action.action} ${action.label ?? action.combo ?? ''}`.trim());
+        if (action.action === 'click') lastActPoint = target.point;
+        if (action.action === 'click') return hands.click(target.point.x, target.point.y, action.button);
+        if (action.action === 'scroll') return hands.scroll(target.point.x, target.point.y, action.notches);
+        if (action.action === 'type') return hands.type(action.text);
+        return hands.key(action.combo);
+      },
+    },
+    pilot,
+  );
+  send(overlay, 'clear');
+  return result;
+}
+
 async function ask(question, turn) {
   activeTurn = turn;
+  clearTimeout(agentWatch);
+  agentWatch = null;
+  // Agent mode: the special word starts it; while it runs, the user's answers
+  // and the screen changes (AGENT_NEXT) become its next steps.
+  const wasAgent = agent.active;
+  const asked = question === AGENT_NEXT ? agent.next() : agent.question(question);
+  // The step limit was reached: the loop is over (the agent stopped itself).
+  if (wasAgent && !agent.active) agentState({ limit: true });
+  if (asked == null) {
+    // "Non" to the offer to guide: no question for the model.
+    if (agent.declined) send(bubble, 'cmd', { type: 'say', text: t("D'accord, je reste dans le coin."), turn });
+    return send(bubble, 'answer', { turn });
+  }
+  const inAgent = agent.active;
+  if (inAgent) agentState();
+  let goalReached = false;
+  const actions = [];
+  let proposed = null; // the model offers to guide a task in several steps
   entry = { at: Date.now(), question, spoken: Boolean(lastHeardAt && Date.now() - lastHeardAt < 15000), tools: [], marks: 0 };
   timeline = { ask: Date.now(), heard: lastHeardAt };
   turnLinks = new Map();
@@ -744,14 +1001,34 @@ async function ask(question, turn) {
   // was drawn: the screenshot goes with it, one round trip less than
   // look_at_screen. alwaysLook: the old behaviour, a screenshot every time.
   let image = null;
-  if (config.alwaysLook || session.zone || needsScreen(question)) {
+  if (config.alwaysLook || session.zones?.length || inAgent || needsScreen(question)) {
     const shot = await lookForJudith();
     if (shot.data) image = shot;
   }
 
   // Script lines go to the notch as soon as they are complete.
   let commands = 0;
+  let currentZone = 1; // the zone the drawing lines are in (script line "zone n")
   const reader = createScriptReader((command) => {
+    if (command.type === 'propose') {
+      if (!agent.active) proposed = command.goal;
+      return;
+    }
+    if (command.type === 'zone') {
+      // Several zones: the drawing lines that follow are in zone n.
+      currentZone = command.n;
+      return;
+    }
+    if (command.type === 'act') {
+      // Only in autonomous agent mode; otherwise an action is never done.
+      if (agent.autonomous) actions.push({ ...command, zone: currentZone });
+      return;
+    }
+    if (command.type === 'done') {
+      goalReached = true;
+      if (!command.text) return;
+      command = { type: 'say', text: command.text };
+    }
     if (command.type === 'say') {
       // Links become cards; the voice says their title, never the URL.
       for (const link of findLinks(command.text, config.language)) addLink(link);
@@ -759,7 +1036,7 @@ async function ask(question, turn) {
       if (!command.text) return;
     }
     // Coordinates of a zone screenshot → coordinates of the display.
-    if (command.type === 'mark') command = fromZone(command, session.frame);
+    if (command.type === 'mark') command = fromZone(command, frameOf(session.frames, currentZone));
     commands += 1;
     mark('firstLine');
     send(bubble, 'cmd', { ...command, turn });
@@ -768,20 +1045,37 @@ async function ask(question, turn) {
   try {
     const result = await engine.ask(
       buildUserContent({
-        question,
-        image: image && { mediaType: image.mediaType, data: image.data },
-        pointer: toZone(session.pointer, image ? session.frame : null),
-        zone: Boolean(image && session.frame),
+        question: asked,
+        images: image?.images?.map(({ mediaType, data }) => ({ mediaType, data })),
+        pointer: image && (session.frames?.length ?? 0) <= 1 ? toZone(session.pointer, session.frames?.[0] ?? null) : null,
+        zone: Boolean(image && session.frames?.length),
       }),
     );
     reader.finish(result.streamed || result.text);
-    // A document or page was made but not opened: open the first one.
+    // A visual or document was made but not opened: open the first one.
     const creation = [...turnLinks.values()].find((link) => link.creation);
     if (creation) openCreation(creation.url);
     console.log(`[judith] answered in ${(result.durationMs / 1000).toFixed(1)} s, ${commands} command(s)`);
     journal({ outcome: 'answered', commands, firstVoiceMs: timeline?.voice ? timeline.voice - timeline.ask : null });
+    // A task in several steps: "Je te suis jusqu'au bout ?" (the voice asks it,
+    // the notch shows Oui / Non; a spoken "oui" works too).
+    if (!inAgent && proposed && agent.offer(proposed)) send(bubble, 'offer', { goal: proposed });
+    if (inAgent && goalReached) stopAgent({ done: true });
+    else if (inAgent && agent.autonomous && actions.length && turn === activeTurn) {
+      const result = await runPilot(actions, display);
+      if (result.stopped) stopAgent({ stopped: true, reason: result.reason });
+      else if (agent.active) {
+        // Let the screen react, then the next step.
+        await wait(1200);
+        if (agent.active && agent.step >= agent.maxSteps) stopAgent({ limit: true });
+        else if (agent.active && turn === activeTurn) send(bubble, 'agent-next', { question: AGENT_NEXT, step: agent.step + 1, max: agent.maxSteps });
+      }
+    } else if (inAgent) waitForUser(display);
   } catch (error) {
-    if (!error.cancelled) send(bubble, 'error', { turn, message: error.message });
+    if (!error.cancelled) {
+      send(bubble, 'error', { turn, message: explain(error) });
+      stopAgent();
+    }
     journal({ outcome: error.cancelled ? 'cancelled' : 'error', error: error.cancelled ? undefined : error.message });
   } finally {
     if (currentReader === reader) currentReader = null;
@@ -797,33 +1091,212 @@ function cancelTurn(turn) {
   console.log(`[judith] turn ${turn} cancelled`);
   currentReader = null;
   engine.cancel();
-  for (const id of [...approvals.keys()]) settleApproval(id, false);
   scanning = false;
   send(overlay, 'scan', false);
 }
 
-// ----- approvals: Claude Code wants to edit a file or run a command -----
-const approvals = new Map();
-let approvalId = 0;
-function requestApproval(tool, input) {
-  const id = ++approvalId;
-  console.log(`[judith] asks permission for ${tool}`);
-  send(bubble, 'approval', { id, ...describeApproval(tool, input, config.language) });
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => settleApproval(id, false), 120_000);
-    approvals.set(id, { resolve, timer });
-    const demo = process.env.JUDITH_DEMO_APPROVE;
-    if (demo) setTimeout(() => settleApproval(id, demo === 'yes'), 2500);
-  });
+// ----- the engine: the user's own Claude Code, kept warm -----
+let mcpConfig = null;
+// By default Claude Code may only look, read and explain. With claudeActs it may do anything its tools allow
+// (no permission prompts: Judith has no way to ask, so the setting is the consent).
+const toolArgs = (acts) => [
+  '--mcp-config', mcpConfig,
+  ...(acts ? ['--permission-mode', 'bypassPermissions'] : ['--allowedTools', ALLOWED_TOOLS.join(','), '--disallowedTools', DENIED_TOOLS.join(',')]),
+];
+let claudeFound = false; // Claude Code is installed on this PC
+
+// Everything Claude Code needs, from the settings. overrides: the settings
+// being tested in the notch before they are saved.
+function engineOptions(overrides = {}) {
+  const settings = { ...config, ...overrides };
+  return {
+    claudePath: settings.claudePath,
+    cwd: settings.workingDirectory,
+    model: settings.model,
+    // Emotion tags only when the voice can act them.
+    systemPrompt: buildSystemPrompt({ language: settings.language, annotations: settings.annotations, emotions: settings.voice === 'fish', board: settings.board, acts: settings.claudeActs }),
+    // Speed: little thinking for a conversation, and Judith's tools loaded up
+    // front (no ToolSearch round trip before looking at the screen).
+    extraArgs: [...claudeEffortArgs(settings.effort), ...toolArgs(settings.claudeActs)],
+    env: { ENABLE_TOOL_SEARCH: 'false' },
+  };
 }
 
-function settleApproval(id, allow) {
-  const pending = approvals.get(id);
-  if (!pending) return;
-  approvals.delete(id);
-  clearTimeout(pending.timer);
-  pending.resolve(allow);
-  send(bubble, 'approved', { id, allow });
+// What the user reads when Claude Code cannot answer.
+function explain(error) {
+  if (error.code === 'ENOENT') return t('Claude Code est introuvable sur ce PC : installe-le, puis relance Judith.');
+  return error.message;
+}
+
+function startEngine() {
+  engine?.stop();
+  console.log(`[judith] engine: Claude Code (${config.model}, effort ${config.effort}${claudeFound ? '' : ', not found on this PC'})`);
+  engine = new ClaudeCodeEngine(engineOptions());
+  // The warm-up answer stays silent: no reader is listening yet.
+  engine.on('delta', (text) => {
+    if (currentReader) mark('firstWord');
+    currentReader?.push(text);
+  });
+  engine.on('tool', (tool) => {
+    console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
+    send(bubble, 'tool', { turn: activeTurn, label: describeTool(tool.name, tool.input, config.language) });
+    trackTool(tool);
+    creationsIn(JSON.stringify(tool.input ?? {}));
+    // Claude Code "opens" a creation in its own app: Judith opens the browser.
+    if (tool.name === 'Artifact' && tool.input?.action === 'open' && isCreation(String(tool.input.url))) openCreation(tool.input.url);
+  });
+  engine.on('tool-result', (result) => {
+    trackResult(result);
+    creationsIn(result.output);
+  });
+  engine.on('log', (text) => console.error('[claude]', text.trim()));
+  // Claude Code is kept warm: start it and load its context now, so the first
+  // real question is fast.
+  warmingUp = engine.ask([{ type: 'text', text: 'Reply only: say ready.' }]).catch((error) => console.error('[judith] warm-up failed:', explain(error)));
+}
+
+// What the settings panel of the notch shows.
+function notchSettings() {
+  return {
+    claudeFound,
+    model: config.model,
+    effort: config.effort,
+    annotations: config.annotations,
+    listenMode: config.listenMode,
+    board: config.board,
+    agentHands: config.agentHands,
+    claudeActs: config.claudeActs,
+    handsAvailable: Boolean(hands?.available),
+  };
+}
+
+const ANNOTATION_MODES = ['helpful', 'always', 'none'];
+const claudeEffortArgs = (effort) => (effort ? ['--effort', effort] : []);
+// Only what the panel may change, checked: the rest of what a page sends is ignored.
+function pickSettings(input = {}) {
+  const out = {};
+  for (const key of ['model', 'effort']) if (typeof input[key] === 'string') out[key] = input[key].trim();
+  Object.assign(out, checkClaudeSettings(out, DEFAULTS.model));
+  if (ANNOTATION_MODES.includes(input.annotations)) out.annotations = input.annotations;
+  if (input.listenMode === 'auto' || input.listenMode === 'push') out.listenMode = input.listenMode;
+  for (const key of ['agentHands', 'board', 'claudeActs']) if (typeof input[key] === 'boolean') out[key] = input[key];
+  return out;
+}
+
+// A 1x1 white PNG: the test checks that Claude Code answers AND accepts an image.
+const TEST_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
+
+// A separate Claude Code, with the settings being tried: the conversation in
+// progress is not touched.
+async function testEngine(input) {
+  const probe = new ClaudeCodeEngine(engineOptions(pickSettings(input)));
+  const startedAt = Date.now();
+  const timer = setTimeout(() => probe.cancel(), 45000);
+  try {
+    await probe.ask([
+      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: TEST_IMAGE } },
+      { type: 'text', text: 'Connection test. Reply only: say ok' },
+    ]);
+    return { ok: true, ms: Date.now() - startedAt };
+  } catch (error) {
+    return { ok: false, error: error.cancelled ? t('Pas de réponse en 45 s.') : explain(error) };
+  } finally {
+    clearTimeout(timer);
+    probe.stop();
+  }
+}
+
+// What changes Claude Code's flags or prompt needs a new process; the rest applies at once.
+const RESTART_KEYS = ['model', 'effort', 'annotations', 'board', 'claudeActs'];
+function saveSettings(input) {
+  const settings = pickSettings(input);
+  const restart = RESTART_KEYS.some((key) => key in settings && settings[key] !== config[key]);
+  Object.assign(config, settings);
+  saveConfig(settings);
+  if (restart) startEngine();
+  buildTrayMenu();
+  return notchSettings();
+}
+
+// The same shortcut summons Judith and, while she thinks or speaks, stops her.
+function onShortcut() {
+  if (shortcutAction(notchState) === 'cancel') send(bubble, 'cancel-all');
+  else summon();
+}
+
+// ----- the welcome window: first start, or "Revoir l'accueil" in the tray -----
+// What Judith does, then the engine, listening and shortcuts. Keys are optional.
+const SHORTCUT_CHOICES = ['Control+Alt+J', 'Control+Shift+Space', 'Alt+Shift+J'];
+let onboarding = null;
+const onboardedPath = () => join(app.getPath('userData'), 'onboarded');
+function openOnboarding() {
+  if (onboarding && !onboarding.isDestroyed()) return onboarding.focus();
+  onboarding = createOnboarding(iconPath);
+  onboarding.on('closed', () => (onboarding = null));
+  onboarding.webContents.on('console-message', (event) => event.level === 'error' && console.error('[onboarding]', event.message));
+}
+function onboardingStatus() {
+  return {
+    shortcut: config.shortcut,
+    zoneShortcut: config.zoneShortcut,
+    shortcuts: [...new Set([config.shortcut, ...SHORTCUT_CHOICES])],
+    language: config.language,
+    listenMode: config.listenMode,
+    speechInput: config.speechInput,
+    deepgramSet: Boolean(config.deepgramKey),
+    packaged: app.isPackaged,
+    startWithWindows: app.isPackaged && app.getLoginItemSettings().openAtLogin,
+  };
+}
+// A new summon shortcut, or the old one back if another app holds it.
+function setShortcut(next) {
+  if (!next || next === config.shortcut) return true;
+  globalShortcut.unregister(config.shortcut);
+  if (!globalShortcut.register(next, onShortcut)) {
+    globalShortcut.register(config.shortcut, onShortcut);
+    return false;
+  }
+  config.shortcut = next;
+  saveConfig({ shortcut: next });
+  return true;
+}
+function saveOnboarding(input = {}) {
+  const changes = {};
+  if (input.listenMode === 'auto' || input.listenMode === 'push') changes.listenMode = input.listenMode;
+  if (input.speechInput === 'whisper' || input.speechInput === 'deepgram') changes.speechInput = input.speechInput;
+  if (typeof input.deepgramKey === 'string' && input.deepgramKey.trim()) changes.deepgramKey = input.deepgramKey.trim();
+  if (Object.keys(changes).length) {
+    Object.assign(config, changes);
+    saveConfig(changes);
+  }
+  if (typeof input.startWithWindows === 'boolean' && app.isPackaged) app.setLoginItemSettings({ openAtLogin: input.startWithWindows });
+  const shortcutOk = typeof input.shortcut === 'string' ? setShortcut(input.shortcut) : true;
+  buildTrayMenu();
+  return { ok: shortcutOk, error: shortcutOk ? null : t('Le raccourci {shortcut} est déjà pris par une autre appli.', { shortcut: input.shortcut }), status: onboardingStatus() };
+}
+function finishOnboarding({ tryNow = false } = {}) {
+  writeFileSync(onboardedPath(), new Date().toISOString());
+  onboarding?.close();
+  if (tryNow) setTimeout(summon, 500);
+}
+
+// A new language: saved, the engine's prompt and the speech recognition restart in it,
+// every window redraws in it, the tray menu follows. Called from the welcome window and the tray.
+function changeLanguage(next) {
+  const language = normalizeLanguage(next);
+  if (language === config.language) return;
+  config.language = language;
+  saveConfig({ language });
+  setLanguage(language);
+  if (speech) {
+    speech.terminate();
+    speechReady = false;
+    startSpeech();
+  }
+  startEngine();
+  startVoice();
+  buildTrayMenu();
+  for (const win of [bubble, overlay, board, onboarding]) if (win && !win.isDestroyed()) win.reload();
 }
 
 function newConversation() {
@@ -834,21 +1307,25 @@ function newConversation() {
 function buildTrayMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: `Demander à Judith (${config.shortcut})`, click: summon },
-      { label: 'Nouvelle conversation', click: newConversation },
-      { label: 'Ouvrir la configuration', click: () => shell.openPath(configPath()) },
+      { label: t('Demander à Judith ({shortcut})', { shortcut: config.shortcut }), click: summon },
+      { label: t('Nouvelle conversation'), click: newConversation },
+      { label: t("Revoir l'accueil"), click: openOnboarding },
+      {
+        label: t('Langue / Language'),
+        submenu: LANGUAGES.map((code) => ({ label: { fr: 'Français', en: 'English' }[code], type: 'radio', checked: config.language === code, click: () => changeLanguage(code) })),
+      },
       { type: 'separator' },
       ...(app.isPackaged
         ? [
             {
-              label: 'Démarrer avec Windows',
+              label: t('Démarrer avec Windows'),
               type: 'checkbox',
               checked: app.getLoginItemSettings().openAtLogin,
               click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
             },
           ]
         : []),
-      { label: 'Quitter', role: 'quit' },
+      { label: t('Quitter'), role: 'quit' },
     ]),
   );
 }
@@ -873,6 +1350,24 @@ function settleInstalledApp() {
   }
 }
 
+// The board's sandboxed frames (visuals, 3D scenes) come from judith-frame://,
+// each with its own CSP (src/main/frames.js). Must be declared before ready.
+protocol.registerSchemesAsPrivileged([{ scheme: FRAME_SCHEME, privileges: { standard: true, secure: true } }]);
+const visuals = createVisualStore();
+function handleFrames() {
+  protocol.handle(FRAME_SCHEME, (request) => {
+    const found = resolveFrame(request.url, { root, visuals });
+    if (found.status !== 200) return new Response('', { status: found.status });
+    const body = found.file ? readFileSync(found.file) : found.body;
+    return new Response(body, { status: 200, headers: { 'content-type': found.type, 'content-security-policy': found.csp } });
+  });
+}
+// An HTML visual in the board's frame.
+function showVisualFrame(title, html) {
+  showBoard();
+  send(board, 'visual', { title, src: visuals.add(html) });
+}
+
 app.whenReady().then(async () => {
   // Judith's own pages may use the microphone; nothing else is granted.
   const allowMedia = (permission) => permission === 'media';
@@ -883,9 +1378,9 @@ app.whenReady().then(async () => {
   settleInstalledApp();
   startSpeech();
   startVoice();
-  startReminders();
 
   setCaptureProtection(config.hideFromScreenRecordings);
+  handleFrames();
   bubble = createBubble();
   overlay = createOverlay();
   board = createBoard();
@@ -893,16 +1388,11 @@ app.whenReady().then(async () => {
   // Judith's tools run in an MCP server that Claude Code starts. Electron
   // itself runs it as plain Node, so no separate Node install is needed.
   const bridge = await startBridge({
-    onApprove: requestApproval,
     onLook: lookForJudith,
-    onCopyShot: copyScreenshot,
-    onReminder: reminderTool,
-    onVisual: (title, html) => {
-      showBoard();
-      send(board, 'visual', { title, html });
-    },
+    onVisual: showVisualFrame,
+    onScene: showScene,
   });
-  const mcpConfig = join(app.getPath('userData'), 'mcp.json');
+  mcpConfig = join(app.getPath('userData'), 'mcp.json');
   writeFileSync(
     mcpConfig,
     JSON.stringify({
@@ -916,69 +1406,50 @@ app.whenReady().then(async () => {
     }),
   );
 
-  engine = new ClaudeCodeEngine({
-    claudePath: config.claudePath,
-    cwd: config.workingDirectory,
-    model: config.model,
-    // Emotion tags only when the voice can act them.
-    systemPrompt: buildSystemPrompt({ language: config.language, annotations: config.annotations, emotions: config.voice === 'fish', board: config.board }),
-    // Speed: little thinking for a conversation, and Judith's tools loaded up
-    // front (no ToolSearch round trip before looking at the screen).
-    env: { ENABLE_TOOL_SEARCH: 'false' },
-    extraArgs: [
-      ...(config.effort ? ['--effort', config.effort] : []),
-      '--mcp-config', mcpConfig,
-      '--allowedTools', ALLOWED_TOOLS.join(','),
-      '--permission-prompt-tool', 'mcp__judith__approve',
-      // Claude Code's own scheduled prompts die with its session: reminders
-      // go through Judith (set_reminder), which keeps them on disk.
-      '--disallowedTools', 'CronCreate,CronDelete,CronList',
-    ],
-  });
-  // The warm-up answer stays silent: no reader is listening yet.
-  engine.on('delta', (text) => {
-    if (currentReader) mark('firstWord');
-    currentReader?.push(text);
-  });
-  engine.on('tool', (tool) => {
-    console.log(`[judith] tool ${tool.name} ${JSON.stringify(tool.input).slice(0, 120)}`);
-    send(bubble, 'tool', { turn: activeTurn, label: describeTool(tool.name, tool.input, config.language) });
-    trackTool(tool);
-    creationsIn(JSON.stringify(tool.input ?? {}));
-    // Claude Code "opens" a creation in its own app: Judith opens the browser.
-    if (tool.name === 'Artifact' && tool.input?.action === 'open' && isCreation(String(tool.input.url))) openCreation(tool.input.url);
-  });
-  engine.on('tool-result', (result) => {
-    trackResult(result);
-    creationsIn(result.output);
-  });
-  engine.on('log', (text) => console.error('[claude]', text.trim()));
-  // Starts Claude Code and loads its context now, so the first real question is fast.
-  warmingUp = engine
-    .ask([{ type: 'text', text: 'Réponds seulement : say prête.' }])
-    .catch((error) => console.error('[judith] warm-up failed:', error.message));
+  eyes = createEyes({ exe: process.platform === 'win32' ? findEyes(root) : null, log: (text) => console.log(`[eyes] ${text}`) });
+  console.log(`[judith] eyes (UI Automation): ${eyes.available ? 'on' : 'off, marks keep the model position'}`);
+  hands = createHands({ exe: process.platform === 'win32' ? findHands(root) : null, log: (text) => console.log(`[hands] ${text}`) });
+  console.log(`[judith] hands (autonomous agent mode): ${hands.available ? (config.agentHands ? 'on' : 'installed, off in the settings') : 'not installed'}`);
+  claudeFound = await detectClaude(config.claudePath);
+  startEngine();
 
-  // The idle notch ("Judith ●") is always at the top of the screen.
-  bubble.webContents.once('did-finish-load', () => {
-    placeBubble(cursorDisplay(), bubble.getBounds());
+  // The idle notch ("Judith ●") is always at the top of the screen. The page
+  // may already be loaded by now (the engine detection above takes a few
+  // seconds): then "did-finish-load" has passed and would never come.
+  const showNotch = () => {
+    placeBubble(cursorDisplay());
     bubble.showInactive();
-  });
+  };
+  if (bubble.webContents.isLoading()) bubble.webContents.once('did-finish-load', showNotch);
+  else showNotch();
 
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }));
   tray.setToolTip('Judith');
   tray.on('click', summon);
   buildTrayMenu();
 
-  if (!globalShortcut.register(config.shortcut, summon)) {
+  if (!globalShortcut.register(config.shortcut, onShortcut)) {
     console.error(`[judith] shortcut ${config.shortcut} is already taken`);
   }
   if (config.zoneShortcut && !globalShortcut.register(config.zoneShortcut, summonWithZone)) {
     console.error(`[judith] shortcut ${config.zoneShortcut} is already taken`);
   }
 
+  ipcMain.handle('judith:set-language', (_e, language) => {
+    changeLanguage(language);
+    return config.language;
+  });
+  ipcMain.handle('judith:onboarding-status', () => onboardingStatus());
+  ipcMain.handle('judith:onboarding-save', (_e, input) => saveOnboarding(input));
+  ipcMain.on('judith:onboarding-done', (_e, info) => finishOnboarding(info ?? {}));
+  // First start on this PC (or JUDITH_ONBOARDING=1 to see it again while testing).
+  if (!existsSync(onboardedPath()) || process.env.JUDITH_ONBOARDING) openOnboarding();
+
   ipcMain.handle('judith:ask', (_e, question, turn) => (lastAsk = ask(String(question), Number(turn))));
   ipcMain.on('judith:cancel', (_e, turn) => cancelTurn(Number(turn)));
   ipcMain.on('judith:clear-screen', () => {
+    // X, Esc, "arrête": agent mode ends too.
+    stopAgent();
     dropZone();
     clearMarks();
     scanning = false;
@@ -997,6 +1468,7 @@ app.whenReady().then(async () => {
   ipcMain.on('judith:pick-zone', () => pickZone());
   ipcMain.on('judith:zone-selected', (_e, zone) => settleZone?.(zone && ['x1', 'y1', 'x2', 'y2'].every((k) => Number.isFinite(zone[k])) ? zone : null));
   ipcMain.on('judith:drop-zone', dropZone);
+  ipcMain.on('judith:remove-zone', (_e, index) => dropOneZone(index));
   ipcMain.on('judith:open-link', (_e, url) => /^https?:\/\//i.test(String(url)) && shell.openExternal(String(url)));
   ipcMain.on('judith:summon', summon);
   ipcMain.on('judith:summon-zone', summonWithZone);
@@ -1004,21 +1476,48 @@ app.whenReady().then(async () => {
   ipcMain.on('judith:marked', () => send(bubble, 'marked'));
   // The notch reports the end of speech and the first spoken sentence.
   ipcMain.on('judith:timing', (_e, step) => (step === 'heard' ? (lastHeardAt = Date.now()) : mark(step)));
-  ipcMain.on('judith:approve', (_e, { id, allow }) => settleApproval(id, allow === true));
-  ipcMain.on('judith:resize', (_e, size) => {
-    const width = Math.min(720, Math.max(60, Math.ceil(size?.width ?? 0)));
-    const height = Math.min(480, Math.max(40, Math.ceil(size?.height ?? 0)));
-    bubbleAtRest = size?.atRest === true;
-    placeBubble(session.display ?? cursorDisplay(), { width, height });
+  // The pointer entered or left the notch: take the clicks, or let them through.
+  ipcMain.on('judith:interactive', (_e, on) => setNotchInteractive(bubble, on === true));
+  ipcMain.on('judith:notch-state', (_e, state) => (notchState = String(state)));
+  // What the notch does with the user's presses, in the terminal log: if a
+  // button "does nothing", this tells whether the press reached the page.
+  ipcMain.on('judith:log', (_e, text) => console.log(`[notch] ${String(text).slice(0, 200)}`));
+  // The settings panel in the notch: Claude Code's model, drawing, listening.
+  ipcMain.handle('judith:settings-get', async () => {
+    const found = await detectClaude(config.claudePath); // it may have been installed since
+    if (found && !claudeFound) {
+      claudeFound = true;
+      startEngine();
+    }
+    claudeFound = found;
+    return notchSettings();
+  });
+  ipcMain.handle('judith:settings-test', (_e, input) => testEngine(input).catch((error) => ({ ok: false, error: error.message })));
+  ipcMain.handle('judith:settings-save', (_e, input) => {
+    try {
+      return { ok: true, settings: saveSettings(input) };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
   });
   ipcMain.on('judith:open-path', (_e, path) => existsSync(path) && shell.openPath(path));
   ipcMain.on('judith:preview', (_e, path) => preview(String(path)));
+  ipcMain.on('judith:confirm-answer', (_e, yes) => answerConfirm?.(yes === true));
+  ipcMain.on('judith:notch-box', (_e, box) => {
+    const ok = box && ['x', 'y', 'width', 'height'].every((k) => Number.isFinite(box[k]));
+    notchBox = ok ? box : null;
+  });
+  ipcMain.on('judith:scene-result', (_e, result) => {
+    // A failed scene is told to the model, which tries again: the terminal keeps the reason.
+    if (result && !result.ok) console.warn(`[judith] 3D scene failed: ${String(result.error).slice(0, 300)}`);
+    if (sceneWait && result?.id === sceneWait.id) sceneWait.resolve({ ok: Boolean(result.ok), error: result.error });
+  });
   ipcMain.on('judith:close-board', () => {
     board.hide();
     send(board, 'clear-board');
     actions.clear();
   });
-  ipcMain.on('judith:resize-board', (_e, height) => placeBoard(height));
+  ipcMain.on('judith:resize-board', (_e, size) => placeBoard(size));
   for (const win of [bubble, overlay, board]) {
     win.webContents.on('console-message', (event) => {
       // ScriptProcessorNode still works; its deprecation notice is just noise.
@@ -1031,7 +1530,6 @@ app.whenReady().then(async () => {
   // Dev: JUDITH_DEMO="question" summons Judith and asks it at launch.
   // With JUDITH_DEMO_SHOT=file.jpg it also saves a screenshot and quits,
   // JUDITH_DEMO_WAIT ms after the answer (default 1500).
-  // JUDITH_DEMO_APPROVE=yes|no answers permission requests automatically.
   // JUDITH_DEMO_AUDIO=question.wav (16 kHz) goes through Whisper first.
   if (process.env.JUDITH_DEMO) {
     warmingUp.then(async () => {
@@ -1066,6 +1564,8 @@ app.on('window-all-closed', () => {}); // lives in the tray
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   engine?.stop();
+  eyes?.stop();
+  hands?.stop();
   speech?.terminate();
   tts?.kill();
 });

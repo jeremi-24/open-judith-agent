@@ -2,8 +2,15 @@ import { app } from 'electron';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { detectLanguage } from '../core/i18n.js';
 
 export const DEFAULTS = {
+  // Judith thinks with the user's own Claude Code (model and effort below).
+  // Judith may act on the computer (edit files, run commands…), not only look and explain.
+  claudeActs: true,
+  // Agent mode, autonomous ("Agent autonome, …"): Judith may click and type
+  // herself, within the guardrails (src/core/guard.js). On by default, when the companion is installed.
+  agentHands: true,
   workingDirectory: homedir(),
   claudePath: null,
   model: 'haiku',
@@ -13,7 +20,7 @@ export const DEFAULTS = {
   shortcut: 'Control+Alt+J',
   // Summon Judith and draw the zone of the screen to explain first.
   zoneShortcut: 'Control+Alt+Shift+J',
-  // Open what Claude creates (a document, a page, a design) in the browser.
+  // Open what Claude creates to explain (an artifact, a diagram, a document) in the browser.
   openCreations: true,
   // false: Judith takes a screenshot only when the question needs it.
   alwaysLook: false,
@@ -21,6 +28,9 @@ export const DEFAULTS = {
   conversation: true,
   // Talk over Judith to interrupt her (she stops and listens).
   interruptions: true,
+  // "auto": Judith hears when the question ends. "push": press the shortcut again to
+  // send (noisy places: music, people around). Also in the tray menu.
+  listenMode: 'auto',
   // Drawing on the screen: "helpful" (only when it saves searching), "none", "always".
   annotations: 'helpful',
   // The notes board next to the screen (off: marks on the screen say enough).
@@ -53,12 +63,26 @@ export const DEFAULTS = {
 
 export const configPath = () => join(app.getPath('userData'), 'config.json');
 
+// Saves some keys, keeping everything else the user wrote in config.json.
+export function saveConfig(changes) {
+  const path = configPath();
+  let current = {};
+  try {
+    current = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    current = { ...DEFAULTS };
+  }
+  writeFileSync(path, `${JSON.stringify({ ...current, ...changes }, null, 2)}\n`);
+}
+
 export function loadConfig() {
   const path = configPath();
   if (!existsSync(path)) {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, `${JSON.stringify(DEFAULTS, null, 2)}\n`);
-    return { ...DEFAULTS };
+    // First start: Judith speaks the language of Windows (French, else English).
+    const first = { ...DEFAULTS, language: detectLanguage(Intl.DateTimeFormat().resolvedOptions().locale) };
+    writeFileSync(path, `${JSON.stringify(first, null, 2)}\n`);
+    return first;
   }
   try {
     return { ...DEFAULTS, ...JSON.parse(readFileSync(path, 'utf8')) };

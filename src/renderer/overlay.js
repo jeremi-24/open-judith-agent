@@ -3,8 +3,10 @@
 // is not exactly the end); the badge and the label pop in after. The ink is
 // dark on light backgrounds and light on dark ones. Marks are drawn one
 // after the other, never at the same time.
-import { handStroke, outlinePoints } from '../core/ink.js';
+import { t, translateDocument } from '../core/i18n.js';
+import { arrowStroke, handStroke, outlinePoints, underlineStroke } from '../core/ink.js';
 import { zoneFrom } from '../core/zone.js';
+translateDocument(document);
 
 const canvas = document.getElementById('canvas');
 const labels = document.getElementById('labels');
@@ -88,6 +90,8 @@ async function trace(paths, mine) {
 
 // ----- a mark -----
 async function drawMark(m, mine) {
+  if (m.shape === 'arrow') return drawArrow(m, mine);
+  if (m.shape === 'underline') return drawUnderline(m, mine);
   const group = el('g', { class: `mark ink-${m.ink === 'light' ? 'light' : 'dark'}` });
   const outline = outlinePoints(m);
   const size = Math.max(m.rx, m.ry);
@@ -113,6 +117,43 @@ async function drawMark(m, mine) {
   window.judith.marked();
   // The pen rests next to the mark, ready for the next one.
   await flyTo(m.cx + m.rx * 0.6, m.cy + m.ry * 0.5, mine);
+}
+
+// A line under a word, a title or a number; its label sits under the middle.
+async function drawUnderline(m, mine) {
+  const group = el('g', { class: `mark ink-${m.ink === 'light' ? 'light' : 'dark'}` });
+  const [from, to] = m.points;
+  const stroke = underlineStroke(from, to, m.seed ?? 1);
+  const halo = el('path', { class: 'halo', d: stroke.d }, group);
+  const main = el('path', { class: 'ink', d: stroke.d }, group);
+  await flyTo(stroke.start[0], stroke.start[1], mine);
+  if (mine !== generation) return;
+  await trace([halo, main], mine);
+  if (mine !== generation) return;
+  count += 1;
+  label({ ...m, cx: (from[0] + to[0]) / 2, cy: from[1], ry: 2 }, count, m.ink);
+  window.judith.marked();
+  await flyTo(to[0] + 12, to[1] + 10, mine);
+}
+
+// An arrow between two things on the screen: the stroke is traced by the pen,
+// then the head appears. Its label sits at the middle.
+async function drawArrow(m, mine) {
+  const group = el('g', { class: `mark ink-${m.ink === 'light' ? 'light' : 'dark'}` });
+  const [from, to] = m.points;
+  const stroke = arrowStroke(from, to, m.seed ?? 1);
+  const halo = el('path', { class: 'halo', d: stroke.d }, group);
+  const main = el('path', { class: 'ink', d: stroke.d }, group);
+  await flyTo(stroke.start[0], stroke.start[1], mine);
+  if (mine !== generation) return;
+  await trace([halo, main], mine);
+  if (mine !== generation) return;
+  el('path', { class: 'halo pop', d: stroke.head }, group);
+  el('path', { class: 'ink pop', d: stroke.head }, group);
+  count += 1;
+  label({ ...m, rx: 6, ry: 6 }, count, m.ink);
+  window.judith.marked();
+  await flyTo(to[0] + 14, to[1] + 10, mine);
 }
 
 function badge(m, n, group) {
@@ -187,7 +228,7 @@ function scan(on) {
   const frame = document.getElementById('scan');
   frame.hidden = !on;
   document.getElementById('scan-pill').hidden = !on;
-  if (zone) place(frame, zone);
+  if (zones.length === 1) place(frame, zones[0]);
   else frame.removeAttribute('style');
 }
 
@@ -196,8 +237,9 @@ function scan(on) {
 // Escape (or a simple click) cancels. Then only the dashed frame stays.
 const zoneFrame = document.getElementById('zone');
 const hint = document.getElementById('select-hint');
-let zone = null; // fractions of the screen
+let zones = []; // the zones already drawn, fractions of the screen
 let dragFrom = null;
+const zonesBox = document.getElementById('zones');
 
 function place(node, z) {
   node.style.inset = 'auto'; // first: it would reset left and top
@@ -210,10 +252,28 @@ function place(node, z) {
 }
 const at = (event) => ({ x: event.clientX / innerWidth, y: event.clientY / innerHeight });
 
+// The frame being dragged.
 function showZone(z) {
-  zone = z;
   zoneFrame.hidden = !z;
   if (z) place(zoneFrame, z);
+}
+
+// The zones drawn: one frame each; with several, each wears its number.
+function showZones(list) {
+  zones = Array.isArray(list) ? list : [];
+  showZone(null);
+  zonesBox.replaceChildren(
+    ...zones.map((z, i) => {
+      const frame = document.createElement('div');
+      frame.className = 'zone-frame fixed';
+      const tag = document.createElement('span');
+      tag.className = zones.length > 1 ? 'zone-tag numbered' : 'zone-tag';
+      tag.textContent = zones.length > 1 ? String(i + 1) : t('Zone partagée');
+      frame.append(tag);
+      place(frame, z);
+      return frame;
+    }),
+  );
 }
 
 window.judith.on('select', (on) => {
@@ -223,7 +283,7 @@ window.judith.on('select', (on) => {
   dragFrom = null;
   if (on) showZone(null);
 });
-window.judith.on('zone', showZone);
+window.judith.on('zones', showZones);
 
 addEventListener('pointerdown', (event) => {
   if (!document.body.classList.contains('selecting') || event.button !== 0) return;
@@ -255,3 +315,8 @@ window.judith.on('mark', (m) => {
   queue = queue.then(() => (mine === generation ? drawMark(intoLayer(m), mine) : null)).catch(() => {});
 });
 window.judith.on('shift', ({ dx, dy }) => moveAll(dx, dy));
+
+// Autonomous agent mode: a frame around the screen and a banner while Judith acts.
+window.judith.on('piloting', (on) => {
+  document.getElementById('piloting').hidden = !on;
+});

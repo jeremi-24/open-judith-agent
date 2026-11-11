@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:">
+<title>Bienvenue · Judith</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="onboarding.css">
+<script type="module" src="onboarding.js"></script>
+</head>
+<body>
+<!-- Rules: one idea per screen, one sentence of 5 to 10 words, a moving
+     demo, no paragraph, one obvious button, "Passer" always there. -->
+<header class="bar">
+  <span class="brand"><img src="../../assets/icon.png" alt=""> Judith</span>
+  <ol class="dots" id="dots" aria-label="Progression"></ol>
+  <div class="lang" role="group" aria-label="Langue / Language">
+    <button type="button" data-lang="fr" lang="fr">FR</button><button type="button" data-lang="en" lang="en">EN</button>
+  </div>
+  <button type="button" class="skip" id="skip">Passer</button>
+</header>
+
+<main id="screens">
+  <!-- 1. At hand: a shortcut, and she answers; nothing to open -->
+  <section class="screen" data-title="Sous la main" data-media="hand">
+    <h1>Un raccourci, et Judith répond.</h1>
+    <div class="stack" aria-hidden="true">
+      <p class="keys big press" id="hero-keys"></p>
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« Explique-moi ça »</span></div>
+    </div>
+    <p class="sub">Pas d'appli à ouvrir : tu parles, elle répond sur ton écran. Tu peux l'interrompre.</p>
+  </section>
+
+  <!-- 2. She sees the screen: up to 4 zones, the first stays as a numbered thumbnail -->
+  <section class="screen" data-title="Elle voit ton écran" data-media="zones" hidden>
+    <h1>Elle voit ton écran, jusqu'à 4 zones à la fois.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« Compare les deux »</span></div>
+      <div class="shot photo multi">
+        <!-- A real photo of something few people know (NASA, public domain: assets/onboarding/README.md). -->
+        <img class="mystery" src="../../assets/onboarding/mystery.jpg" alt="">
+        <span class="zone z1"><b class="zbadge">1</b></span>
+        <span class="zone z2"><b class="zbadge">2</b></span>
+        <div class="tray">
+          <span class="thumb t1"><b class="zbadge">1</b></span>
+          <span class="thumb t2"><b class="zbadge">2</b></span>
+        </div>
+      </div>
+    </figure>
+  </section>
+
+  <!-- 3. She marks things directly on the screen while she explains -->
+  <section class="screen" data-title="Elle annote" data-media="annotate" hidden>
+    <h1>Elle annote directement sur ton écran.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« Explique-moi ça »</span></div>
+      <div class="shot mail">
+        <div class="mail-head"><span class="sender"></span><div><b>Ta cheffe</b><i>Rapport du mois</i></div></div>
+        <p class="mail-body">Bonjour, suite à la réunion, j'ai besoin du <mark data-n="1">rapport de ventes d'octobre</mark> avant la fin de la semaine. Peux-tu le finaliser <mark data-n="2">pour vendredi 14&nbsp;h</mark> et <mark data-n="3">l'envoyer à Marc</mark>, en me mettant en copie&nbsp;? Dis-moi si un chiffre te manque. Je compte sur toi pour la présentation de lundi. Merci&nbsp;!</p>
+        <div class="answer">
+          <div class="answer-head"><img class="face" src="../../assets/icon.png" alt="">En clair</div>
+          <ol>
+            <li><b>1</b>Le rapport de ventes d'octobre</li>
+            <li><b>2</b>À rendre vendredi, 14&nbsp;h</li>
+            <li><b>3</b>À envoyer à Marc, elle en copie</li>
+          </ol>
+        </div>
+      </div>
+    </figure>
+  </section>
+
+  <!-- 4. She builds 3D models part by part to illustrate -->
+  <section class="screen" data-title="Elle illustre en 3D" data-media="three-d" hidden>
+    <h1>Elle construit des 3D pour illustrer.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« Comment c'est construit ? »</span></div>
+      <div class="shot build">
+        <span class="blk b1"></span><span class="blk b2"></span><span class="blk b3"></span>
+        <span class="lbl l1">Fondations</span><span class="lbl l2">Murs</span><span class="lbl l3">Toit</span>
+      </div>
+    </figure>
+  </section>
+
+  <!-- 5. Step mode: she follows the user to the end of a task -->
+  <section class="screen" data-title="Elle te suit" data-media="steps" hidden>
+    <h1>Elle te suit pas à pas jusqu'au bout.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« Agent, améliore mon profil »</span></div>
+      <div class="shot profile">
+        <div class="cover"></div>
+        <span class="avatar"></span>
+        <div class="who"><i class="name"></i><i class="headline"></i><i class="place"></i></div>
+        <span class="edit">Enregistrer</span>
+        <div class="about"><i></i><i></i><i></i></div>
+        <span class="num n1"><b>1</b>Ajoute ta photo de profil</span>
+        <span class="num n2"><b>2</b>Écris ton métier en une ligne</span>
+        <span class="num n3"><b>3</b>Clique sur Enregistrer</span>
+        <span class="hl h1"></span><span class="hl h2"></span><span class="hl h3"></span>
+      </div>
+    </figure>
+  </section>
+
+  <!-- 6. She does light tasks herself -->
+  <section class="screen" data-title="Elle agit pour toi" data-media="acts" hidden>
+    <h1>Judith fait tes tâches légères en quelques secondes, sans que tu ouvres une autre appli.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« Range mes Téléchargements »</span></div>
+      <div class="shot tasks">
+        <p class="task t-1">Trier les Téléchargements par type</p>
+        <p class="task t-2">Renommer 12 fichiers</p>
+        <p class="task t-3">Créer le dossier Factures</p>
+      </div>
+    </figure>
+  </section>
+
+  <!-- 7. Ready: her engine, the shortcut, and a first try on the user's own screen -->
+  <section class="screen" data-title="Prête" hidden>
+    <h1>Essaie sur ton propre écran.</h1>
+    <p class="keys big press" id="shortcut-keys" aria-hidden="true"></p>
+    <div class="inline">
+      <select id="shortcut" aria-label="Raccourci pour appeler Judith"></select>
+      <label class="toggle"><input type="checkbox" id="start-windows"><span>Démarrer avec Windows</span></label>
+    </div>
+    <div class="choices" id="engines" aria-live="polite"></div>
+    <div class="api" id="found" hidden>
+      <button type="button" class="link" id="engine-test">Tester</button>
+    </div>
+    <div class="api" id="none" hidden>
+      <button type="button" class="link" id="get-claude">Installer Claude Code</button>
+      <button type="button" class="link" id="recheck">Vérifier à nouveau</button>
+    </div>
+    <p class="status" id="engine-status" aria-live="polite"></p>
+    <p class="status" id="shortcut-status" aria-live="polite"></p>
+    <p class="sub">Elle utilise ton Claude Code : elle connaît déjà tes projets.</p>
+  </section>
+</main>
+
+<footer class="nav">
+  <button type="button" class="back" id="back">Retour</button>
+  <button type="button" id="next" class="primary">Découvrir</button>
+</footer>
+</body>
+</html>

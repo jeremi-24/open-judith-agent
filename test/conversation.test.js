@@ -168,3 +168,32 @@ test('right after the shortcut, "Salut" is a hello, not a goodbye', () => {
   assert.equal(c.state, 'thinking');
   assert.equal(did('ask').length, 1);
 });
+
+test('agent mode: the next step is asked by itself, never over Judith', () => {
+  const { c, did } = setup();
+  c.typed('Agent, exporte en MP4');
+  assert.equal(c.continueWith('(agent:next)', 'Étape 2/12'), false, 'Judith is thinking');
+  c.answered(c.turn);
+  assert.equal(c.continueWith('(agent:next)', 'Étape 2/12'), true);
+  assert.equal(c.state, 'thinking');
+  assert.deepEqual(did('ask').at(-1), ['ask', '(agent:next)', c.turn]);
+});
+
+test('words overheard at rest are kept and the rest of the sentence is listened to', () => {
+  const { c, did } = setup();
+  assert.equal(c.overheard('je trouve pas'), true);
+  assert.equal(c.state, 'listening');
+  assert.deepEqual(did('listen').at(-1)[1], { continuation: true, partial: 'je trouve pas' });
+  c.heard('le bouton modifier');
+  assert.deepEqual(did('ask').at(-1).slice(1), ['je trouve pas le bouton modifier', 1]);
+  c.cancel();
+  c.summon();
+  assert.equal(c.overheard('encore'), false); // not at rest: ignored
+});
+
+test('"arrête" overheard at rest ends it, nothing is asked', () => {
+  const { c, did } = setup();
+  assert.equal(c.overheard('Arrête, c\'est bon.'), true);
+  assert.equal(c.state, 'idle');
+  assert.equal(did('ask').length, 0);
+});

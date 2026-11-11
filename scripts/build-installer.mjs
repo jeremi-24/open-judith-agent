@@ -70,6 +70,29 @@ for (const item of ['src', 'assets', 'LICENSE']) {
   if (existsSync(join(root, item))) cpSync(join(root, item), join(app, item), { recursive: true });
 }
 
+// Native companions, built with the .NET SDK when it is installed. Without
+// them Judith still works: marks keep the model's position (eyes), and the
+// autonomous agent mode is unavailable (hands).
+const COMPANIONS = [
+  ['eyes', 'UI Automation', 'marks will not snap onto controls'],
+  ['hands', 'autonomous agent mode', 'the autonomous agent mode will be unavailable'],
+];
+for (const [name, role, without] of COMPANIONS) {
+  const exe = join(root, 'companions', name, 'bin', 'Release', 'net48', `judith-${name}.exe`);
+  try {
+    execFileSync('dotnet', ['build', join(root, 'companions', name), '-c', 'Release', '--nologo', '-v', 'q'], { stdio: 'inherit' });
+  } catch {
+    console.warn(`  ! .NET SDK not found or build failed: judith-${name}.exe not rebuilt`);
+  }
+  if (existsSync(exe)) {
+    mkdirSync(join(app, 'companions'), { recursive: true });
+    cpSync(exe, join(app, 'companions', `judith-${name}.exe`));
+    console.log(`  + judith-${name}.exe (${role})`);
+  } else {
+    console.warn(`  ! judith-${name}.exe missing: ${without}`);
+  }
+}
+
 // Production packages only (npm knows which), top-level folders.
 const listed = execFileSync('npm', ['ls', '--omit=dev', '--all', '--parseable'], { cwd: root, encoding: 'utf8', shell: true })
   .split(/\r?\n/)
@@ -87,7 +110,9 @@ const skip = (rel) =>
   rel.endsWith('.map') ||
   /onnxruntime-node[\\/]bin[\\/]napi-v\d+[\\/](darwin|linux)/.test(rel) ||
   /onnxruntime-node[\\/]bin[\\/]napi-v\d+[\\/]win32[\\/]arm64/.test(rel) ||
-  /onnxruntime-web[\\/]dist[\\/].*\.wasm$/.test(rel);
+  /onnxruntime-web[\\/]dist[\\/].*\.wasm$/.test(rel) ||
+  // three.js: the 3D scene frame loads build/three.min.js only (~30 MB less).
+  (/^node_modules[\\/]three[\\/]/.test(rel) && !/^node_modules[\\/]three([\\/](package\.json|LICENSE|build([\\/]three\.min\.js)?))?$/.test(rel));
 for (const pkgDir of packages) {
   cpSync(join(root, pkgDir), join(app, pkgDir), { recursive: true, filter: (src) => !skip(relative(root, src)) });
 }

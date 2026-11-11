@@ -52,3 +52,15 @@ export function zonePixels(zone, size) {
     height: Math.max(1, Math.round(zone.y2 * size.height) - y),
   };
 }
+
+// ----- several zones: the first one stays, the next ones are added -----
+export const MAX_ZONES = 4;
+
+// The zones with one more, or the same list when it is full.
+export const addZone = (zones, zone) => (zone && zones.length < MAX_ZONES ? [...zones, zone] : zones);
+
+// The zones without the i-th (0-based).
+export const removeZone = (zones, index) => zones.filter((_, i) => i !== index);
+
+// The zone a drawing line belongs to: "zone n" (1-based), else the first one.
+export const frameOf = (frames, n = 1) => frames?.[n - 1] ?? frames?.[0] ?? null;

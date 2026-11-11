@@ -2,12 +2,12 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-src 'self' about:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; frame-src judith-frame:">
 <title>Judith · tableau</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="board.css">
-<script src="board.js" defer></script>
+<script type="module" src="board.js"></script>
 </head>
 <body>
 <main class="board">
@@ -16,7 +16,10 @@
       <h1 id="title">Judith</h1>
       <p id="subtitle"></p>
     </div>
-    <button type="button" class="close" id="close" aria-label="Fermer le tableau">
+    <button type="button" class="close" id="fold" aria-label="Réduire le tableau" title="Réduire le tableau" aria-expanded="true">
+      <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5H9"/></svg>
+    </button>
+    <button type="button" class="close" id="close" aria-label="Fermer le tableau" title="Fermer le tableau">
       <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1L9 9M9 1L1 9"/></svg>
     </button>
   </header>
@@ -28,6 +31,15 @@
     <section class="visual" id="visual" hidden>
       <h2 id="visual-title"></h2>
       <iframe id="frame" title="Visuel de Judith" sandbox="allow-scripts"></iframe>
+    </section>
+
+    <section class="scene" id="scene" hidden>
+      <h2 id="scene-title" class="sr-only"></h2>
+      <div class="scene-box" id="scene-box"></div>
+      <button type="button" class="seen-toggle" id="seen-toggle" aria-expanded="false" hidden>Ce que j'ai vu</button>
+      <figure class="seen" id="seen" hidden>
+        <img id="seen-img" alt="La capture d'écran que Judith a regardée">
+      </figure>
     </section>
 
     <section class="activity" id="activity" hidden>

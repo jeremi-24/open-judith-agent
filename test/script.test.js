@@ -51,3 +51,53 @@ test('the reader emits each line once, as soon as it is complete', () => {
   reader.finish('say Un.\nring 0.1 0.1 0.2 0.2\nsay Deux.');
   assert.deepEqual(seen, ['say', 'mark', 'say']);
 });
+
+test('an arrow joins two points, its label is optional', () => {
+  const arrow = parseLine('arrow 0.1 0.2 0.5 0.6 | vient de là');
+  assert.equal(arrow.shape, 'arrow');
+  assert.deepEqual(arrow.points, [[0.1, 0.2], [0.5, 0.6]]);
+  assert.equal(arrow.label, 'vient de là');
+  assert.ok(Math.abs(arrow.x - 0.3) < 1e-9 && Math.abs(arrow.y - 0.4) < 1e-9);
+  assert.equal(parseLine('arrow 0.1 0.2 0.5 0.6').label, '');
+  assert.equal(parseLine('arrow 0.1 0.2 0.1 0.2'), null);
+  assert.equal(parseLine('arrow 0.1 0.2 0.5'), null);
+});
+
+test('scene <n> moves the 3D scene; anything else after "scene" is spoken', () => {
+  assert.deepEqual(parseLine('scene 2'), { type: 'scene', step: 2 });
+  assert.equal(parseLine('scene 0').type, 'say');
+  assert.equal(parseLine('scene du crime').type, 'say');
+});
+
+test('done ends agent mode, with an optional last sentence', () => {
+  assert.deepEqual(parseLine('done'), { type: 'done', text: '' });
+  assert.deepEqual(parseLine('done Ta vidéo est exportée !'), { type: 'done', text: 'Ta vidéo est exportée !' });
+});
+
+test('act: the actions of autonomous agent mode', () => {
+  assert.deepEqual(parseLine('act click 0.42 0.18 | Exporter'), { type: 'act', action: 'click', x: 0.42, y: 0.18, button: 'left', label: 'Exporter' });
+  assert.equal(parseLine('act click 0.5 0.5 right | Fichier').button, 'right');
+  assert.deepEqual(parseLine('act type chat mignon | Recherche'), { type: 'act', action: 'type', text: 'chat mignon', label: 'Recherche' });
+  assert.deepEqual(parseLine('act key Ctrl + S'), { type: 'act', action: 'key', combo: 'ctrl+s' });
+  assert.deepEqual(parseLine('act scroll 0.5 0.6 -40'), { type: 'act', action: 'scroll', x: 0.5, y: 0.6, notches: -15 });
+  // Malformed: spoken, never executed.
+  assert.equal(parseLine('act click ici').type, 'say');
+  assert.equal(parseLine('act format c:').type, 'say');
+  // An English sentence starting with "Type" stays a sentence.
+  assert.equal(parseLine('Type your name in the box.').type, 'say');
+});
+
+test('propose: the model offers to guide a task to the end', () => {
+  assert.deepEqual(parseLine('propose créer un dépôt GitHub'), { type: 'propose', goal: 'créer un dépôt GitHub' });
+  assert.equal(parseLine('propose'), null);
+});
+
+test('zone n: the drawing lines that follow are in zone n', () => {
+  assert.deepEqual(parseLine('zone 2'), { type: 'zone', n: 2 });
+  assert.deepEqual(parseLine('zone 0'), { type: 'say', text: 'zone 0' });
+  assert.deepEqual(parseLine('zone deux'), { type: 'say', text: 'zone deux' });
+  const seen = [];
+  const reader = createScriptReader((command) => seen.push(command.type === 'mark' ? `mark${command.label}` : command.type === 'zone' ? `zone${command.n}` : command.type));
+  reader.finish('zone 1\nring 0.4 0.2 0.6 0.3 | A\nzone 2\nring 0.1 0.1 0.2 0.2 | B\nsay Voilà.');
+  assert.deepEqual(seen, ['zone1', 'markA', 'zone2', 'markB', 'say']);
+});

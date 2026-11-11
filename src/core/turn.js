@@ -19,13 +19,15 @@ const GOODBYE_WORDS = [
   "c'est", 'bon', 'tout', 'fini', "j'ai", 'terminé', 'ça', 'ira', 'suffit', 'merci', 'beaucoup', 'ok', 'okay', 'd’accord', "d'accord",
   'allez', 'judith', 'non', 'rien', "d'autre", 'autre', 'plus', 'de', 'pour', 'aujourd’hui', "aujourd'hui", 'maintenant', 'là', 'oui', 'bah', 'ben', 'euh',
   'thanks', 'thank', 'you', "that's", 'all', 'goodbye', 'bye-bye', 'see', 'later', 'enough', 'done', 'quit',
+  'nothing', 'else', 'no', 'never', 'mind', 'nevermind', "i'm", 'i', 'am', 'good', 'cheers', 'that', 'it', 'take', 'care', 'okay', 'ok', 'night', 'please', 'now', 'for',
 ];
 // At least one of these must be there: "ok, merci" alone is not a goodbye.
 // (Compared word by word: \b does not know accented letters.)
 const GOODBYE_CORE = [
   'arrête', 'arrete', 'arrêtes', 'stop', 'stoppe', 'tais-toi', 'chut', 'salut', 'bye', 'ciao', 'tchao', 'bonsoir', 'bonne nuit',
   'au revoir', 'à plus', "rien d'autre", "c'est bon", "c'est tout", "c'est fini", "j'ai fini", 'ça suffit', 'ça ira', 'laisse tomber',
-  "that's all", 'goodbye', 'bye-bye', 'see you', 'done', 'quit',
+  "that's all", "that's it", 'goodbye', 'bye-bye', 'see you', 'done', 'quit', 'thank you', 'thanks', 'nothing else',
+  'no thanks', 'never mind', 'nevermind', "i'm done", 'good night', 'take care', 'cheers',
 ];
 const KNOWN = new Set(GOODBYE_WORDS.map((w) => w.replace(/’/g, "'")));
 

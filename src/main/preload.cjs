@@ -3,14 +3,17 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const EVENTS = [
   // notch
-  'focus', 'idle', 'ask', 'cmd', 'answer', 'error', 'tool', 'approval', 'approved', 'stale', 'marked', 'speech', 'link', 'reminder',
-  // overlay (and the notch, for 'zone')
-  'mark', 'clear', 'scan', 'shift', 'select', 'zone',
+  'focus', 'idle', 'cancel-all', 'agent', 'agent-next', 'confirm', 'offer', 'ask', 'cmd', 'answer', 'error', 'tool', 'stale', 'marked', 'speech', 'link',
+  // overlay (and the notch, for 'zones' and 'notice')
+  'mark', 'clear', 'scan', 'shift', 'select', 'zones', 'notice', 'piloting',
   // board
-  'board', 'note', 'visual', 'activity', 'clear-board',
+  'board', 'note', 'visual', 'scene', 'scene-step', 'activity', 'clear-board',
 ];
 
 contextBridge.exposeInMainWorld('judith', {
+  // 'fr' or 'en', known before the page draws (the main process answers at once).
+  language: ipcRenderer.sendSync('judith:language'),
+  setLanguage: (language) => ipcRenderer.invoke('judith:set-language', language),
   ask: (question, turn) => ipcRenderer.invoke('judith:ask', question, turn),
   // Stop this turn (X, or the user talks over Judith).
   cancel: (turn) => ipcRenderer.send('judith:cancel', turn),
@@ -29,13 +32,34 @@ contextBridge.exposeInMainWorld('judith', {
   summon: () => ipcRenderer.send('judith:summon'),
   summonZone: () => ipcRenderer.send('judith:summon-zone'),
   close: () => ipcRenderer.send('judith:close'),
-  approve: (id, allow) => ipcRenderer.send('judith:approve', { id, allow }),
-  resize: (size) => ipcRenderer.send('judith:resize', size),
-  // The zone of the screen to explain: start drawing it, the drawn zone
-  // (fractions of the display, or null), forget it.
+  // The pointer is over the notch (it takes the clicks) or not (they go through).
+  interactive: (on) => ipcRenderer.send('judith:interactive', on),
+  // The state the notch shows; the summon shortcut depends on it.
+  notchState: (state) => ipcRenderer.send('judith:notch-state', state),
+  log: (text) => ipcRenderer.send('judith:log', text),
+  // Autonomous agent mode: the user's answer to "Vas-y / Non".
+  confirmAnswer: (yes) => ipcRenderer.send('judith:confirm-answer', yes === true),
+  // Where the notch really is inside its transparent window.
+  notchBox: (box) => ipcRenderer.send('judith:notch-box', box),
+  // The settings panel: Claude Code's model and effort, drawing, listening.
+  settings: {
+    get: () => ipcRenderer.invoke('judith:settings-get'),
+    test: (input) => ipcRenderer.invoke('judith:settings-test', input),
+    save: (input) => ipcRenderer.invoke('judith:settings-save', input),
+  },
+  // The welcome window: status, settings to save, done (tryNow: summon her).
+  onboarding: {
+    status: () => ipcRenderer.invoke('judith:onboarding-status'),
+    save: (input) => ipcRenderer.invoke('judith:onboarding-save', input),
+    done: (info) => ipcRenderer.send('judith:onboarding-done', info),
+  },
+  // The zones of the screen to explain: draw one more, the drawn zone
+  // (fractions of the display, or null), forget them all.
   pickZone: () => ipcRenderer.send('judith:pick-zone'),
   zoneSelected: (zone) => ipcRenderer.send('judith:zone-selected', zone),
   dropZone: () => ipcRenderer.send('judith:drop-zone'),
+  // The cross of a thumbnail: forget that zone (0-based).
+  removeZone: (index) => ipcRenderer.send('judith:remove-zone', index),
   // A document, page or site Judith made or mentioned.
   openLink: (url) => ipcRenderer.send('judith:open-link', url),
   // board
@@ -43,6 +67,8 @@ contextBridge.exposeInMainWorld('judith', {
   preview: (path) => ipcRenderer.send('judith:preview', path),
   closeBoard: () => ipcRenderer.send('judith:close-board'),
   resizeBoard: (height) => ipcRenderer.send('judith:resize-board', height),
+  // The 3D scene frame ran the model's code: { id, ok, error }.
+  sceneResult: (result) => ipcRenderer.send('judith:scene-result', result),
   on(event, listener) {
     if (EVENTS.includes(event)) ipcRenderer.on(`judith:${event}`, (_e, data) => listener(data));
   },
