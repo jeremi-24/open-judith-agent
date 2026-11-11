@@ -1,6 +1,6 @@
 {
   "name": "open-judith-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Judith — a desktop mentor that sees your screen, draws the answer on it, and runs on your own Claude Code.",
   "type": "module",
   "main": "src/main/main.js",
@@ -23,7 +23,8 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "electron": "~44.10.1"
+    "electron": "~44.10.1",
+    "sharp": "^0.35.5"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.2",

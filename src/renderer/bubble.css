@@ -59,28 +59,32 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
    as possible); hovered, it opens to "Judith ●" and the zone button ----- */
 .idle, .idle-zone { display: none; }
 .notch[data-state="none"] {
-  width: 58px;
-  min-height: 34px;
-  margin-top: 6px;
-  padding: 0 10px 0 6px;
+  width: 62px;
+  min-height: 28px;
+  margin-top: 4px;
+  padding: 0 11px 0 6px;
   /* Half the height, not 999px: the corners then morph smoothly into the
      open notch's corners instead of snapping. */
-  border-radius: 17px;
+  border-radius: 14px;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   cursor: pointer;
   box-shadow: 0 6px 16px -8px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.06);
 }
-.notch[data-state="none"]:hover { width: 200px; }
-.notch[data-state="none"] .avatar { width: 24px; height: 24px; margin: 0; border-radius: 50%; }
+/* Hovered, the slim pill opens to its full height for the name and the buttons. */
+.notch[data-state="none"]:hover { width: 200px; min-height: 34px; margin-top: 6px; padding: 0 10px 0 6px; border-radius: 17px; gap: 9px; }
+.notch[data-state="none"] .avatar { width: 19px; height: 19px; margin: 0; border-radius: 50%; transition: width var(--morph), height var(--morph); }
+.notch[data-state="none"]:hover .avatar { width: 24px; height: 24px; }
 .notch[data-state="none"] .idle {
   display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
   border: 0; background: transparent; padding: 0; color: #f4f2ff; cursor: pointer;
   font: 700 14px var(--font-title);
 }
+/* At rest the pill is only as high as its dot: the button's text line must not hold it open. */
+.notch[data-state="none"]:not(:hover) .idle { line-height: 0; height: 19px; }
 .idle-name { display: none; }
 .notch[data-state="none"]:hover .idle-name { display: inline; }
-.idle-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+.idle-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 6px var(--mint); }
 .notch[data-state="none"]:hover .idle-zone {
   display: flex; align-items: center; justify-content: center; flex: none;
   width: 28px; height: 28px; margin-left: auto; padding: 0;
@@ -287,7 +291,7 @@ label.row { cursor: pointer; }
 /* Guided mode at rest: the pill grows with its text ("Étape 3/12", then on hover
    the zone button too), so nothing ever overlaps. */
 .notch.agent[data-state="none"],
-.notch.agent[data-state="none"]:hover { width: max-content; min-width: 150px; }
+.notch.agent[data-state="none"]:hover { width: max-content; min-width: 150px; min-height: 24px; }
 .notch.agent[data-state="none"] .idle-name { display: inline; font: 600 12px var(--font-mono); }
 .notch.agent .idle-dot { order: -1; background: var(--iris); box-shadow: 0 0 8px var(--iris); animation: agent-breathe 1.6s ease-in-out infinite; }
 @keyframes agent-breathe { 50% { box-shadow: 0 0 0 4px rgb(143 124 255 / 0.3); } }

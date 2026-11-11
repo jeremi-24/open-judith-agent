@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-11-11
 
 Judith now does one thing, well: she looks at your screen and explains it.
 
