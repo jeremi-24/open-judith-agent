@@ -3,7 +3,6 @@
 // The French sentence is the key (see src/core/i18n.js). The sentences come from:
 //   - every t("…") call in src/
 //   - the text, title, aria-label, placeholder and alt of every page in src/renderer/*.html
-//   - the few sentences held in tables and shown later (provider notes, engine labels)
 // The test (test/i18n.test.js) fails when one is missing.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -23,7 +22,7 @@ const decode = (text) => text.replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').repl
 export const keyOf = (text) => decode(String(text)).replace(/\s+/g, ' ').replace(/[’‘]/g, "'").trim();
 
 // Words and symbols that are the same in both languages: no entry needed.
-const SAME = new Set(['Judith', 'Claude Code', 'Codex', 'Cursor', 'NVIDIA', 'OpenAI', 'Anthropic', 'OpenRouter', 'Mistral', 'Groq', 'Deepgram', 'Gemini', 'Google Gemini', 'Ctrl', 'Alt', 'Shift', 'J', 'OK', '✓', '✗', '?', 'Judith overlay', 'OpenAI Codex', 'FR', 'EN']);
+const SAME = new Set(['Judith', 'Claude Code', 'Haiku', 'Sonnet', 'Opus', 'Max', 'Deepgram', 'Ctrl', 'Alt', 'Shift', 'J', 'OK', '✓', '✗', '?', 'Judith overlay', 'FR', 'EN']);
 
 function fromScripts() {
   const found = [];
@@ -51,17 +50,8 @@ function fromPages() {
   return found;
 }
 
-async function fromTables() {
-  const { PROVIDERS } = await import(pathToFileURL(join(src, 'engine', 'api.js')).href);
-  const { ENGINES } = await import(pathToFileURL(join(src, 'engine', 'engines.js')).href);
-  return [
-    ...Object.values(PROVIDERS).flatMap((p) => (p.freeNote ? [{ key: keyOf(p.freeNote), where: 'engine/api.js' }] : [])),
-    ...Object.values(ENGINES).map((e) => ({ key: keyOf(e.label), where: 'engine/engines.js' })),
-  ];
-}
-
 export async function sentences() {
-  const all = [...fromScripts(), ...fromPages(), ...(await fromTables())].filter((s) => s.key && !SAME.has(s.key));
+  const all = [...fromScripts(), ...fromPages()].filter((s) => s.key && !SAME.has(s.key));
   const byKey = new Map();
   for (const s of all) if (!byKey.has(s.key)) byKey.set(s.key, s.where);
   return byKey;

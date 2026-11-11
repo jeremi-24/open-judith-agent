@@ -5,20 +5,12 @@ import { dirname, join } from 'node:path';
 import { detectLanguage } from '../core/i18n.js';
 
 export const DEFAULTS = {
-  // Who answers: "auto" (Claude Code, else Codex, else Cursor, else an API key),
-  // "claude-code", "codex", "cursor" or "api". Set from the notch's settings.
-  engine: 'auto',
-  // With "api": the provider (anthropic, openai, gemini, openrouter), the model
-  // (empty = the provider's default) and an optional base URL (e.g. Ollama).
-  // The key itself is saved encrypted in keys.json, never here.
-  apiProvider: 'anthropic',
-  apiModel: '',
-  apiBaseUrl: '',
-  // With "codex" or "cursor": the model to ask for (empty = the agent's default).
-  agentModel: '',
+  // Judith thinks with the user's own Claude Code (model and effort below).
+  // Judith may act on the computer (edit files, run commands…), not only look and explain.
+  claudeActs: true,
   // Agent mode, autonomous ("Agent autonome, …"): Judith may click and type
-  // herself, within the guardrails (src/core/guard.js). Off by default.
-  agentHands: false,
+  // herself, within the guardrails (src/core/guard.js). On by default, when the companion is installed.
+  agentHands: true,
   workingDirectory: homedir(),
   claudePath: null,
   model: 'haiku',

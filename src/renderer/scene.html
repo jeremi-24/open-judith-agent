@@ -8,19 +8,27 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: #faf9ff; font-family: "Plus Jakarta Sans", "Segoe UI", sans-serif; color: #24203a; }
   canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
   canvas:active { cursor: grabbing; }
-  #labels { position: absolute; inset: 0; pointer-events: none; }
-  .pill {
-    position: absolute; left: 0; top: 0; white-space: nowrap;
-    padding: 3px 8px; border-radius: 999px;
-    font: 500 10.5px/1.2 "JetBrains Mono", Consolas, monospace;
-    background: rgb(255 255 255 / 0.92); color: #24203a;
-    box-shadow: 0 2px 8px -2px rgb(36 32 58 / 0.25), 0 0 0 1px rgb(143 124 255 / 0.25);
-    transition: opacity 0.25s, background 0.25s, color 0.25s;
-    opacity: 0.8;
+  #lines, #labels { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #lines { overflow: visible; }
+  /* Labels written by hand, in the margins, each with a line to its part. */
+  .tag {
+    position: absolute; left: 0; top: 0; max-width: 40%; padding: 1px 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 600 13.5px/1.25 "Segoe Print", "Bradley Hand", "Chalkboard SE", "Comic Sans MS", cursive;
+    color: #3a3552; opacity: 0; transition: opacity 0.3s 0.25s, color 0.2s;
   }
-  .pill.active { opacity: 1; z-index: 1; }
-  .pill.dot { padding: 0; width: 18px; height: 18px; display: grid; place-items: center; font-size: 10px; }
-  .pill.active { background: #8f7cff; color: #fff; box-shadow: 0 4px 14px -4px rgb(107 87 232 / 0.7); }
+  .tag.on { opacity: 0.88; }
+  .tag.active.on { opacity: 1; color: #24203a; }
+  .tag.right { text-align: right; }
+  .mark { opacity: 0; transition: opacity 0.2s; }
+  .mark.on { opacity: 1; }
+  .leader { fill: none; stroke: #3a3552; stroke-width: 1.4; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 0.55s ease-out 0.1s, stroke 0.2s; }
+  .mark.on .leader { stroke-dashoffset: 0; }
+  .dot { fill: #3a3552; transition: fill 0.2s; }
+  .mark.active .leader { stroke: #3b6cf6; }
+  .mark.active .dot { fill: #3b6cf6; stroke: #fff; stroke-width: 2; r: 5px; transform-box: fill-box; transform-origin: center; animation: ping 1.5s ease-in-out infinite; }
+  @keyframes ping { 50% { transform: scale(1.35); } }
+  @media (prefers-reduced-motion: reduce) { .mark.active .dot { animation: none; } .tag, .leader { transition: none; } }
   #bar {
     position: absolute; left: 8px; right: 8px; bottom: 8px;
     display: flex; align-items: center; gap: 8px;
@@ -41,6 +49,7 @@
 </head>
 <body>
 <canvas id="view"></canvas>
+<svg id="lines" aria-hidden="true"></svg>
 <div id="labels"></div>
 <div id="bar" hidden>
   <button type="button" id="prev" aria-label="Étape précédente">‹</button>

@@ -30,7 +30,7 @@ function start(code) {
   const height = canvas.clientHeight || 300;
   renderer.setSize(width, height, false);
 
-  stage = JudithStage.createStage(THREE, { renderer, width, height, labelLayer: layer });
+  stage = JudithStage.createStage(THREE, { renderer, width, height, labelLayer: layer, lineLayer: document.getElementById('lines') });
   stage.onStep = (i, total, text) => {
     bar.hidden = false;
     caption.textContent = text;

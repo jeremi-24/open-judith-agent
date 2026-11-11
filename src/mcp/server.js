@@ -69,25 +69,35 @@ server.registerTool(
   },
 );
 
-// A schematic 3D model next to the screen, built by the model's own code with
-// Judith's bricks. The code runs in a sandboxed frame without network; the tool
-// says whether it worked, so a broken scene can be fixed once or given up.
+// A 3D model next to the screen, built by the model's own code with Judith's bricks.
+// It builds up part by part while she explains. The code runs in a sandboxed frame
+// without network; the tool says whether it worked, so a broken scene can be fixed
+// once or given up.
 server.registerTool(
   'show_scene',
   {
     description:
-      'Show a schematic 3D model next to the screen, to explain how a physical or spatial thing works ' +
-      '(an engine, a machine, an organ, a building, a molecule, a network of parts). Not for things a flat diagram or marks explain well.\n' +
-      'Give JavaScript (no imports, no network, no DOM) that builds the scene. It receives THREE (three.js r159), J (bricks) and stage:\n' +
-      "- J.assembly(stage, [{ name, shape: 'cylinder'|'cone'|'disc'|'sphere'|'ring'|'box', radius, radiusEnd (cone), length, height, depth, color, opacity }], { axis: 'x'|'y', gap }) " +
-      '→ { group, parts, axis }: parts laid end to end along the axis, labelled with their names, coloured from the palette.\n' +
-      "- J.flow(stage, [x,y,z], [x,y,z], { colors: ['sky','blush'], count, speed, spread }): particles flowing (air, fuel, data, blood), changing colour on the way.\n" +
-      '- J.explode(stage, assembly, 0..1): pull the parts apart to show the inside.\n' +
-      "- J.material(color, { opacity }), J.geometry(part), J.palette (iris, sky, mint, lemon, blush, deep, ink, pearl).\n" +
-      '- stage.add(object3D), stage.label(object, text), stage.onFrame((t, dt) => {}) to animate (t, dt in seconds), stage.focus(object).\n' +
-      '- stage.steps([{ target: part, text }]): the parts one by one (highlight and camera). In your script lines, write "scene <n>" right before ' +
-      'the sentence about step n, so the model follows your voice.\n' +
-      'Keep it schematic and light: at most ~12 parts, sizes around 1 to 10 units, centred on 0. Labels in the user language, at most 3 words.',
+      'Show a 3D model next to the screen that BUILDS UP part by part while you explain, for anything physical or spatial ' +
+      '(a machine, an organ, a building, a vehicle, a molecule, a landscape, a mechanism…). You decide what to model and how. ' +
+      'Not for things a flat diagram or marks explain well.\n' +
+      'LESS IS MORE: it is a clean sketch to understand with, not a replica. AT MOST 8 parts, in at most 5 steps (one per sentence you will say). Big simple shapes; merge details into one shape ' +
+      '(a car is a body, a cabin and wheels: no mirrors, handles or windows). Name only the 4 to 6 parts you will talk about: a part without a name gets no label, so decor stays quiet.\n' +
+      'Give JavaScript (no imports, no network, no DOM) that builds the scene. It receives THREE (three.js r159), J (bricks) and stage. y is up, one unit is about a hand.\n' +
+      '- J.build(stage, parts): the main brick. parts is a list of { name, shape, at: [x, y, z] (the centre), size: [width, height, depth] | radius | height | length, ' +
+      "rotate: [rx, ry, rz] (degrees), color, opacity, step }. Shapes: 'box' (size), 'cylinder' (radius, height), 'cone' (radius, height, radiusEnd), 'sphere' (radius), " +
+      "'ring' (radius, tube), 'prism' (size: triangle with base width, height, extruded over depth: roofs, ramps, wedges), 'halfcylinder' (radius, length: vaults, arches, tunnels), " +
+      "'extrude' (outline: [[x, y], …], depth, smooth: true to curve it, bevel: any flat profile: a wing, a car's side). Colours: iris, sky, mint, lemon, blush, deep, ink, pearl, or any CSS colour.\n" +
+      "  SMOOTH shapes look finished, plain boxes look raw: prefer 'lathe' (outline: [[radius, height], …] turned round the y axis: a fuselage, bottle, dome, tower, tree trunk; lay it flat with rotate [0, 0, 90]), " +
+      "'ellipsoid' (size [w, h, d]: a body, a head, a hull, a cloud), 'capsule' (radius, length: a limb, a pill, a pod), 'tube' (points: [[x, y, z], …] relative to at, radius: a pipe, cable, vein, handle) " +
+      "and 'roundbox' (soft corners). 'box', 'prism' and 'halfcylinder' already have soft edges (round: false for sharp ones).\n" +
+      '  Parts appear one step at a time, in order: base and foundations first, details last. Without step numbers each part is a step; with them, parts with the same number appear together ' +
+      '(a part without a number joins the one before it). A named part gets a hand-written label with a line to it (at most 3 words).\n' +
+      '  In your script lines, write "scene <n>" right before the sentence about step n, for every step, in order: the model follows your voice.\n' +
+      '- J.spin(stage, part, { axis, speed }), J.swing(stage, part, { axis, amplitude, speed }), J.move(stage, part, { axis, amount, speed }): make a part turn, rock or slide, to show how it works.\n' +
+      "- J.assembly(stage, [{ name, shape: 'cylinder'|'cone'|'disc'|'sphere'|'ring'|'box', radius, length… }], { axis }): parts laid end to end along an axis (engines, pipes, stacks).\n" +
+      "- J.flow(stage, [x,y,z], [x,y,z], { colors: ['sky','blush'], count, speed }): particles flowing (air, fuel, data, blood). J.explode(stage, assembly, 0..1): pull the parts apart.\n" +
+      '- J.material(color, { opacity }), J.palette, stage.add(object3D), stage.label(object, text), stage.onFrame((t, dt) => {}), stage.focus(object), ' +
+      'stage.steps([{ target, text }], { build: true }) for your own steps, stage.reveal(object) / stage.hide(object).',
     inputSchema: { title: z.string(), code: z.string() },
   },
   async ({ title, code }) => {

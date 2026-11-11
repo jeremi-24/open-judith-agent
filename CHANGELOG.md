@@ -11,16 +11,28 @@ Judith now does one thing, well: she looks at your screen and explains it.
 - Her examples come from the screen itself: its names, numbers and words.
 - What Claude Code makes to explain (artifacts, diagrams, documents) is still shown: a
   card in the notch, and the creation opens in the browser.
-- **Other engines**: OpenAI Codex, Cursor's agent, or an API key (Anthropic, OpenAI, Google
-  Gemini, OpenRouter, OpenAI-compatible servers). "Automatique" picks what is installed.
-  A gear in the notch lists them, tests them (text + image) and saves API keys encrypted.
+- **Claude Code is the only engine**, for now. Codex, Cursor and API keys (with their model
+  lists and encrypted keys) are gone: one thing, done well. They are in the git history.
+- **Settings of the notch, redone**: one setting per row (Claude model, thinking effort,
+  drawing on the screen, push to talk, notes board, autonomous agent, language), a dot saying
+  whether Claude Code was found, a **Test** and a **Save**. The round buttons of the notch share
+  one size and one feedback (hover, press, keyboard focus); **Stop** became **Send**.
+- **The board takes less of the screen**: at most 42% of the width and 62% of the height, a
+  slim title bar that folds it to one line, and a small square window for 3D scenes.
+- **Annotations to the end**: the prompt asks for one mark per sentence, and a new
+  `underline` underlines a word, a title or a number. With `hideFromScreenRecordings: false`
+  her own ink is no longer mistaken for a change of the screen.
 - **Precise marks**: a ring or box snaps onto the real control under it, thanks to a tiny
   Windows UI Automation companion (`companions/eyes`, .NET Framework 4.8). Built by CI and by
   `npm run dist` when the .NET SDK is installed; optional at run time.
 - **Diagrams on the screen**: hand-drawn arrows (`arrow`) join the parts she explains.
 - **3D explanations** (`show_scene`): a schematic three.js model next to the screen, built by
-  the model with Judith's bricks, explained part by part as she speaks (`scene <n>`), next to
-  the screenshot she looked at. Sandboxed, without network; a broken or hung scene is
+  the model with Judith's bricks and explained part by part as she speaks (`scene <n>`).
+  `J.build` places any solids freely (soft-edged boxes, cylinders, cones, spheres, rings, prisms,
+  vaults, and smooth shapes: `lathe`, `ellipsoid`, `capsule`, `tube`, curved extrusions, with a
+  soft shadow underneath), at most 8 parts; the model **builds up step by step**, each part labelled by hand with
+  a leader line, and `J.spin`, `J.swing` and `J.move` show how a part works. The screenshot
+  she looked at is one press away. Sandboxed, without network; a broken or hung scene is
   reported to the model, which then explains with words and marks.
 - **Agent mode, guided**: "Agent, …" starts a loop. Judith gives one step, waits for the screen
   to change and settle (the user did it), looks again and gives the next one, until `done`.

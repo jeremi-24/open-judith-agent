@@ -15,23 +15,30 @@ html, body { margin: 0; background: transparent; overflow: hidden; font-family: 
   overflow: hidden;
 }
 
+/* A slim title bar: it is also the handle to drag the board elsewhere. */
 header {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 12px 12px 10px 16px;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px 8px 14px;
   background: #14111d; color: #f4f2ff;
   -webkit-app-region: drag;
 }
-.titles { flex: 1; min-width: 0; }
-h1 { margin: 0; font: 700 17px/22px var(--font-title); }
-#subtitle { margin: 2px 0 0; font-size: 12.5px; color: #c9c0ff; }
+.titles { flex: 1; min-width: 0; margin-right: 6px; }
+h1 { margin: 0; font: 700 15px/20px var(--font-title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#subtitle { margin: 1px 0 0; font-size: 12px; color: #c9c0ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #subtitle:empty { display: none; }
 .close {
   -webkit-app-region: no-drag;
-  width: 26px; height: 26px; flex: none;
+  width: 28px; height: 28px; flex: none;
   border: 0; border-radius: 50%; background: rgb(255 255 255 / 0.08); cursor: pointer;
   display: grid; place-items: center;
+  transition: background 0.15s;
 }
-.close svg { width: 11px; height: 11px; stroke: #a9a3c4; stroke-width: 1.6; stroke-linecap: round; }
+.close:hover { background: rgb(255 255 255 / 0.18); }
+.close:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+.close svg { width: 11px; height: 11px; stroke: #c9c0ff; stroke-width: 1.6; stroke-linecap: round; fill: none; }
+/* Folded: only the title bar is left, the notes come back with one press. */
+.board.folded .paper { display: none; }
+.board.folded #subtitle { display: none; }
 
 /* Paper with a light grid. */
 .paper {
@@ -49,7 +56,7 @@ h1 { margin: 0; font: 700 17px/22px var(--font-title); }
 .notes:empty { display: none; }
 .notes li {
   display: flex; align-items: flex-start; gap: 12px;
-  font-size: 13.5px; line-height: 19px; font-weight: 600;
+  font-size: 13px; line-height: 18px; font-weight: 600;
   animation: appear 0.3s ease-out;
 }
 .notes li::before {
@@ -70,17 +77,19 @@ h2 { margin: 0 0 10px; font: 600 11px/1 var(--font-mono); letter-spacing: 0.1em;
 .visual[hidden], .activity[hidden], .scene[hidden], .seen[hidden] { display: none; }
 #frame { display: block; width: 100%; height: 280px; min-height: 120px; border: 0; border-radius: 14px; background: #fff; box-shadow: 0 0 0 1px var(--line); }
 
-/* 3D scene: what Judith looked at, then her schematic model. */
-/* Side by side when the window is wide, stacked when it is narrow. */
-.scene-body { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
-.seen { position: relative; margin: 0; flex: 1 1 160px; }
-.scene-box { flex: 3 1 300px; min-width: 0; }
-.seen img { display: block; width: 100%; max-height: 220px; object-fit: cover; border-radius: 12px; box-shadow: 0 0 0 1px var(--line); }
-.seen figcaption {
-  position: absolute; left: 8px; bottom: 8px; padding: 2px 8px; border-radius: 999px;
-  font: 500 10.5px/1.4 var(--font-mono); background: rgb(20 17 29 / 0.8); color: #f4f2ff;
-}
-.scene-box iframe { display: block; width: 100%; aspect-ratio: 4 / 3; max-height: min(520px, calc(100vh - 140px)); border: 0; border-radius: 14px; background: #faf9ff; box-shadow: 0 0 0 1px var(--line); }
+/* 3D scene: a small square window on the model, nothing else. What Judith looked at
+   is one press away (the toggle), not next to it. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.scene-box { min-width: 0; }
+.scene-box iframe { display: block; width: 100%; aspect-ratio: 1 / 1; max-height: min(430px, 48vh); border: 0; border-radius: 14px; background: #faf9ff; box-shadow: 0 0 0 1px var(--line); }
+.seen-toggle { margin-top: 8px; padding: 3px 0; border: 0; background: none; color: var(--deep-iris); font: 700 12px var(--font-ui); cursor: pointer; }
+.seen-toggle::before { content: '▸ '; }
+.seen-toggle[aria-expanded="true"]::before { content: '▾ '; }
+.seen-toggle:hover { text-decoration: underline; }
+.seen-toggle:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; border-radius: 4px; }
+.seen { margin: 6px 0 0; }
+.seen[hidden], .seen-toggle[hidden] { display: none; }
+.seen img { display: block; width: 100%; max-height: 170px; object-fit: cover; border-radius: 12px; box-shadow: 0 0 0 1px var(--line); }
 
 /* Activity: commands, files, visuals. */
 #actions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

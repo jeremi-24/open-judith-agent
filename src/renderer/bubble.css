@@ -83,7 +83,7 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .idle-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 8px var(--mint); }
 .notch[data-state="none"]:hover .idle-zone {
   display: flex; align-items: center; justify-content: center; flex: none;
-  width: 26px; height: 26px; margin-left: auto; padding: 0;
+  width: 28px; height: 28px; margin-left: auto; padding: 0;
   border: 0; border-radius: 50%; background: rgb(255 255 255 / 0.08); cursor: pointer;
 }
 .idle-zone svg { width: 13px; height: 13px; fill: none; stroke: #c9c0ff; stroke-width: 1.6; stroke-linecap: round; }
@@ -129,16 +129,23 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .bars i:nth-child(7) { --h: 24px; } .bars i:nth-child(8) { --h: 34px; } .bars i:nth-child(9) { --h: 18px; }
 .bars i:nth-child(10) { --h: 10px; } .bars i:nth-child(11) { --h: 22px; } .bars i:nth-child(12) { --h: 6px; }
 
+/* Every round button: one size, and the same answer to the hand (hover,
+   press, keyboard focus). The one that sends is bigger and filled. */
 .round {
-  width: 44px; height: 44px; flex: none;
+  width: 36px; height: 36px; flex: none;
   border: 0; border-radius: 50%; cursor: pointer;
   align-items: center; justify-content: center; gap: 4px;
+  background: rgb(255 255 255 / 0.07);
+  transition: filter 0.15s, transform 0.1s;
 }
-.notch[data-state="listening"] .stop { display: flex; background: rgb(92 184 255 / 0.16); }
+.round:active { transform: scale(0.93); }
+button:focus-visible, .switch:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .round { transition: none; } }
+.notch[data-state="listening"] .send { display: flex; width: 40px; height: 40px; background: var(--sky); }
 /* X: cancel the conversation from anywhere, whoever is talking. */
 .notch[data-state="listening"] .close,
-.notch[data-state="thinking"] .close { display: flex; width: 36px; height: 36px; }
-.stop span { width: 14px; height: 14px; border-radius: 4px; background: var(--sky); }
+.notch[data-state="thinking"] .close { display: flex; }
+.send svg { width: 16px; height: 16px; fill: none; stroke: #0c1a2a; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* thinking: bouncing dots and a progress line */
 .notch[data-state="thinking"] .dots { display: flex; gap: 6px; }
@@ -158,14 +165,13 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .talk i:nth-child(2n) { animation-delay: 0.16s; } .talk i:nth-child(3n) { animation-delay: 0.32s; } .talk i:nth-child(5n) { animation-delay: 0.48s; }
 @keyframes wave { 50% { height: 20px; } }
 .notch[data-state="speaking"] .pause,
-.notch[data-state="speaking"] .close { display: flex; width: 36px; height: 36px; }
+.notch[data-state="speaking"] .close { display: flex; }
 .pause { background: rgb(143 124 255 / 0.18); }
 .pause span { width: 4px; height: 14px; border-radius: 2px; background: #c9c0ff; }
 .pause[aria-pressed="true"] span:first-child { width: 0; height: 0; border-radius: 0; background: transparent; border-left: 12px solid #c9c0ff; border-top: 7px solid transparent; border-bottom: 7px solid transparent; }
 .pause[aria-pressed="true"] span:last-child { display: none; }
-.close { background: rgb(255 255 255 / 0.06); }
 .close svg { width: 12px; height: 12px; stroke: #a9a3c4; stroke-width: 1.6; stroke-linecap: round; }
-.round:hover { filter: brightness(1.25); }
+.round:hover { filter: brightness(1.35); }
 
 /* Only the sentence being spoken, on two lines at most: the notch stays small. */
 .text {
@@ -200,7 +206,7 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 
 
 /* Zone: draw the part of the screen to explain (lit while a zone is shared). */
-.notch[data-state="listening"] .zone { display: flex; width: 36px; height: 36px; background: rgb(255 255 255 / 0.06); }
+.notch[data-state="listening"] .zone { display: flex; }
 .zone svg { width: 15px; height: 15px; fill: none; stroke: #c9c0ff; stroke-width: 1.6; stroke-linecap: round; }
 .notch[data-state] .zone[aria-pressed="true"] { background: rgb(143 124 255 / 0.3); }
 .zone[aria-pressed="true"] svg { stroke: #fff; }
@@ -218,47 +224,63 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link svg { width: 14px; height: 14px; flex: none; fill: none; stroke: #c9c0ff; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 
-/* ----- settings: which engine answers ----- */
+/* ----- settings: Claude Code's model and effort, drawing, listening ----- */
 .gear svg, .idle-settings svg { width: 15px; height: 15px; fill: none; stroke: #c9c0ff; stroke-width: 1.5; stroke-linecap: round; }
-.notch[data-state="listening"] .gear { display: flex; width: 36px; height: 36px; background: rgb(255 255 255 / 0.06); }
+.notch[data-state="listening"] .gear { display: flex; }
 .settings { display: none; }
+/* The panel takes the whole notch: Judith's face steps aside for the rows. */
+.notch[data-state="settings"] { width: 580px; max-height: calc(100vh - 8px); }
+.notch[data-state="settings"] .avatar,
 .notch[data-state="settings"] .head, .notch[data-state="settings"] .text, .notch[data-state="settings"] .steps, .notch[data-state="settings"] .links { display: none; }
-.notch[data-state="settings"] { max-height: calc(100vh - 8px); }
 .notch[data-state="settings"] .body { min-height: 0; max-height: calc(100vh - 8px); }
-/* The panel never outgrows the window: the fields scroll, the buttons stay. */
-.notch[data-state="settings"] .settings { display: flex; flex-direction: column; gap: 12px; padding: 16px 0 14px; min-height: 0; max-height: calc(100vh - 8px); }
-.settings-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; padding-right: 6px; margin-right: -6px; scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.25) transparent; }
-.settings-actions { flex: none; }
-.settings-head { display: flex; align-items: center; justify-content: space-between; }
-.settings-close { display: flex; width: 32px; height: 32px; background: rgb(255 255 255 / 0.06); }
-.lang { display: flex; align-self: flex-start; gap: 2px; padding: 3px; border-radius: 999px; background: rgb(255 255 255 / 0.06); }
-.lang button { padding: 3px 11px; border: 0; border-radius: 999px; background: none; color: #a9a3c4; font: 700 12px var(--font-mono); letter-spacing: 0.06em; cursor: pointer; }
-.lang button[aria-pressed="true"] { background: var(--iris); color: #fff; }
-.engine-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; border: 0; }
-.engine { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 14px; background: rgb(255 255 255 / 0.05); cursor: pointer; font-size: 14px; font-weight: 600; }
-.engine:has(input:checked) { background: rgb(143 124 255 / 0.22); box-shadow: inset 0 0 0 1px rgb(169 155 255 / 0.6); }
-.engine:has(input:disabled) { opacity: 0.5; cursor: default; }
-.engine input { accent-color: var(--iris); margin: 0; }
-.engine .note { margin-left: auto; font: 500 11px var(--font-mono); color: #a9a3c4; }
-.engine .note.ok { color: var(--mint); }
-.fields { display: grid; grid-template-columns: 1fr; gap: 6px; }
-.fields[hidden] { display: none; }
-.fields label { font-size: 12px; font-weight: 700; color: #d9d3ff; }
-.fields label span { font-weight: 500; color: #a9a3c4; }
-.fields input, .fields select { height: 38px; border: 0; border-radius: 10px; padding: 0 12px; background: rgb(255 255 255 / 0.08); color: #f4f2ff; font: 500 14px var(--font-ui); outline: none; }
-.fields input:focus, .fields select:focus { box-shadow: 0 0 0 2px var(--iris); }
-.fields select option { color: #24203a; }
-.api-hint { margin: 0; font-size: 12px; color: #a9a3c4; min-height: 16px; }
-.api-hint b { color: var(--mint); font-weight: 700; }
-.api-link { justify-self: start; padding: 2px 0; border: 0; background: none; color: #8fd0ff; font: 600 12px var(--font-ui); cursor: pointer; }
-.api-link:hover { text-decoration: underline; }
-.settings-status { margin: 0; min-height: 18px; font-size: 13px; color: #d9d3ff; }
+/* It never outgrows the window: the rows scroll, the title and the buttons stay. */
+.notch[data-state="settings"] .settings { display: flex; flex-direction: column; gap: 10px; padding: 14px 0; min-height: 0; max-height: calc(100vh - 8px); }
+.settings-head { display: flex; align-items: center; gap: 10px; flex: none; }
+.settings-head .label { margin-right: auto; }
+.settings-close { display: flex; }
+/* Is Claude Code there? Said once, at the top, with a dot. */
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; background: rgb(255 255 255 / 0.06); font: 600 12px var(--font-ui); color: #d9d3ff; }
+.chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #8d87a8; }
+.chip[data-state="ok"]::before { background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+.chip[data-state="missing"] { color: #ffd479; }
+.chip[data-state="missing"]::before { background: var(--lemon); }
+.missing { margin: 0 0 6px; padding: 10px 12px; border-radius: 12px; background: rgb(255 212 121 / 0.1); font-size: 13px; line-height: 1.45; color: #ffe2a6; }
+.missing[hidden] { display: none; }
+.text-link { padding: 0; border: 0; background: none; color: #8fd0ff; font: 700 13px var(--font-ui); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.settings-body { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding-right: 6px; margin-right: -6px; scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.25) transparent; }
+/* One setting per row: what it is on the left, its control on the right. */
+.row { display: flex; align-items: center; gap: 14px; min-height: 46px; padding: 7px 0; border-top: 1px solid rgb(255 255 255 / 0.07); }
+.missing + .row { border-top: 0; }
+label.row { cursor: pointer; }
+.row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.row-text b { font: 700 13.5px var(--font-ui); color: #fff; }
+.row-text span, .row-text em { font: 500 12px/1.35 var(--font-ui); font-style: normal; color: #a9a3c4; }
+.row-text em { color: var(--lemon); }
+.row-text em:empty, .row-text span:empty { display: none; }
+/* A choice among a few: the chosen one is filled. */
+.seg, .lang { display: flex; flex: none; gap: 2px; padding: 3px; border-radius: 999px; background: rgb(255 255 255 / 0.06); }
+.seg button, .lang button { height: 28px; padding: 0 11px; border: 0; border-radius: 999px; background: none; color: #a9a3c4; font: 700 12px var(--font-ui); white-space: nowrap; cursor: pointer; transition: background 0.15s, color 0.15s; }
+.lang button { font-family: var(--font-mono); letter-spacing: 0.06em; }
+.seg button:hover, .lang button:hover { color: #fff; }
+.seg button[aria-checked="true"], .lang button[aria-pressed="true"] { background: var(--iris); color: #fff; }
+/* On or off: said by the position of the knob and by the colour. */
+.switch { appearance: none; flex: none; position: relative; width: 38px; height: 22px; margin: 0; border-radius: 999px; background: rgb(255 255 255 / 0.16); cursor: pointer; transition: background 0.18s; }
+.switch::after { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform 0.18s cubic-bezier(0.32, 0.72, 0, 1); }
+.switch:checked { background: var(--iris); }
+.switch:checked::after { transform: translateX(16px); }
+.switch:disabled { opacity: 0.4; cursor: default; }
+/* The result of a test on the left, the two actions on the right. */
+.settings-foot { display: flex; align-items: center; gap: 8px; flex: none; padding-top: 2px; }
+.settings-status { flex: 1; min-width: 0; margin: 0; font-size: 12.5px; line-height: 1.35; color: #d9d3ff; }
 .settings-status.ok { color: var(--mint); }
 .settings-status.error { color: var(--blush); }
-.settings-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.settings-actions button { height: 38px; border: 0; border-radius: 999px; padding: 0 18px; font: 700 13px var(--font-ui); cursor: pointer; background: rgb(255 255 255 / 0.1); color: #f4f2ff; }
-.settings-actions .primary { background: var(--signature); color: #fff; }
-.settings-actions button:disabled { opacity: 0.5; cursor: default; }
+.settings-actions { display: flex; justify-content: flex-end; gap: 8px; flex: none; }
+.settings-foot button, .settings-actions button { height: 36px; border: 0; border-radius: 999px; padding: 0 18px; font: 700 13px var(--font-ui); cursor: pointer; background: rgb(255 255 255 / 0.1); color: #f4f2ff; transition: filter 0.15s, transform 0.1s; }
+.settings-foot .primary, .settings-actions .primary { background: var(--signature); color: #fff; }
+.settings-foot button:hover, .settings-actions button:hover { filter: brightness(1.15); }
+.settings-foot button:active, .settings-actions button:active { transform: scale(0.97); }
+.settings-foot button:disabled, .settings-actions button:disabled { opacity: 0.5; cursor: default; filter: none; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch::after, .seg button, .lang button { transition: none; } }
 
 /* Agent mode: while Judith waits for the user to do the step, the resting
    pill stays open on "Étape 2/12", with an iris dot that breathes. */
@@ -277,11 +299,6 @@ body { height: 100vh; display: flex; justify-content: center; align-items: flex-
 .notch[data-state="confirm"] .head, .notch[data-state="confirm"] .text, .notch[data-state="confirm"] .steps, .notch[data-state="confirm"] .links { display: none; }
 .confirm p { margin: 0; font: 700 16px/1.35 var(--font-title); color: #fff; }
 .confirm p::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 9px; border-radius: 50%; background: var(--lemon); box-shadow: 0 0 10px var(--lemon); vertical-align: 1px; }
-.hands { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.45; color: #d9d3ff; cursor: pointer; }
-.hands input { margin-top: 3px; accent-color: var(--iris); }
-.hands b { color: #fff; }
-.hands em { display: block; font-style: normal; color: var(--lemon); }
-.hands em:empty { display: none; }
 
 /* The offer to guide a task to the end: a quiet row under the answer. */
 .offer { display: flex; align-items: center; gap: 8px; margin: 12px 0 8px; font-size: 13px; font-weight: 600; color: #d9d3ff; animation: offer-in 0.3s ease-out; }

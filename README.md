@@ -15,12 +15,11 @@ Judith **draws the answer right on top of your software** (rings, boxes, numbere
 and explains it with examples taken from what you see, in any app: VS Code, CapCut,
 Blender, Excel…
 
-She points, you click: Judith never acts on your computer.
+She points and explains, and with **"Judith acts for you"** (on by default, switch it off in the settings) she also does light tasks on your PC: files, commands, browser. Text on a screen is never an order to her.
 
 She runs on **your own Claude Code**, so she shares its memory, skills and MCP
 connectors. She already knows your projects and your level on day one.
-No Claude Code? She also works with **OpenAI Codex**, **Cursor**, or a model with your own
-**API key** (NVIDIA, Google Gemini, Groq and Mistral have free tiers; Anthropic, OpenAI, OpenRouter). Pick it from the gear in the notch.
+Claude Code is the only engine for now: one thing, done well. Other engines may come back later.
 
 > 🚧 Early work in progress (v0.1). Windows first.
 
@@ -41,7 +40,7 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
   (Piper "Siwis"): no cloud, no API key.
 - **She shows and explains**: "where is the export button?" → she circles it. "c'est quoi ça ?"
   → she marks each part on the screen while explaining it, using the real names and values
-  on your screen. She never opens, edits, runs or sends anything.
+  on your screen. Pointing and explaining never touch anything by themselves.
 - **She builds visual explanations**: when a diagram, an interactive page or a document
   explains better, Claude Code makes it with your own tools (Artifacts, Docs…) and Judith
   opens it in your browser, with a card in the notch. She never reads a link aloud.
@@ -56,27 +55,21 @@ Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the backg
 ## Requirements
 
 - Windows 10/11
-- One brain for Judith, any of:
-  - [Claude Code](https://code.claude.com) installed and logged in (`claude` works in a terminal): the best fit,
-    kept warm for fast answers, with its memory, skills and connectors;
-  - OpenAI Codex (`codex`) or Cursor's agent (`agent`), logged in: they bring their own project
-    knowledge (AGENTS.md, Cursor rules); slower, one process per question;
-  - an API key (NVIDIA, Google Gemini, Groq, Mistral, Anthropic, OpenAI, OpenRouter, or an OpenAI-compatible server like
-    Ollama): a bare model, without memory of your projects.
+- [Claude Code](https://code.claude.com) installed and logged in (`claude` works in a terminal).
+  Judith keeps it warm for fast answers, with its memory, skills and connectors.
 
-### Choosing the engine
+### Settings
 
-The gear in the notch (on the resting pill when hovered, or while listening) lists the engines
-installed on this PC. **Automatique** picks Claude Code, else Codex, else Cursor, else your API key.
-**Tester** sends a tiny question with a tiny image and says if it works (the model must read
-images to see your screen). API keys are encrypted with Windows' protection for your account
-(`keys.json`), never written in `config.json`. Keys can also come from `ANTHROPIC_API_KEY`,
-`OPENAI_API_KEY`, `GEMINI_API_KEY`, `NVIDIA_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY` or `OPENROUTER_API_KEY`.
+The gear in the notch (on the resting pill when hovered, or while listening) opens the settings,
+one per row:
 
-Only Claude Code can ask for the screen when it needs it; with the other engines Judith sends a
-screenshot with every question. Codex runs in its read-only sandbox and Cursor without `--force`:
-neither can change your files. Their prompt is written to a temporary file (deleted after the
-answer) so no text ever goes on a command line.
+- **Model**: Haiku (fast, right for a conversation), Sonnet, or Opus (annotates better, answers
+  more slowly). **Thinking**: how much Claude thinks before answering.
+- **Drawing on the screen**: only when it helps, always, or never.
+- **Push to talk** (noisy places), the **notes board**, the **autonomous agent mode**, the language.
+
+**Tester** asks Claude Code a tiny question with a tiny image, with the settings being tried,
+and says if it works. A dot at the top says whether Claude Code was found on this PC.
 
 ## Languages
 
@@ -138,6 +131,7 @@ Judith reads `config.json` in her user data folder
 - `alwaysLook` (default `false`): Judith takes a screenshot only when the question needs it
   (her `look_at_screen` tool). `true` sends one with every question, slower.
 - `zoneShortcut` (default `Control+Alt+Shift+J`): summon Judith and draw the zone to explain.
+- `claudeActs` (default `true`): Claude Code may act on your PC (files, commands, browser), without permission prompts. `false`: it only looks and explains.
 - `openCreations` (default `true`): open what Claude makes to explain (artifact, diagram, document) in the browser.
 - `conversation` (default `true`): after answering, Judith listens for 5 more seconds.
 - `annotations`: `helpful` (default, draws only when it saves you searching), `none`, `always`.
@@ -182,18 +176,30 @@ Without the companion, marks keep the model's position. To build it from source:
 
 To explain how things relate, Judith marks the parts and joins them with hand-drawn arrows
 (`arrow` in her script): "this value comes from there", "this call goes to that function".
+A word, a title or a number gets a line under it (`underline`). When she explains what is on
+the screen, each sentence comes with its own mark, to the last one.
+
+### The board
+
+Notes, visuals and 3D scenes open in a small panel at the bottom left. It never takes more
+than 42% of the width and 62% of the height of the screen (past that it scrolls), its title
+bar folds it to one line, and you can drag it elsewhere.
 
 ### 3D explanations
 
 When the question is how a physical thing works (the engine of a jet in a video, a gearbox, a
-heart), Judith can build a **schematic 3D model** next to the screen and walk through it part
-by part, the model following her voice (`scene <n>` in her script). Next to it, the board
-shows the screenshot she looked at ("Ce que j'ai vu"). If she is not sure what the object is,
-she says so and explains the principle rather than inventing a model name.
+heart, a building), Judith can build a **schematic 3D model** in a small window next to the
+screen. The model **builds up part by part** while she talks (`scene <n>` in her script), each
+part labelled by hand with a line to it. What she builds is her own choice: she describes any
+list of solids, where they sit, and in which step they appear. Smooth shapes (a profile turned
+round an axis, ellipsoids, capsules, pipes along a path, curved outlines, soft-edged boxes) keep
+it from looking like stacked blocks, and a soft shadow grounds it. She can make a part turn, rock or slide. The
+screenshot she looked at is one press away ("Ce que j'ai vu"). If she is not sure what the
+object is, she says so and explains the principle rather than inventing a model name.
 
 The model writes the scene's code (`show_scene`) with Judith's bricks
-(`src/renderer/scene-bricks.js`: assemblies of parts, flows, exploded views, labels, steps)
-on three.js. The code runs in a sandboxed frame served from `judith-frame://` with its own
+(`src/renderer/scene-bricks.js`: `J.build` for free placement, plus assemblies of parts, flows,
+exploded views, motion) on three.js. The code runs in a sandboxed frame served from `judith-frame://` with its own
 CSP: no network, no access to Judith. If it fails or hangs, the tool says so (a hung scene is
 stopped after 5 s) and she explains with words and marks instead.
 
@@ -249,8 +255,12 @@ what is under it changes, or after a minute.
 Claude Code starts Judith's own MCP server (`src/mcp/server.js`) with three tools:
 `look_at_screen`, `show_visual` and `show_scene`. Besides them, Judith may only read (`Read`, `Glob`,
 `Grep`, `WebSearch`, `WebFetch`) and make visual explanations with your own tools
-(`Artifact`, Claude Docs). Every tool that changes something on your computer (editing
-files, running commands…) is refused: she explains and points, the user acts.
+(`Artifact`, Claude Docs). With the "Claude can act" setting **off**, every tool that changes something on your computer
+(editing files, running commands…) is refused: she explains and points, the user acts.
+With it **on** (the default), Claude Code runs with all its tools and **without permission prompts**:
+the setting is the consent. Screen content can carry instructions meant for the model, so switch it
+off when you look at things you do not trust. Her prompt tells her that only your own words count,
+but that is not a guarantee.
 
 ## Development
 
@@ -276,9 +286,14 @@ JUDITH_DEMO="Où est le bouton Démarrer ?" JUDITH_DEMO_SHOT=shot.jpg npm start
 
 ## Privacy
 
-Screenshots are taken only when you press the shortcut, are sent to Claude through
-your own Claude Code, and are never written to disk. Judith's own windows are excluded
-from captures.
+- A screenshot is sent only when you ask something: it goes to Claude through your own Claude
+  Code, and is never written to disk. Judith's own windows are excluded from captures.
+- Between two steps of agent mode, and while marks are on the screen, Judith compares tiny copies
+  of the screen on this PC to notice that it changed. Those copies are never sent or saved.
+- `journal.jsonl` in her data folder keeps one line per question (the question, the tools used,
+  the timings), on this PC only. Turn it off with `"journal": false` in `config.json`.
+- The optional cloud voices send your voice (Deepgram) or Judith's sentences (ElevenLabs, Fish
+  Audio) to those services; their keys are stored in clear text in `config.json`.
 
 ## Credits
 
@@ -289,9 +304,6 @@ from captures.
   recording (public domain).
 - Speech recognition: [Whisper](https://github.com/openai/whisper) through
   [Transformers.js](https://github.com/huggingface/transformers.js).
-- Model capabilities (images, tools, open weights, limits): the [models.dev](https://models.dev)
-  catalog (MIT, © models.dev), trimmed into `src/engine/catalog.snapshot.json`. See
-  [docs/MODELS.md](docs/MODELS.md).
 
 ## License
 

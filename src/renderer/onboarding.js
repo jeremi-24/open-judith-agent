@@ -1,16 +1,12 @@
-// The welcome window: one screen at a time, one idea each. The two settings
-// screens save as the user moves on (the AI through the notch's own settings,
-// the shortcut through onboarding.save); listening keeps its defaults (they
-// are in the notch's settings). Every key is optional.
+// The welcome window: one screen at a time, one idea each. The Claude Code
+// screen only checks that it is there; the shortcut screen saves as the user
+// moves on (onboarding.save). The other settings are in the notch.
 import { t, translateDocument } from '../core/i18n.js';
-import { createModelPicker } from './model-picker.js';
 translateDocument(document);
 const api = window.judith;
 const $ = (id) => document.getElementById(id);
 const screens = [...document.querySelectorAll('.screen')];
-const NEXT_LABELS = [t('Découvrir'), 'Suivant', 'Suivant', 'Continuer', 'Continuer', 'Essayer maintenant'];
-const ENGINE = 3;
-const SHORTCUT = 4;
+const NEXT_LABELS = [t('Découvrir'), t('Suivant'), t('Suivant'), t('Suivant'), t('Suivant'), t('Suivant'), t('Essayer maintenant')];
 let current = 0;
 let status = null;
 let engines = null;
@@ -21,6 +17,15 @@ const keys = (accelerator) =>
     .split('+')
     .map((k) => `<kbd>${{ Control: 'Ctrl', Shift: t('Maj'), Space: t('Espace') }[k] ?? k}</kbd>`)
     .join('');
+
+// ----- photos: a screen shows assets/onboarding/<name>.jpg when it exists, else its drawn demo -----
+for (const screen of screens) {
+  const name = screen.dataset.media;
+  if (!name) continue;
+  const photo = Object.assign(new Image(), { className: 'media', alt: '', src: `../../assets/onboarding/${name}.jpg` });
+  photo.addEventListener('load', () => screen.classList.add('has-media'));
+  screen.querySelector('h1').after(photo);
+}
 
 // ----- navigation -----
 const dots = $('dots');
@@ -36,17 +41,13 @@ function show(index) {
   $('next').textContent = NEXT_LABELS[current];
 }
 
-const SAVES = { [ENGINE]: saveEngine, [SHORTCUT]: saveShortcuts };
+// Only the last screen saves (the shortcut, start with Windows), then she can be tried.
 $('next').addEventListener('click', async () => {
-  if (current === screens.length - 1) return api.onboarding.done({ tryNow: true });
-  const save = SAVES[current];
-  if (save) {
-    $('next').disabled = true;
-    const ok = await save().catch(() => false);
-    $('next').disabled = false;
-    if (!ok) return;
-  }
-  show(current + 1);
+  if (current < screens.length - 1) return show(current + 1);
+  $('next').disabled = true;
+  const ok = await saveShortcuts().catch(() => false);
+  $('next').disabled = false;
+  if (ok) api.onboarding.done({ tryNow: true });
 });
 $('back').addEventListener('click', () => show(current - 1));
 $('skip').addEventListener('click', () => api.onboarding.done({}));
@@ -65,90 +66,33 @@ function setStatus(id, text, kind = '') {
   el.className = `status ${kind}`;
 }
 
-// ----- the AI: the labels say which one to pick -----
-const installed = (id) => engines.engines.some((e) => e.id === id && e.installed);
-function renderEngines() {
-  const options = [
-    { id: 'claude-code', label: t("J'ai {name}", { name: 'Claude Code' }) },
-    { id: 'codex', label: t("J'ai {name}", { name: 'Codex' }) },
-    { id: 'api', label: t("J'ai une clé API") },
-    { id: 'none', label: t("Je n'ai rien de tout ça") },
-  ];
-  // Pre-selected: what is configured, else what is installed, else nothing.
-  const configured = engines.configured && engines.configured !== 'auto' ? engines.configured : null;
-  const chosen = configured ?? (installed('claude-code') ? 'claude-code' : installed('codex') ? 'codex' : engines.providers.some((p) => p.hasKey) ? 'api' : 'none');
-  $('engines').innerHTML = options
-    .map((o) => {
-      const found = o.id !== 'api' && o.id !== 'none' && installed(o.id);
-      return `<label class="option"><input type="radio" name="engine" value="${o.id}" ${o.id === chosen ? 'checked' : ''}>
-      <b>${o.label}</b>${found ? `<span class="tag-pill ok">${t('détecté')}</span>` : ''}</label>`;
-    })
-    .join('');
-  // Without any key yet, the free NVIDIA endpoints are the way in.
-  const preselected = engines.providers.some((p) => p.hasKey) ? engines.apiProvider : 'nvidia';
-  $('api-provider').innerHTML = engines.providers.map((p) => `<option value="${p.id}" ${p.id === preselected ? 'selected' : ''}>${p.label}${p.free ? ` · ${t('gratuit')}` : ''}${p.hasKey ? ` (${t('clé enregistrée')})` : ''}</option>`).join('');
-  $('api-provider').addEventListener('change', syncProvider);
-  $('engines').addEventListener('change', syncEngine);
-  syncEngine();
-}
-const provider = () => engines.providers.find((p) => p.id === $('api-provider').value);
-// The models of the chosen provider, on demand; a provider with no default model
-// (OpenRouter) opens the list, since the test needs one.
-const modelPicker = createModelPicker({ mount: $('model-picker'), input: $('api-model'), api, provider: () => $('api-provider').value, key: () => $('api-key').value });
-let pickerFor = null;
-function loadModels() {
-  const p = provider();
-  if (!p || chosenEngine() !== 'api') return;
-  if (pickerFor !== p.id) $('api-model').value = p.id === engines.apiProvider ? engines.apiModel ?? '' : '';
-  pickerFor = p.id;
-  $('models-more').hidden = false;
-  if (!p.model) $('models-more').open = true;
-  modelPicker.load();
-}
-$('models-more').addEventListener('toggle', () => $('models-more').open && modelPicker.load());
-$('api-key').addEventListener('change', () => chosenEngine() === 'api' && modelPicker.load());
-function syncProvider() {
-  const p = provider();
-  $('api-key').placeholder = p?.keyPrefix ? t('Colle ta clé ({keyPrefix}…)', { keyPrefix: p.keyPrefix }) : t('Colle ta clé');
-  $('get-provider-key').hidden = !p?.keyUrl;
-  setStatus('engine-status', p?.free ? `Gratuit : ${p.freeNote}.` : '');
-  loadModels();
-}
-const chosenEngine = () => document.querySelector('input[name="engine"]:checked')?.value ?? 'none';
-function syncEngine() {
-  const engine = chosenEngine();
-  $('api').hidden = engine !== 'api';
-  $('models-more').hidden = engine !== 'api';
-  $('none').hidden = engine !== 'none';
-  if (engine === 'api') return syncProvider();
-  setStatus('engine-status', (engine === 'claude-code' || engine === 'codex') && !installed(engine) ? t('Pas trouvé sur ce PC : installe-le, puis relance Judith.') : '');
-}
-function engineInput() {
-  const engine = chosenEngine();
-  const input = { engine: engine === 'none' ? 'auto' : engine, apiProvider: $('api-provider').value || undefined, apiKey: $('api-key').value };
-  // The typed model (the list fills it); another provider's model makes no sense, so it starts from its own.
-  if (engine === 'api') input.apiModel = input.apiProvider !== engines.apiProvider && pickerFor !== input.apiProvider ? '' : $('api-model').value.trim();
-  return input;
+// ----- her brain: the user's own Claude Code, found on this PC or to install -----
+function renderEngine() {
+  const found = Boolean(engines?.claudeFound);
+  const row = document.createElement('div');
+  row.className = 'option';
+  const tag = Object.assign(document.createElement('span'), { className: found ? 'tag-pill ok' : 'tag-pill', textContent: found ? t('détecté') : t('introuvable') });
+  row.append(Object.assign(document.createElement('b'), { textContent: 'Claude Code' }), tag);
+  $('engines').replaceChildren(row);
+  $('found').hidden = !found;
+  $('none').hidden = found;
+  setStatus('engine-status', found ? '' : t('Pas trouvé sur ce PC : installe Claude Code (pas Claude Desktop), puis clique sur « Vérifier à nouveau ».'));
 }
 $('engine-test').addEventListener('click', async () => {
   setStatus('engine-status', t('Test en cours…'));
   $('engine-test').disabled = true;
-  const result = await api.settings.test(engineInput()).catch((error) => ({ ok: false, error: error.message }));
+  const result = await api.settings.test({}).catch((error) => ({ ok: false, error: error.message }));
   $('engine-test').disabled = false;
-  // The test may have proved (or ruled out) vision for this model.
-  if (chosenEngine() === 'api') modelPicker.load();
   setStatus('engine-status', result.ok ? t('Ça marche ({value} s) ✓', { value: (result.ms / 1000).toFixed(1) }) : t('Ça ne marche pas : {error}', { error: result.error }), result.ok ? 'ok' : 'err');
 });
 $('get-claude').addEventListener('click', () => api.openLink('https://docs.claude.com/en/docs/claude-code/setup'));
-$('get-key').addEventListener('click', () => api.openLink(engines.providers.find((p) => p.id === 'nvidia')?.keyUrl ?? 'https://build.nvidia.com'));
-$('get-gemini').addEventListener('click', () => api.openLink('https://aistudio.google.com/apikey'));
-$('get-provider-key').addEventListener('click', () => provider()?.keyUrl && api.openLink(provider().keyUrl));
-async function saveEngine() {
-  const result = await api.settings.save(engineInput());
-  if (!result.ok) setStatus('engine-status', result.error, 'err');
-  else engines = result.settings ?? engines;
-  return result.ok;
-}
+// Installed meanwhile: look again, without restarting Judith.
+$('recheck').addEventListener('click', async () => {
+  $('recheck').disabled = true;
+  engines = await api.settings.get().catch(() => engines);
+  $('recheck').disabled = false;
+  renderEngine();
+});
 
 // ----- shortcut and start -----
 async function saveShortcuts() {
@@ -159,18 +103,21 @@ async function saveShortcuts() {
     $('shortcut').value = status.shortcut;
     return false;
   }
-  $('ready-keys').innerHTML = keys(status.shortcut);
+  $('hero-keys').innerHTML = keys(status.shortcut);
   return true;
 }
-$('shortcut').addEventListener('change', () => ($('shortcut-keys').innerHTML = keys($('shortcut').value)));
+$('shortcut').addEventListener('change', () => {
+  $('shortcut-keys').innerHTML = keys($('shortcut').value);
+  $('hero-keys').innerHTML = keys($('shortcut').value);
+});
 
 // ----- start -----
 async function load() {
   [status, engines] = await Promise.all([api.onboarding.status(), api.settings.get()]);
-  renderEngines();
+  renderEngine();
   $('shortcut').innerHTML = status.shortcuts.map((s) => `<option value="${s}" ${s === status.shortcut ? 'selected' : ''}>${s.replace('Control', 'Ctrl').replace('Shift', t('Maj')).replace(/\+/g, ' + ')}</option>`).join('');
   $('shortcut-keys').innerHTML = keys(status.shortcut);
-  $('ready-keys').innerHTML = keys(status.shortcut);
+  $('hero-keys').innerHTML = keys(status.shortcut);
   $('start-windows').checked = status.startWithWindows;
   $('start-windows').disabled = !status.packaged;
   if (!status.packaged) $('start-windows').closest('label').title = t('Disponible dans la version installée');

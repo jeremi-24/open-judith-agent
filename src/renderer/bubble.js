@@ -3,7 +3,6 @@
 import { t, translateDocument } from '../core/i18n.js';
 import { createConversation } from '../core/conversation.js';
 import { createEars } from './ears.js';
-import { createModelPicker } from './model-picker.js';
 translateDocument(document);
 
 const notch = document.querySelector('.notch');
@@ -21,7 +20,7 @@ const voice = window.JudithVoice;
 const api = window.judith;
 
 // ----- display -----
-const LABELS = { listening: t("J'écoute…"), thinking: t('Je réfléchis…'), speaking: 'Judith parle' };
+const LABELS = { listening: t("J'écoute…"), thinking: t('Je réfléchis…'), speaking: t('Judith parle') };
 const MOODS = { idle: 'listen', listening: 'listen', thinking: 'think', speaking: 'explain' };
 
 // Tiny, safe markdown: escape everything, then **bold** and `code`.
@@ -36,6 +35,8 @@ function render(text) {
 }
 
 let messageTimer = null;
+// The question in the field was typed by the user (not written by the live transcription).
+let typedByHand = false;
 function showState(state, info = {}) {
   clearTimeout(messageTimer);
   // A message or an error is shown a few seconds, then the notch rests.
@@ -48,6 +49,7 @@ function showState(state, info = {}) {
   notch.classList.toggle('talking', shown === 'speaking' && !message && !info.done && voice.speaking);
 
   if (state === 'listening') {
+    typedByHand = false;
     question.value = info.partial ?? '';
     question.placeholder = info.followUp ? t('Autre chose ? Je t’écoute…') : info.continuation ? t('Je t’écoute, continue…') : t('Parle, ou écris ta question…');
     question.focus();
@@ -272,7 +274,7 @@ api.on('agent', ({ active, step, max, done, timeout, limit }) => {
   notch.classList.toggle('agent', Boolean(active));
   idleName.textContent = active ? t('Étape {step}/{max}', { step, max }) : 'Judith';
   if (active) return;
-  const message = done ? 'Objectif atteint ✓' : timeout ? t('Je m’arrête là. Rappelle-moi si tu veux continuer.') : limit ? t('On a fait beaucoup d’étapes : je m’arrête là.') : '';
+  const message = done ? t('Objectif atteint ✓') : timeout ? t('Je m’arrête là. Rappelle-moi si tu veux continuer.') : limit ? t('On a fait beaucoup d’étapes : je m’arrête là.') : '';
   if (message && conversation.state !== 'thinking' && conversation.state !== 'speaking') showState('idle', { message });
 });
 function watchBetweenSteps() {
@@ -315,7 +317,9 @@ form.addEventListener('submit', (event) => {
 });
 question.addEventListener('input', (event) => {
   // The user types: stop listening (only real typing fires this event).
-  if (event.isTrusted && conversation.state === 'listening') ears.cancel();
+  if (!event.isTrusted) return;
+  typedByHand = true;
+  if (conversation.state === 'listening') ears.cancel();
 });
 
 // Stop and X act on the press itself, not on the release: a click needs the
@@ -333,8 +337,13 @@ function onPress(button, action) {
     if (event.detail === 0) action();
   });
 }
-// Stop: the conversation is over, Judith goes back to rest.
-onPress(document.getElementById('stop'), () => conversation.cancel());
+// Send: "I am done". What was typed goes as it is; otherwise what was said so
+// far is transcribed and asked (the same as pressing the shortcut again).
+onPress(document.getElementById('send'), () => {
+  if (typedByHand && question.value.trim()) conversation.typed(question.value);
+  else conversation.summon();
+});
+// X: the conversation is over, Judith goes back to rest.
 onPress(document.getElementById('close'), () => conversation.cancel());
 zoneButton.addEventListener('click', () => api.pickZone());
 // At rest, the whole pill summons Judith; its zone button summons her with a
@@ -346,132 +355,124 @@ notch.addEventListener('click', (event) => {
   else api.summon();
 });
 
-// ----- settings: which engine answers Judith -----
+// ----- settings: Claude Code's model and effort, drawing, listening -----
 const settingsStatus = document.getElementById('settings-status');
-const engineList = document.getElementById('engine-list');
-const apiFields = document.getElementById('api-fields');
-const agentFields = document.getElementById('agent-fields');
-const providerSelect = document.getElementById('api-provider');
-const apiModel = document.getElementById('api-model');
-const apiKey = document.getElementById('api-key');
-const agentModel = document.getElementById('agent-model');
-const claudeFields = document.getElementById('claude-fields');
-const claudeModel = document.getElementById('claude-model');
-const claudeEffort = document.getElementById('claude-effort');
+const claudeChip = document.getElementById('claude-chip');
+const claudeMissing = document.getElementById('claude-missing');
+const modelBox = document.getElementById('claude-model');
+const modelHint = document.getElementById('model-hint');
+const drawHint = document.getElementById('draw-hint');
+const pushTalk = document.getElementById('push-talk');
+const boardOn = document.getElementById('board-on');
 const agentHands = document.getElementById('agent-hands');
-let settingsData = null;
-// The provider's models, asked on demand; the typed id (apiModel) always stays.
-const modelPicker = createModelPicker({ mount: document.getElementById('model-picker'), input: apiModel, api, provider: () => providerSelect.value, key: () => apiKey.value });
+const claudeActs = document.getElementById('claude-acts');
+
+// A segmented control: one choice among a few, as radio buttons in a row
+// (click, or the arrow keys once it has the focus).
+function segmented(root, onChange = () => {}) {
+  const buttons = () => [...root.querySelectorAll('button[data-value]')];
+  const control = {
+    get value() {
+      return root.dataset.value ?? '';
+    },
+    set value(next) {
+      root.dataset.value = next;
+      for (const button of buttons()) {
+        const on = button.dataset.value === next;
+        button.setAttribute('aria-checked', String(on));
+        button.tabIndex = on ? 0 : -1;
+      }
+      onChange(next);
+    },
+  };
+  root.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-value]');
+    if (button) control.value = button.dataset.value;
+  });
+  root.addEventListener('keydown', (event) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const all = buttons();
+    const next = all[(all.findIndex((b) => b.dataset.value === control.value) + step + all.length) % all.length];
+    control.value = next.dataset.value;
+    next.focus();
+  });
+  return control;
+}
+
+// Each choice says what it changes for the user, under the name of the setting.
+const MODEL_HINTS = {
+  haiku: t('Rapide : le bon choix pour discuter.'),
+  sonnet: t('Équilibré : plus précis, un peu plus lent.'),
+  opus: t('Le plus fin : il annote mieux, et répond plus lentement.'),
+};
+const DRAW_HINTS = {
+  helpful: t("Seulement quand ça t'évite de chercher."),
+  always: t("Dès qu'elle regarde ton écran."),
+  none: t('Jamais : elle décrit avec des mots.'),
+};
+const claudeModel = segmented(modelBox, (value) => (modelHint.textContent = MODEL_HINTS[value] ?? t('Modèle choisi dans config.json.')));
+const claudeEffort = segmented(document.getElementById('claude-effort'));
+const drawMode = segmented(document.getElementById('annotations'), (value) => (drawHint.textContent = DRAW_HINTS[value] ?? ''));
+
+// A full model id written in config.json (claude-opus-5-5…) gets its own choice.
+function showModel(model) {
+  modelBox.querySelector('[data-custom]')?.remove();
+  if (model && !MODEL_HINTS[model]) {
+    const button = Object.assign(document.createElement('button'), { type: 'button', textContent: model });
+    button.setAttribute('role', 'radio');
+    button.dataset.value = model;
+    button.dataset.custom = '';
+    modelBox.append(button);
+  }
+  claudeModel.value = model || 'haiku';
+}
 
 function setStatus(text, kind = '') {
   settingsStatus.textContent = text;
   settingsStatus.className = `settings-status ${kind}`;
 }
 
-function chosenEngine() {
-  return engineList.querySelector('input[name="engine"]:checked')?.value ?? 'auto';
-}
-
-// Show the fields of the chosen engine; the key field says if one is saved.
-function refreshFields() {
-  const engine = chosenEngine();
-  apiFields.hidden = engine !== 'api';
-  agentFields.hidden = engine !== 'codex' && engine !== 'cursor';
-  // Automatic: the fields of the engine that answers right now.
-  claudeFields.hidden = (engine === 'auto' ? settingsData?.engine : engine) !== 'claude-code';
-  const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
-  apiModel.placeholder = provider?.model ? t('par défaut : {model}', { model: provider.model }) : t('nom du modèle');
-  apiKey.placeholder = provider?.hasKey ? t('clé enregistrée (laisser vide pour la garder)') : provider?.keyPrefix ? t('colle ta clé ({keyPrefix}…)', { keyPrefix: provider.keyPrefix }) : t('colle ta clé ici');
-  const hint = document.getElementById('api-hint');
-  hint.replaceChildren();
-  if (provider?.free) {
-    const free = document.createElement('b');
-    free.textContent = t('Gratuit');
-    hint.append(free, t(' : {freeNote}. Les limites sont celles du fournisseur et peuvent changer.', { freeNote: t(provider.freeNote) }));
-  }
-  document.getElementById('api-key-link').hidden = !provider?.keyUrl;
-}
-
 function renderSettings(data) {
-  settingsData = data;
-  const options = [{ id: 'auto', label: t('Automatique'), installed: true, auto: true }, ...data.engines];
-  engineList.replaceChildren(
-    ...options.map((engine) => {
-      const row = document.createElement('label');
-      row.className = 'engine';
-      const input = document.createElement('input');
-      input.type = 'radio';
-      input.name = 'engine';
-      input.value = engine.id;
-      input.checked = engine.id === data.configured;
-      input.disabled = !engine.installed;
-      input.addEventListener('change', () => {
-        refreshFields();
-        if (chosenEngine() === 'api') modelPicker.load();
-      });
-      const name = document.createElement('span');
-      name.textContent = t(engine.label);
-      const note = document.createElement('span');
-      note.className = 'note';
-      if (engine.auto) note.textContent = t('en ce moment : {find}', { find: data.engines.find((e) => e.id === data.engine)?.label ?? data.engine });
-      else if (engine.id === 'api') note.textContent = t('sans mémoire de tes projets');
-      else if (engine.installed) {
-        note.textContent = t('installé');
-        note.classList.add('ok');
-      } else note.textContent = t('non installé');
-      row.append(input, name, note);
-      return row;
-    }),
-  );
-  providerSelect.replaceChildren(
-    ...data.providers.map((p) => {
-      const option = document.createElement('option');
-      option.value = p.id;
-      option.textContent = p.free ? `${p.label} · gratuit` : p.label;
-      option.selected = p.id === data.apiProvider;
-      return option;
-    }),
-  );
+  claudeChip.dataset.state = data.claudeFound ? 'ok' : 'missing';
+  claudeChip.textContent = data.claudeFound ? t('Claude Code détecté') : t('Claude Code introuvable');
+  claudeMissing.hidden = Boolean(data.claudeFound);
+  showModel(data.model);
+  claudeEffort.value = data.effort ?? 'low';
+  drawMode.value = data.annotations ?? 'helpful';
+  pushTalk.checked = data.listenMode === 'push';
+  boardOn.checked = Boolean(data.board);
   agentHands.checked = Boolean(data.agentHands);
+  claudeActs.checked = Boolean(data.claudeActs);
   agentHands.disabled = !data.handsAvailable;
   document.getElementById('hands-note').textContent = data.handsAvailable ? '' : t('Indisponible : le compagnon judith-hands.exe n’est pas installé (Windows seulement).');
-  apiModel.value = data.apiModel ?? '';
-  agentModel.value = data.agentModel ?? '';
-  claudeModel.value = data.model ?? '';
-  claudeEffort.value = data.effort ?? 'low';
-  apiKey.value = '';
-  refreshFields();
-  if (chosenEngine() === 'api') modelPicker.load();
 }
 
 function formSettings() {
-  return { engine: chosenEngine(), apiProvider: providerSelect.value, apiModel: apiModel.value, apiKey: apiKey.value, agentModel: agentModel.value, model: claudeModel.value, effort: claudeEffort.value, agentHands: agentHands.checked };
+  return {
+    model: claudeModel.value,
+    effort: claudeEffort.value,
+    annotations: drawMode.value,
+    listenMode: pushTalk.checked ? 'push' : 'auto',
+    board: boardOn.checked,
+    agentHands: agentHands.checked,
+    claudeActs: claudeActs.checked,
+  };
 }
 
 async function openSettings() {
   conversation.cancel();
   notch.dataset.state = 'settings';
   api.notchState('settings');
-  setStatus(t('Je regarde ce qui est installé…'));
-  renderSettings(await api.settings.get());
   setStatus('');
+  renderSettings(await api.settings.get());
 }
 function closeSettings() {
   if (notch.dataset.state === 'settings') showState('idle');
 }
 
-providerSelect.addEventListener('change', () => {
-  // A model name belongs to one provider.
-  apiModel.value = '';
-  refreshFields();
-  modelPicker.load();
-});
-// A key pasted: the provider may now list its models.
-apiKey.addEventListener('change', () => modelPicker.load());
-document.getElementById('api-key-link').addEventListener('click', () => {
-  const provider = settingsData?.providers.find((p) => p.id === providerSelect.value);
-  if (provider?.keyUrl) api.openLink(provider.keyUrl);
-});
+document.getElementById('claude-install').addEventListener('click', () => api.openLink('https://docs.claude.com/en/docs/claude-code/setup'));
 // The language of Judith (screen, voice, listening): changing it reloads the windows.
 for (const button of document.querySelectorAll('.lang button')) {
   button.setAttribute('aria-pressed', String(button.dataset.lang === api.language));
@@ -483,12 +484,10 @@ document.getElementById('settings-test').addEventListener('click', async (event)
   const button = event.currentTarget;
   button.disabled = true;
   setStatus(t('Je teste : une question et une petite image…'));
-  const result = await api.settings.test(formSettings());
+  const result = await api.settings.test(formSettings()).catch((error) => ({ ok: false, error: error.message }));
   button.disabled = false;
   if (result.ok) setStatus(t('Ça marche : réponse en {value} s.', { value: (result.ms / 1000).toFixed(1) }), 'ok');
   else setStatus(result.error, 'error');
-  // The test may have proved (or ruled out) vision for this model.
-  if (chosenEngine() === 'api') modelPicker.load();
 });
 // A short confirmation under the notch.
 const toastBox = document.getElementById('toast');
@@ -498,7 +497,7 @@ function toast(text, { warn = false } = {}) {
   toastBox.textContent = warn ? text : `✓ ${text}`;
   toastBox.classList.toggle('warn', warn);
   toastBox.hidden = false;
-  // Under the notch, which may still be changing shape (settings → listening).
+  // Under the notch, which may still be changing shape (settings → rest).
   const place = () => (toastBox.style.top = `${Math.round(notch.getBoundingClientRect().bottom) + 12}px`);
   place();
   setTimeout(place, 480);
@@ -508,16 +507,14 @@ function toast(text, { warn = false } = {}) {
     setTimeout(() => (toastBox.hidden = true), 300);
   }, 2600);
 }
-// Saved: the notch goes back to listening, where the conversation was.
+// Saved: the panel closes and the notch goes back to rest, where it was opened from.
 document.getElementById('settings-save').addEventListener('click', async (event) => {
   const button = event.currentTarget;
   button.disabled = true;
   const result = await api.settings.save(formSettings()).catch((error) => ({ ok: false, error: error.message }));
   button.disabled = false;
   if (!result.ok) return setStatus(result.error, 'error');
-  renderSettings(result.settings);
-  setStatus('');
-  conversation.summon();
+  closeSettings();
   toast(t('Enregistré'));
 });
 document.addEventListener('keydown', (event) => {
@@ -528,6 +525,7 @@ pauseButton.addEventListener('click', () => {
   voice.setPaused(!voice.paused);
   pauseButton.setAttribute('aria-pressed', String(voice.paused));
   pauseButton.setAttribute('aria-label', voice.paused ? t('Reprendre') : t('Pause'));
+  pauseButton.title = voice.paused ? t('Reprendre') : t('Pause');
   notch.classList.toggle('talking', !voice.paused);
 });
 

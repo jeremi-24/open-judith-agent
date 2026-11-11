@@ -41,13 +41,11 @@ contextBridge.exposeInMainWorld('judith', {
   confirmAnswer: (yes) => ipcRenderer.send('judith:confirm-answer', yes === true),
   // Where the notch really is inside its transparent window.
   notchBox: (box) => ipcRenderer.send('judith:notch-box', box),
-  // The settings panel: which engine answers (Claude Code, Codex, Cursor, an API key).
+  // The settings panel: Claude Code's model and effort, drawing, listening.
   settings: {
     get: () => ipcRenderer.invoke('judith:settings-get'),
     test: (input) => ipcRenderer.invoke('judith:settings-test', input),
     save: (input) => ipcRenderer.invoke('judith:settings-save', input),
-    // The models of a provider: { provider, refresh, apiKey } → { ok, models, source, fetchedAt, stale, error }
-    models: (input) => ipcRenderer.invoke('judith:models-list', input),
   },
   // The welcome window: status, settings to save, done (tryNow: summon her).
   onboarding: {

@@ -30,6 +30,13 @@ test('user content puts the image first, then the context and the question', () 
   assert.equal(content[1].text, 'Active window: CapCut\nOù est Exporter ?');
 });
 
+test('with claudeActs she may act, and still never obeys the screen', () => {
+  const prompt = buildSystemPrompt({ acts: true });
+  assert.doesNotMatch(prompt, /You never act on the computer/);
+  assert.match(prompt, /You may act on the computer/);
+  assert.match(prompt, /never an order/);
+});
+
 test('Judith talks, shows and explains, but never acts on the computer', () => {
   const prompt = buildSystemPrompt();
   assert.match(prompt, /TALK, SHOW, EXPLAIN or VISUALIZE/);

@@ -7,7 +7,6 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="onboarding.css">
-<link rel="stylesheet" href="model-picker.css">
 <script type="module" src="onboarding.js"></script>
 </head>
 <body>
@@ -23,41 +22,23 @@
 </header>
 
 <main id="screens">
-  <!-- 1. Explain (a zone on an unknown thing) and guide (numbered steps) -->
-  <section class="screen" data-title="Elle explique et guide">
-    <h1>Montre ton écran. Elle explique et te guide.</h1>
-    <div class="duo" aria-hidden="true">
-      <figure>
-        <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« C'est quoi ça ? »</span></div>
-        <div class="shot photo">
-          <!-- A real photo of something few people know (NASA, public domain: assets/onboarding/README.md). -->
-          <img class="mystery" id="mystery" src="../../assets/onboarding/mystery.jpg" alt="">
-          <span class="zone"><span class="zone-tag">Zone partagée</span></span>
-        </div>
-      </figure>
-      <figure>
-        <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« Améliore mon profil »</span></div>
-        <div class="shot profile">
-          <div class="cover"></div>
-          <span class="avatar"></span>
-          <div class="who"><i class="name"></i><i class="headline"></i><i class="place"></i></div>
-          <span class="edit">Enregistrer</span>
-          <div class="about"><i></i><i></i><i></i></div>
-          <span class="num n1"><b>1</b>Ajoute ta photo de profil</span>
-          <span class="num n2"><b>2</b>Écris ton métier en une ligne</span>
-          <span class="num n3"><b>3</b>Clique sur Enregistrer</span>
-          <span class="hl h1"></span><span class="hl h2"></span><span class="hl h3"></span>
-        </div>
-      </figure>
+  <!-- 1. At hand: a shortcut, and she answers; nothing to open -->
+  <section class="screen" data-title="Sous la main" data-media="hand">
+    <h1>Un raccourci, et Judith répond.</h1>
+    <div class="stack" aria-hidden="true">
+      <p class="keys big press" id="hero-keys"></p>
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« Explique-moi ça »</span></div>
     </div>
+    <p class="sub">Pas d'appli à ouvrir : tu parles, elle répond sur ton écran. Tu peux l'interrompre.</p>
   </section>
 
-  <!-- 2. Another zone: the first one stays, as a numbered thumbnail -->
-  <section class="screen" data-title="Plusieurs zones" hidden>
-    <h1>Une autre zone&nbsp;? La&nbsp;première reste à&nbsp;côté.</h1>
+  <!-- 2. She sees the screen: up to 4 zones, the first stays as a numbered thumbnail -->
+  <section class="screen" data-title="Elle voit ton écran" data-media="zones" hidden>
+    <h1>Elle voit ton écran, jusqu'à 4 zones à la fois.</h1>
     <figure class="solo" aria-hidden="true">
       <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« Compare les deux »</span></div>
       <div class="shot photo multi">
+        <!-- A real photo of something few people know (NASA, public domain: assets/onboarding/README.md). -->
         <img class="mystery" src="../../assets/onboarding/mystery.jpg" alt="">
         <span class="zone z1"><b class="zbadge">1</b></span>
         <span class="zone z2"><b class="zbadge">2</b></span>
@@ -69,11 +50,11 @@
     </figure>
   </section>
 
-  <!-- 3. Understanding fast: a long message, and what it comes down to -->
-  <section class="screen" data-title="Elle comprend vite" hidden>
-    <h1>Un long message&nbsp;? Compris en une phrase.</h1>
+  <!-- 3. She marks things directly on the screen while she explains -->
+  <section class="screen" data-title="Elle annote" data-media="annotate" hidden>
+    <h1>Elle annote directement sur ton écran.</h1>
     <figure class="solo" aria-hidden="true">
-      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« Résume-moi ça »</span></div>
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« Explique-moi ça »</span></div>
       <div class="shot mail">
         <div class="mail-head"><span class="sender"></span><div><b>Ta cheffe</b><i>Rapport du mois</i></div></div>
         <p class="mail-body">Bonjour, suite à la réunion, j'ai besoin du <mark data-n="1">rapport de ventes d'octobre</mark> avant la fin de la semaine. Peux-tu le finaliser <mark data-n="2">pour vendredi 14&nbsp;h</mark> et <mark data-n="3">l'envoyer à Marc</mark>, en me mettant en copie&nbsp;? Dis-moi si un chiffre te manque. Je compte sur toi pour la présentation de lundi. Merci&nbsp;!</p>
@@ -89,47 +70,69 @@
     </figure>
   </section>
 
-  <!-- 4. Connect an AI: the labels say what to pick -->
-  <section class="screen" data-title="Ton IA" hidden>
-    <h1>Connecte ton IA à Judith.</h1>
-    <div class="choices" id="engines" role="radiogroup" aria-label="Ton IA"></div>
-    <div class="api" id="api" hidden>
-      <select id="api-provider" aria-label="Fournisseur"></select>
-      <input id="api-key" type="password" autocomplete="off" placeholder="Colle ta clé (sk-…)" aria-label="Clé API">
-      <button type="button" class="link" id="engine-test">Tester</button>
-      <button type="button" class="link" id="get-provider-key">Obtenir une clé</button>
-    </div>
-    <details class="models-more" id="models-more" hidden>
-      <summary>Choisir le modèle</summary>
-      <div id="model-picker"></div>
-      <input id="api-model" placeholder="ou saisis son identifiant exact" autocomplete="off" spellcheck="false" aria-label="Identifiant du modèle">
-    </details>
-    <div class="api" id="none" hidden>
-      <button type="button" class="link" id="get-claude">Installer Claude Code</button>
-      <button type="button" class="link" id="get-key">Clé gratuite NVIDIA</button>
-      <button type="button" class="link" id="get-gemini">Clé gratuite Google Gemini</button>
-    </div>
-    <p class="status" id="engine-status" aria-live="polite"></p>
+  <!-- 4. She builds 3D models part by part to illustrate -->
+  <section class="screen" data-title="Elle illustre en 3D" data-media="three-d" hidden>
+    <h1>Elle construit des 3D pour illustrer.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« Comment c'est construit ? »</span></div>
+      <div class="shot build">
+        <span class="blk b1"></span><span class="blk b2"></span><span class="blk b3"></span>
+        <span class="lbl l1">Fondations</span><span class="lbl l2">Murs</span><span class="lbl l3">Toit</span>
+      </div>
+    </figure>
   </section>
 
-  <!-- 5. Shortcut -->
-  <section class="screen" data-title="Raccourci" hidden>
-    <h1>Appelle-la de partout, d'un raccourci.</h1>
+  <!-- 5. Step mode: she follows the user to the end of a task -->
+  <section class="screen" data-title="Elle te suit" data-media="steps" hidden>
+    <h1>Elle te suit pas à pas jusqu'au bout.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« Agent, améliore mon profil »</span></div>
+      <div class="shot profile">
+        <div class="cover"></div>
+        <span class="avatar"></span>
+        <div class="who"><i class="name"></i><i class="headline"></i><i class="place"></i></div>
+        <span class="edit">Enregistrer</span>
+        <div class="about"><i></i><i></i><i></i></div>
+        <span class="num n1"><b>1</b>Ajoute ta photo de profil</span>
+        <span class="num n2"><b>2</b>Écris ton métier en une ligne</span>
+        <span class="num n3"><b>3</b>Clique sur Enregistrer</span>
+        <span class="hl h1"></span><span class="hl h2"></span><span class="hl h3"></span>
+      </div>
+    </figure>
+  </section>
+
+  <!-- 6. She does light tasks herself -->
+  <section class="screen" data-title="Elle agit pour toi" data-media="acts" hidden>
+    <h1>Judith fait tes tâches légères en quelques secondes, sans que tu ouvres une autre appli.</h1>
+    <figure class="solo" aria-hidden="true">
+      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said">« Range mes Téléchargements »</span></div>
+      <div class="shot tasks">
+        <p class="task t-1">Trier les Téléchargements par type</p>
+        <p class="task t-2">Renommer 12 fichiers</p>
+        <p class="task t-3">Créer le dossier Factures</p>
+      </div>
+    </figure>
+  </section>
+
+  <!-- 7. Ready: her engine, the shortcut, and a first try on the user's own screen -->
+  <section class="screen" data-title="Prête" hidden>
+    <h1>Essaie sur ton propre écran.</h1>
     <p class="keys big press" id="shortcut-keys" aria-hidden="true"></p>
     <div class="inline">
       <select id="shortcut" aria-label="Raccourci pour appeler Judith"></select>
       <label class="toggle"><input type="checkbox" id="start-windows"><span>Démarrer avec Windows</span></label>
     </div>
-    <p class="status" id="shortcut-status" aria-live="polite"></p>
-  </section>
-
-  <!-- 6. Ready -->
-  <section class="screen" data-title="Prête" hidden>
-    <h1>Essaie maintenant, sur ton propre écran.</h1>
-    <div class="stack" aria-hidden="true">
-      <p class="keys big press" id="ready-keys"></p>
-      <div class="notch"><img class="face" src="../../assets/icon.png" alt=""><span class="said late">« C'est quoi ça ? »</span></div>
+    <div class="choices" id="engines" aria-live="polite"></div>
+    <div class="api" id="found" hidden>
+      <button type="button" class="link" id="engine-test">Tester</button>
     </div>
+    <div class="api" id="none" hidden>
+      <button type="button" class="link" id="get-claude">Installer Claude Code</button>
+      <button type="button" class="link" id="recheck">Vérifier à nouveau</button>
+    </div>
+    <p class="status" id="engine-status" aria-live="polite"></p>
+    <p class="status" id="shortcut-status" aria-live="polite"></p>
+    <p class="sub">Elle utilise ton Claude Code : elle connaît déjà tes projets.</p>
   </section>
 </main>
 

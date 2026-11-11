@@ -1,7 +1,7 @@
 // The board: notes and visuals Judith builds while she explains, and the
 // list of everything Claude Code did (commands, files, visuals).
 import { getLanguage, t, translateDocument } from '../core/i18n.js';
-import { BOARD_MIN_WIDTH, widerWidth, widthForFrame } from '../core/board-size.js';
+import { BOARD_MIN_WIDTH, maxBoardHeight, maxBoardWidth, widerWidth, widthForFrame } from '../core/board-size.js';
 translateDocument(document);
 const title = document.getElementById('title');
 const subtitle = document.getElementById('subtitle');
@@ -27,8 +27,12 @@ const wantWidth = (width) => {
   wantedWidth = Math.max(wantedWidth, Math.ceil(width));
 };
 
+// A visual taller than this scrolls inside its frame: the board stays a side panel.
+const FRAME_MAX_HEIGHT = 560;
+
 function showVisual(name, src) {
   if (scene.hidden) wantedWidth = BOARD_MIN_WIDTH;
+  setFolded(false);
   visual.hidden = false;
   document.getElementById('visual-title').textContent = name;
   frame.src = src;
@@ -36,7 +40,7 @@ function showVisual(name, src) {
 }
 window.addEventListener('message', (event) => {
   if (event.source === frame.contentWindow && Number.isFinite(event.data?.judithHeight)) {
-    frame.style.height = `${Math.min(900, Math.max(120, event.data.judithHeight + 4))}px`;
+    frame.style.height = `${Math.min(FRAME_MAX_HEIGHT, Math.max(120, event.data.judithHeight + 4))}px`;
     // Content wider than the frame: the window becomes wider instead of scrolling inside.
     if (event.data.judithWidth > frame.clientWidth + 2) {
       wantWidth(widthForFrame(event.data.judithWidth));
@@ -65,14 +69,26 @@ window.judith.on('visual', ({ title: name, src }) => showVisual(name, src));
 const scene = document.getElementById('scene');
 const sceneBox = document.getElementById('scene-box');
 const seen = document.getElementById('seen');
+const seenToggle = document.getElementById('seen-toggle');
+seenToggle.addEventListener('click', () => {
+  seen.hidden = !seen.hidden;
+  seenToggle.setAttribute('aria-expanded', String(!seen.hidden));
+  fit();
+});
 let sceneFrame = null;
 let sceneId = 0;
 let sceneCode = '';
 function showScene({ id, title: name, code, seenImage }) {
-  wantWidth(560); // a 3D model and what she looked at, side by side
+  wantWidth(390); // a small square window: the model, and nothing around it
+  setFolded(false);
   scene.hidden = false;
   document.getElementById('scene-title').textContent = name;
-  seen.hidden = !seenImage;
+  // The scene's name is the title of the board, unless notes already gave it one.
+  if (!notes.children.length) title.textContent = name;
+  // What she looked at stays one press away.
+  seen.hidden = true;
+  seenToggle.hidden = !seenImage;
+  seenToggle.setAttribute('aria-expanded', 'false');
   if (seenImage) document.getElementById('seen-img').src = seenImage;
   sceneId = id;
   sceneCode = code;
@@ -123,7 +139,7 @@ window.judith.on('activity', (item) => {
     buttons.className = 'act-buttons';
     const add = (text, onClick) => buttons.append(Object.assign(document.createElement('button'), { type: 'button', textContent: text, onclick: onClick }));
     if (item.previewable) add(t('Aperçu ici'), () => window.judith.preview(item.file));
-    add('Ouvrir', () => window.judith.openPath(item.file));
+    add(t('Ouvrir'), () => window.judith.openPath(item.file));
     card.append(buttons);
   }
   card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -142,20 +158,36 @@ window.judith.on('clear-board', () => {
   actions.replaceChildren();
   cards.clear();
   wantedWidth = BOARD_MIN_WIDTH;
+  setFolded(false);
 });
 
 document.getElementById('close').addEventListener('click', () => window.judith.closeBoard());
 
-// The window follows the natural size of the board (header + content), in any shape;
-// only when even the widest window is too short does the paper scroll.
+// Folded, the board is only its title bar: what is under it shows again, and
+// one press brings the notes back. A new visual or 3D scene unfolds it.
+const boardBox = document.querySelector('.board');
+const foldButton = document.getElementById('fold');
+function setFolded(folded) {
+  if (boardBox.classList.contains('folded') === folded) return;
+  boardBox.classList.toggle('folded', folded);
+  const text = folded ? t('Déplier le tableau') : t('Réduire le tableau');
+  foldButton.setAttribute('aria-expanded', String(!folded));
+  foldButton.setAttribute('aria-label', text);
+  foldButton.title = text;
+  fit();
+}
+foldButton.addEventListener('click', () => setFolded(!boardBox.classList.contains('folded')));
+
+// The window follows the natural size of the board (header + content), up to its
+// share of the screen (src/core/board-size.js); past that the paper scrolls.
 const header = document.querySelector('header');
 const content = document.getElementById('content');
-// Too tall for the screen at this width: ask for a wider window first, the scroll bar comes last.
+// Too tall at this width: ask for a wider window first, the scroll bar comes last.
 function fit() {
+  if (boardBox.classList.contains('folded')) return window.judith.resizeBoard({ width: wantedWidth, height: header.offsetHeight + 24 });
   const height = header.offsetHeight + content.offsetHeight + 26 + 24;
-  const room = screen.availHeight - 32;
-  if (height > room) {
-    const wider = widerWidth(wantedWidth, screen.availWidth - 32);
+  if (height > maxBoardHeight(screen.availHeight)) {
+    const wider = widerWidth(wantedWidth, maxBoardWidth(screen.availWidth));
     if (wider) wantedWidth = wider;
   }
   window.judith.resizeBoard({ width: wantedWidth, height });

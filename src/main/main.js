@@ -4,19 +4,15 @@ import { extname, join } from 'node:path';
 import { fork } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import { startBridge } from './bridge.js';
-import { configPath, DEFAULTS, loadConfig, saveConfig } from './config.js';
+import { DEFAULTS, loadConfig, saveConfig } from './config.js';
 import { checkClaudeSettings } from '../core/claude-settings.js';
-import { getKey, hasKey, setKey } from './secrets.js';
-import { detectEngines } from './detect.js';
+import { detectClaude } from './detect.js';
 import { ensureVoice, localVoiceFor } from './models.js';
 import { captureDisplay, captureSmall, captureThumb, captureZones } from './capture.js';
 import { BOARD_WIDTH, BUBBLE_WIDTH, createBoard, createBubble, createOnboarding, createOverlay, setCaptureProtection, setNotchInteractive } from './windows.js';
-import { chooseEngine, createEngine, ENGINES, PROVIDERS } from '../engine/engines.js';
-import { cleanKey } from '../engine/api-errors.js';
+import { ClaudeCodeEngine } from '../engine/claude-code.js';
 import { LANGUAGES, normalizeLanguage, setLanguage, t } from '../core/i18n.js';
 import { fitBoard } from '../core/board-size.js';
-import { defaultModel } from '../engine/api.js';
-import { createModelsService } from './models-service.js';
 import { buildSystemPrompt, buildUserContent, describeTool } from '../core/prompt.js';
 import { toPixels } from '../core/annotations.js';
 import { markBox, pickSnap, snapMark } from '../core/snap.js';
@@ -495,6 +491,10 @@ let shownMarks = [];
 let watcher = null;
 let lastSmall = null; // { at, shot }: one tiny capture serves several marks
 let scanning = false;
+// With "hideFromScreenRecordings": false (to film demos), Judith's windows are
+// in the captures: her own strokes would look like a screen that changed, and
+// the next marks would be dropped. Marks are then not compared with the screen.
+const inkIsCaptured = () => !config.hideFromScreenRecordings;
 
 async function screenNow(display) {
   if (lastSmall && Date.now() - lastSmall.at < 400) return lastSmall.shot;
@@ -550,7 +550,7 @@ async function drawMark(mark) {
     send(overlay, 'scan', false);
     await wait(150);
   }
-  if (session.reference) {
+  if (session.reference && !inkIsCaptured()) {
     const now = await screenNow(display).catch(() => null);
     // The content may have moved a little (icons re-centred, a small scroll):
     // the mark follows it. If it is nowhere near, the mark is dropped.
@@ -599,6 +599,8 @@ function watchMarks(display) {
   watcher = setTimeout(async function tick() {
     if (!shownMarks.length) return;
     if (Date.now() - startedAt > MARK_LIFETIME_MS) return clearMarks();
+    // Her own ink is in the captures: only the lifetime ends the marks.
+    if (inkIsCaptured()) return void (watcher = setTimeout(tick, WATCH_EVERY_MS));
     try {
       const now = await captureSmall(display);
       if (!baseline) baseline = now;
@@ -999,8 +1001,7 @@ async function ask(question, turn) {
   // was drawn: the screenshot goes with it, one round trip less than
   // look_at_screen. alwaysLook: the old behaviour, a screenshot every time.
   let image = null;
-  // Engines other than Claude Code cannot call look_at_screen: they always get it.
-  if (config.alwaysLook || !engine.canLook || session.zones?.length || inAgent || needsScreen(question)) {
+  if (config.alwaysLook || session.zones?.length || inAgent || needsScreen(question)) {
     const shot = await lookForJudith();
     if (shot.data) image = shot;
   }
@@ -1072,7 +1073,7 @@ async function ask(question, turn) {
     } else if (inAgent) waitForUser(display);
   } catch (error) {
     if (!error.cancelled) {
-      send(bubble, 'error', { turn, message: error.message });
+      send(bubble, 'error', { turn, message: explain(error) });
       stopAgent();
     }
     journal({ outcome: error.cancelled ? 'cancelled' : 'error', error: error.cancelled ? undefined : error.message });
@@ -1094,33 +1095,43 @@ function cancelTurn(turn) {
   send(overlay, 'scan', false);
 }
 
-// ----- the engine: Claude Code, another agent, or a model with an API key -----
-let claudeArgs = [];
-let available = []; // engines installed on this PC
-let engineKind = null;
+// ----- the engine: the user's own Claude Code, kept warm -----
+let mcpConfig = null;
+// By default Claude Code may only look, read and explain. With claudeActs it may do anything its tools allow
+// (no permission prompts: Judith has no way to ask, so the setting is the consent).
+const toolArgs = (acts) => [
+  '--mcp-config', mcpConfig,
+  ...(acts ? ['--permission-mode', 'bypassPermissions'] : ['--allowedTools', ALLOWED_TOOLS.join(','), '--disallowedTools', DENIED_TOOLS.join(',')]),
+];
+let claudeFound = false; // Claude Code is installed on this PC
 
-// Everything an engine needs, from the settings. overrides: the settings being
-// tested in the notch before they are saved.
-function engineOptions(kind, overrides = {}) {
+// Everything Claude Code needs, from the settings. overrides: the settings
+// being tested in the notch before they are saved.
+function engineOptions(overrides = {}) {
   const settings = { ...config, ...overrides };
-  const canLook = kind === 'claude-code';
   return {
+    claudePath: settings.claudePath,
     cwd: settings.workingDirectory,
+    model: settings.model,
     // Emotion tags only when the voice can act them.
-    systemPrompt: buildSystemPrompt({ language: settings.language, annotations: settings.annotations, emotions: settings.voice === 'fish', board: settings.board, canLook }),
+    systemPrompt: buildSystemPrompt({ language: settings.language, annotations: settings.annotations, emotions: settings.voice === 'fish', board: settings.board, acts: settings.claudeActs }),
     // Speed: little thinking for a conversation, and Judith's tools loaded up
     // front (no ToolSearch round trip before looking at the screen).
-    claude: { claudePath: settings.claudePath, model: settings.model, extraArgs: [...claudeEffortArgs(settings.effort), ...claudeArgs], env: { ENABLE_TOOL_SEARCH: 'false' } },
-    api: { provider: settings.apiProvider, model: settings.apiModel, baseUrl: settings.apiBaseUrl, key: overrides.apiKey || getKey(settings.apiProvider) },
-    agentModel: settings.agentModel,
+    extraArgs: [...claudeEffortArgs(settings.effort), ...toolArgs(settings.claudeActs)],
+    env: { ENABLE_TOOL_SEARCH: 'false' },
   };
+}
+
+// What the user reads when Claude Code cannot answer.
+function explain(error) {
+  if (error.code === 'ENOENT') return t('Claude Code est introuvable sur ce PC : installe-le, puis relance Judith.');
+  return error.message;
 }
 
 function startEngine() {
   engine?.stop();
-  engineKind = chooseEngine({ configured: config.engine, available, hasKey: hasKey(config.apiProvider) });
-  console.log(`[judith] engine: ${engineKind} (configured: ${config.engine}, installed: ${available.join(', ') || 'none'})`);
-  engine = createEngine(engineKind, engineOptions(engineKind));
+  console.log(`[judith] engine: Claude Code (${config.model}, effort ${config.effort}${claudeFound ? '' : ', not found on this PC'})`);
+  engine = new ClaudeCodeEngine(engineOptions());
   // The warm-up answer stays silent: no reader is listening yet.
   engine.on('delta', (text) => {
     if (currentReader) mark('firstWord');
@@ -1138,101 +1149,73 @@ function startEngine() {
     trackResult(result);
     creationsIn(result.output);
   });
-  engine.on('log', (text) => console.error(`[${engineKind}]`, text.trim()));
+  engine.on('log', (text) => console.error('[claude]', text.trim()));
   // Claude Code is kept warm: start it and load its context now, so the first
-  // real question is fast. Other engines start per question (and a warm-up
-  // would cost the user API credits for nothing).
-  warmingUp =
-    engineKind === 'claude-code'
-      ? engine.ask([{ type: 'text', text: 'Reply only: say ready.' }]).catch((error) => console.error('[judith] warm-up failed:', error.message))
-      : Promise.resolve();
+  // real question is fast.
+  warmingUp = engine.ask([{ type: 'text', text: 'Reply only: say ready.' }]).catch((error) => console.error('[judith] warm-up failed:', explain(error)));
 }
 
-// What the settings panel shows.
-function engineSettings() {
+// What the settings panel of the notch shows.
+function notchSettings() {
   return {
-    engine: engineKind,
-    configured: config.engine,
-    engines: Object.entries(ENGINES).map(([id, e]) => ({ id, label: e.label, memory: e.memory, installed: id === 'api' || available.includes(id) })),
-    providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, model: p.models[0]?.id ?? '', models: p.models, free: Boolean(p.free), freeNote: p.freeNote ?? '', keyPrefix: p.keyPrefix ?? '', keyUrl: p.keyUrl, hasKey: hasKey(id) })),
-    apiProvider: config.apiProvider,
-    apiModel: config.apiModel,
-    agentModel: config.agentModel,
+    claudeFound,
     model: config.model,
     effort: config.effort,
+    annotations: config.annotations,
+    listenMode: config.listenMode,
+    board: config.board,
     agentHands: config.agentHands,
+    claudeActs: config.claudeActs,
     handsAvailable: Boolean(hands?.available),
   };
 }
 
-const SETTING_KEYS = ['engine', 'apiProvider', 'apiModel', 'apiBaseUrl', 'agentModel', 'model', 'effort'];
+const ANNOTATION_MODES = ['helpful', 'always', 'none'];
 const claudeEffortArgs = (effort) => (effort ? ['--effort', effort] : []);
+// Only what the panel may change, checked: the rest of what a page sends is ignored.
 function pickSettings(input = {}) {
   const out = {};
-  for (const key of SETTING_KEYS) if (typeof input[key] === 'string') out[key] = input[key].trim();
+  for (const key of ['model', 'effort']) if (typeof input[key] === 'string') out[key] = input[key].trim();
   Object.assign(out, checkClaudeSettings(out, DEFAULTS.model));
-  if (out.engine && out.engine !== 'auto' && !ENGINES[out.engine]) throw new Error(`Unknown engine: ${out.engine}`);
-  if (out.apiProvider && !PROVIDERS[out.apiProvider]) throw new Error(`Unknown provider: ${out.apiProvider}`);
-  if (typeof input.agentHands === 'boolean') out.agentHands = input.agentHands;
-  // A model name belongs to one provider: another provider starts from its own default.
-  if (out.apiProvider && out.apiProvider !== config.apiProvider && out.apiModel === undefined) out.apiModel = '';
+  if (ANNOTATION_MODES.includes(input.annotations)) out.annotations = input.annotations;
+  if (input.listenMode === 'auto' || input.listenMode === 'push') out.listenMode = input.listenMode;
+  for (const key of ['agentHands', 'board', 'claudeActs']) if (typeof input[key] === 'boolean') out[key] = input[key];
   return out;
 }
 
-// A 1x1 white PNG: the test checks that the engine answers AND accepts an image.
+// A 1x1 white PNG: the test checks that Claude Code answers AND accepts an image.
 const TEST_IMAGE = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=';
-// The model lists of the settings (asked on demand, cached, never fatal) and what
-// the test calls proved about each model.
-let modelsSvc = null;
-const models = () => (modelsSvc ??= createModelsService({ dir: app.getPath('userData'), getKey }));
 
+// A separate Claude Code, with the settings being tried: the conversation in
+// progress is not touched.
 async function testEngine(input) {
-  const settings = pickSettings(input);
-  const kind = settings.engine && settings.engine !== 'auto' ? settings.engine : engineKind;
-  const apiKey = typeof input?.apiKey === 'string' ? cleanKey(input.apiKey) : '';
-  const probe = createEngine(kind, engineOptions(kind, { ...settings, apiKey }));
-  // A test of an API model settles what its list could not say (vision, streaming).
-  const provider = settings.apiProvider || config.apiProvider;
-  const model = settings.apiModel ?? config.apiModel ?? '';
-  const custom = (settings.apiBaseUrl ?? config.apiBaseUrl) || '';
-  const verified = (outcome) => kind === 'api' && !custom && models().recordVerification(provider, model || defaultModel(provider), outcome);
+  const probe = new ClaudeCodeEngine(engineOptions(pickSettings(input)));
   const startedAt = Date.now();
   const timer = setTimeout(() => probe.cancel(), 45000);
   try {
-    // The models list may have just been asked: a provider with a per-second limit would answer 429.
-    if (kind === 'api' && !custom) await models().waitTurn(provider);
-    const question = [
+    await probe.ask([
       { type: 'image', source: { type: 'base64', media_type: 'image/png', data: TEST_IMAGE } },
       { type: 'text', text: 'Connection test. Reply only: say ok' },
-    ];
-    try {
-      await probe.ask(question);
-    } catch (error) {
-      // "Too many requests" is often passing: one more try after the wait the provider gives.
-      if (error.kind !== 'rate') throw error;
-      await wait(Math.min((error.retryAfter ?? 2) * 1000, 6000));
-      await probe.ask(question);
-    }
-    if (kind === 'api' && !custom) models().touch(provider);
-    verified({ ok: true });
+    ]);
     return { ok: true, ms: Date.now() - startedAt };
   } catch (error) {
-    verified({ ok: false, kind: error.kind });
-    return { ok: false, error: error.cancelled ? t('Pas de réponse en 45 s.') : error.message, kind: error.kind };
+    return { ok: false, error: error.cancelled ? t('Pas de réponse en 45 s.') : explain(error) };
   } finally {
     clearTimeout(timer);
     probe.stop();
   }
 }
 
-function saveEngineSettings(input) {
+// What changes Claude Code's flags or prompt needs a new process; the rest applies at once.
+const RESTART_KEYS = ['model', 'effort', 'annotations', 'board', 'claudeActs'];
+function saveSettings(input) {
   const settings = pickSettings(input);
-  const apiKey = typeof input?.apiKey === 'string' ? cleanKey(input.apiKey) : '';
-  if (apiKey) setKey(settings.apiProvider || config.apiProvider, apiKey);
+  const restart = RESTART_KEYS.some((key) => key in settings && settings[key] !== config[key]);
   Object.assign(config, settings);
   saveConfig(settings);
-  startEngine();
-  return engineSettings();
+  if (restart) startEngine();
+  buildTrayMenu();
+  return notchSettings();
 }
 
 // The same shortcut summons Judith and, while she thinks or speaks, stops her.
@@ -1326,20 +1309,10 @@ function buildTrayMenu() {
     Menu.buildFromTemplate([
       { label: t('Demander à Judith ({shortcut})', { shortcut: config.shortcut }), click: summon },
       { label: t('Nouvelle conversation'), click: newConversation },
-      { label: t('Ouvrir la configuration'), click: () => shell.openPath(configPath()) },
       { label: t("Revoir l'accueil"), click: openOnboarding },
       {
         label: t('Langue / Language'),
         submenu: LANGUAGES.map((code) => ({ label: { fr: 'Français', en: 'English' }[code], type: 'radio', checked: config.language === code, click: () => changeLanguage(code) })),
-      },
-      {
-        label: t('Appuyer pour parler (lieu bruyant)'),
-        type: 'checkbox',
-        checked: config.listenMode === 'push',
-        click: (item) => {
-          config.listenMode = item.checked ? 'push' : 'auto';
-          saveConfig({ listenMode: config.listenMode });
-        },
       },
       { type: 'separator' },
       ...(app.isPackaged
@@ -1419,7 +1392,7 @@ app.whenReady().then(async () => {
     onVisual: showVisualFrame,
     onScene: showScene,
   });
-  const mcpConfig = join(app.getPath('userData'), 'mcp.json');
+  mcpConfig = join(app.getPath('userData'), 'mcp.json');
   writeFileSync(
     mcpConfig,
     JSON.stringify({
@@ -1437,12 +1410,7 @@ app.whenReady().then(async () => {
   console.log(`[judith] eyes (UI Automation): ${eyes.available ? 'on' : 'off, marks keep the model position'}`);
   hands = createHands({ exe: process.platform === 'win32' ? findHands(root) : null, log: (text) => console.log(`[hands] ${text}`) });
   console.log(`[judith] hands (autonomous agent mode): ${hands.available ? (config.agentHands ? 'on' : 'installed, off in the settings') : 'not installed'}`);
-  claudeArgs = [
-    '--mcp-config', mcpConfig,
-    '--allowedTools', ALLOWED_TOOLS.join(','),
-    '--disallowedTools', DENIED_TOOLS.join(','),
-  ];
-  available = await detectEngines(config.claudePath);
+  claudeFound = await detectClaude(config.claudePath);
   startEngine();
 
   // The idle notch ("Judith ●") is always at the top of the screen. The page
@@ -1514,23 +1482,20 @@ app.whenReady().then(async () => {
   // What the notch does with the user's presses, in the terminal log: if a
   // button "does nothing", this tells whether the press reached the page.
   ipcMain.on('judith:log', (_e, text) => console.log(`[notch] ${String(text).slice(0, 200)}`));
-  // The settings panel in the notch: which engine answers Judith.
+  // The settings panel in the notch: Claude Code's model, drawing, listening.
   ipcMain.handle('judith:settings-get', async () => {
-    available = await detectEngines(config.claudePath); // something may have been installed since
-    return engineSettings();
-  });
-  // A provider's models: { provider, refresh, apiKey (typed, not saved yet) } → { ok, models, source, fetchedAt, stale?, error? }
-  ipcMain.handle('judith:models-list', (_e, input = {}) => {
-    const provider = typeof input.provider === 'string' ? input.provider : config.apiProvider;
-    const baseUrl = provider === config.apiProvider ? config.apiBaseUrl || '' : '';
-    return models()
-      .list({ provider, baseUrl, key: typeof input.apiKey === 'string' ? cleanKey(input.apiKey) : '', refresh: input.refresh === true })
-      .catch(() => ({ ok: false, models: [], source: 'builtin', fetchedAt: null, error: { kind: 'http', message: t('La liste des modèles est indisponible. Saisis le modèle à la main.') } }));
+    const found = await detectClaude(config.claudePath); // it may have been installed since
+    if (found && !claudeFound) {
+      claudeFound = true;
+      startEngine();
+    }
+    claudeFound = found;
+    return notchSettings();
   });
   ipcMain.handle('judith:settings-test', (_e, input) => testEngine(input).catch((error) => ({ ok: false, error: error.message })));
   ipcMain.handle('judith:settings-save', (_e, input) => {
     try {
-      return { ok: true, settings: saveEngineSettings(input) };
+      return { ok: true, settings: saveSettings(input) };
     } catch (error) {
       return { ok: false, error: error.message };
     }
@@ -1543,6 +1508,8 @@ app.whenReady().then(async () => {
     notchBox = ok ? box : null;
   });
   ipcMain.on('judith:scene-result', (_e, result) => {
+    // A failed scene is told to the model, which tries again: the terminal keeps the reason.
+    if (result && !result.ok) console.warn(`[judith] 3D scene failed: ${String(result.error).slice(0, 300)}`);
     if (sceneWait && result?.id === sceneWait.id) sceneWait.resolve({ ok: Boolean(result.ok), error: result.error });
   });
   ipcMain.on('judith:close-board', () => {

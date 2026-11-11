@@ -16,7 +16,10 @@
       <h1 id="title">Judith</h1>
       <p id="subtitle"></p>
     </div>
-    <button type="button" class="close" id="close" aria-label="Fermer le tableau">
+    <button type="button" class="close" id="fold" aria-label="Réduire le tableau" title="Réduire le tableau" aria-expanded="true">
+      <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5H9"/></svg>
+    </button>
+    <button type="button" class="close" id="close" aria-label="Fermer le tableau" title="Fermer le tableau">
       <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1L9 9M9 1L1 9"/></svg>
     </button>
   </header>
@@ -31,14 +34,12 @@
     </section>
 
     <section class="scene" id="scene" hidden>
-      <h2 id="scene-title"></h2>
-      <div class="scene-body">
-        <figure class="seen" id="seen" hidden>
-          <img id="seen-img" alt="La capture d'écran que Judith a regardée">
-          <figcaption>Ce que j'ai vu</figcaption>
-        </figure>
-        <div class="scene-box" id="scene-box"></div>
-      </div>
+      <h2 id="scene-title" class="sr-only"></h2>
+      <div class="scene-box" id="scene-box"></div>
+      <button type="button" class="seen-toggle" id="seen-toggle" aria-expanded="false" hidden>Ce que j'ai vu</button>
+      <figure class="seen" id="seen" hidden>
+        <img id="seen-img" alt="La capture d'écran que Judith a regardée">
+      </figure>
     </section>
 
     <section class="activity" id="activity" hidden>

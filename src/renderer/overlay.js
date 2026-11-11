@@ -4,7 +4,7 @@
 // dark on light backgrounds and light on dark ones. Marks are drawn one
 // after the other, never at the same time.
 import { t, translateDocument } from '../core/i18n.js';
-import { arrowStroke, handStroke, outlinePoints } from '../core/ink.js';
+import { arrowStroke, handStroke, outlinePoints, underlineStroke } from '../core/ink.js';
 import { zoneFrom } from '../core/zone.js';
 translateDocument(document);
 
@@ -91,6 +91,7 @@ async function trace(paths, mine) {
 // ----- a mark -----
 async function drawMark(m, mine) {
   if (m.shape === 'arrow') return drawArrow(m, mine);
+  if (m.shape === 'underline') return drawUnderline(m, mine);
   const group = el('g', { class: `mark ink-${m.ink === 'light' ? 'light' : 'dark'}` });
   const outline = outlinePoints(m);
   const size = Math.max(m.rx, m.ry);
@@ -116,6 +117,23 @@ async function drawMark(m, mine) {
   window.judith.marked();
   // The pen rests next to the mark, ready for the next one.
   await flyTo(m.cx + m.rx * 0.6, m.cy + m.ry * 0.5, mine);
+}
+
+// A line under a word, a title or a number; its label sits under the middle.
+async function drawUnderline(m, mine) {
+  const group = el('g', { class: `mark ink-${m.ink === 'light' ? 'light' : 'dark'}` });
+  const [from, to] = m.points;
+  const stroke = underlineStroke(from, to, m.seed ?? 1);
+  const halo = el('path', { class: 'halo', d: stroke.d }, group);
+  const main = el('path', { class: 'ink', d: stroke.d }, group);
+  await flyTo(stroke.start[0], stroke.start[1], mine);
+  if (mine !== generation) return;
+  await trace([halo, main], mine);
+  if (mine !== generation) return;
+  count += 1;
+  label({ ...m, cx: (from[0] + to[0]) / 2, cy: from[1], ry: 2 }, count, m.ink);
+  window.judith.marked();
+  await flyTo(to[0] + 12, to[1] + 10, mine);
 }
 
 // An arrow between two things on the screen: the stroke is traced by the pen,

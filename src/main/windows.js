@@ -9,7 +9,7 @@ const renderer = (file) => join(here, '..', 'renderer', file);
 // the motion jerky, and a window moving under the mouse could swallow clicks.
 // Outside the notch, the stage lets clicks through (see setNotchInteractive).
 export const BUBBLE_WIDTH = 760;
-export const BUBBLE_HEIGHT = 520;
+export const BUBBLE_HEIGHT = 580;
 
 const secure = {
   preload: join(here, 'preload.cjs'),

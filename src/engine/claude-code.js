@@ -54,7 +54,13 @@ export class ClaudeCodeEngine extends EventEmitter {
     proc.stdout.on('data', createLineParser((event) => this.#onEvent(event)));
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (text) => this.emit('log', text));
-    proc.on('error', (error) => this.#fail(error));
+    // Claude Code is not installed (ENOENT): no 'exit' follows, so the dead
+    // process is forgotten here, or the next question would wait for ever.
+    proc.stdin.on('error', () => {});
+    proc.on('error', (error) => {
+      if (this.proc === proc) this.proc = null;
+      this.#fail(error);
+    });
     proc.on('exit', (code) => {
       if (this.proc === proc) this.proc = null;
       this.#fail(new Error(`Claude Code stopped (exit code ${code})`));
@@ -113,6 +119,8 @@ export class ClaudeCodeEngine extends EventEmitter {
   }
 
   stop() {
+    // A cancelled turn still being waited for must not restart the process later.
+    this.#endDrain();
     const proc = this.proc;
     this.proc = null;
     proc?.kill();

@@ -136,6 +136,34 @@ figure { margin: 0; display: grid; justify-items: center; gap: 0; }
 
 .stack { display: grid; justify-items: center; gap: 22px; }
 
+/* A real photo of Judith at work, when assets/onboarding/<name>.jpg exists: it replaces the drawn demo. */
+.media { display: none; width: 100%; max-width: 540px; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 12px; box-shadow: 0 24px 50px -24px #000, 0 0 0 1px rgb(255 255 255 / 0.06); }
+.screen.has-media > .media { display: block; }
+.screen.has-media > figure, .screen.has-media > .stack { display: none; }
+.sub { max-width: 30em; text-align: center; color: var(--muted); text-wrap: balance; }
+
+/* 4: a model that builds up, part by part, its labels written by hand */
+.build { background: #faf9ff; }
+.blk { position: absolute; left: 50%; opacity: 0; transform-origin: 50% 100%; animation: grow3d 7s infinite; }
+.blk.b1 { width: 34%; height: 9%; bottom: 20%; margin-left: -17%; border-radius: 4px; background: #5cb8ff; animation-delay: 0.4s; }
+.blk.b2 { width: 26%; height: 26%; bottom: 29%; margin-left: -13%; border-radius: 4px; background: #f5f2ff; box-shadow: inset 0 0 0 2px #d6ceff; animation-delay: 1.5s; }
+.blk.b3 { width: 32%; height: 15%; bottom: 55%; margin-left: -16%; background: #ff8fb8; clip-path: polygon(50% 0, 100% 100%, 0 100%); animation-delay: 2.6s; }
+@keyframes grow3d { 0%, 8% { opacity: 0; transform: translateY(-14px) scale(0.85); } 16%, 90% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.lbl { position: absolute; display: flex; align-items: center; gap: 6px; font: 600 12px "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive; color: #3a3552; opacity: 0; animation: pop 7s infinite; }
+.lbl::after { content: ''; width: 34px; border-top: 1.5px solid #3a3552; }
+.lbl.l1 { left: 8%; bottom: 20%; animation-delay: 0.9s; }
+.lbl.l2 { right: 8%; bottom: 40%; flex-direction: row-reverse; animation-delay: 2s; }
+.lbl.l3 { left: 12%; bottom: 62%; animation-delay: 3.1s; }
+
+/* 6: light tasks, ticked off one after the other */
+.tasks { background: var(--surface); display: grid; align-content: center; gap: 12px; padding: 0 14%; }
+.task { display: flex; align-items: center; gap: 10px; font: 600 13.5px var(--font-ui); opacity: 0; animation: rise 7s infinite; }
+.task::before { content: ''; width: 17px; height: 17px; flex: none; border-radius: 50%; border: 2px solid var(--muted); animation: tick 7s infinite; }
+.task.t-1, .task.t-1::before { animation-delay: 0.6s; }
+.task.t-2, .task.t-2::before { animation-delay: 1.8s; }
+.task.t-3, .task.t-3::before { animation-delay: 3s; }
+@keyframes tick { 0%, 32% { background: transparent; border-color: var(--muted); } 42%, 90% { background: var(--mint); border-color: var(--mint); } 100% { background: transparent; border-color: var(--muted); } }
+
 /* 4. engines: name + a small status pill */
 .choices { display: grid; gap: 8px; width: 100%; max-width: 440px; }
 .option { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; cursor: pointer; }
@@ -175,7 +203,8 @@ input[type="password"], select { font: 14px var(--font-ui); color: var(--fg); ba
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; }
-  .said, .zone-tag, .num, .hl, .answer, .answer li, .mail-body mark::after { opacity: 1; }
+  .said, .zone-tag, .num, .hl, .answer, .answer li, .mail-body mark::after, .blk, .lbl, .task { opacity: 1; }
+  .task::before { background: var(--mint); border-color: var(--mint); }
   .mail-body mark { background-size: 100% 100%; }
   .zone { width: 16%; height: 26%; }
   .multi .z2 { width: 14%; height: 25%; }

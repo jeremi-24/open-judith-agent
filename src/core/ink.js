@@ -118,6 +118,20 @@ export function inkFor(luma) {
   return luma >= 140 ? 'dark' : 'light';
 }
 
+// A hand-drawn line under a word, a title or a number (pixels): almost
+// straight, with a slow drift, never ruler-flat.
+export function underlineStroke(a, b, seed) {
+  const random = rng(seed);
+  const phase = random() * Math.PI * 2;
+  const drift = 1 + random() * 1.5;
+  const points = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    points.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t + Math.sin(t * Math.PI * 2 + phase) * drift]);
+  }
+  return { d: openCurve(points), start: points[0], points };
+}
+
 // A hand-drawn arrow from a to b (pixels): a slightly bent stroke and a head.
 // The bend side and size come from the seed, so two arrows never look stamped.
 export function arrowStroke(a, b, seed) {

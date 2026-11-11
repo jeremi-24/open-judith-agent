@@ -85,6 +85,21 @@ export function parseLine(raw) {
       if (x1 === x2 && y1 === y2) return null;
       return { type: 'mark', shape: 'arrow', points: [[x1, y1], [x2, y2]], x: (x1 + x2) / 2, y: (y1 + y2) / 2, w: Math.abs(x2 - x1), h: Math.abs(y2 - y1), label };
     }
+    case 'underline': {
+      // A line under a word, a title or a number: left, the y just under the
+      // text, right (four numbers, as for a box, are read as its bottom edge).
+      const [coords, label] = splitLabel(rest);
+      const n = numbers(coords);
+      if (!n || (n.length !== 3 && n.length !== 4)) return null;
+      const [a, y1, b, y2 = y1] = n.map(clamp01);
+      const [x1, x2] = [Math.min(a, b), Math.max(a, b)];
+      if (x1 === x2) return null;
+      const y = Math.max(y1, y2);
+      // The mark's own box is the line of text above the stroke: that is the
+      // content it belongs to (and what is watched for changes).
+      const TEXT = 0.024;
+      return { type: 'mark', shape: 'underline', points: [[x1, y], [x2, y]], x: (x1 + x2) / 2, y: Math.max(0, y - TEXT / 2), w: x2 - x1, h: TEXT, label };
+    }
     case 'shape': {
       const [coords, label] = splitLabel(rest);
       const n = numbers(coords);

@@ -3,10 +3,7 @@ import assert from 'node:assert/strict';
 import { EN } from '../src/core/locales/en.js';
 import { detectLanguage, keyOf, normalizeLanguage, setLanguage, t, translate } from '../src/core/i18n.js';
 import { report } from '../scripts/i18n-keys.mjs';
-import { explainHttpError, explainNetworkError } from '../src/engine/api-errors.js';
-import { priceLabel } from '../src/engine/models.js';
 import { buildSystemPrompt } from '../src/core/prompt.js';
-import { fetchModels } from '../src/engine/model-sources.js';
 
 // Runs something with Judith speaking English, and puts French back.
 async function inEnglish(run) {
@@ -44,34 +41,13 @@ test('translate: French stays as written, English comes from the dictionary, the
 test('apostrophes and spaces written two ways are one sentence', () => {
   assert.equal(translate('en', 'Je n’ai rien entendu.'), "I didn't hear anything.");
   assert.equal(translate('en', "Je n'ai   rien entendu."), "I didn't hear anything.");
-  assert.equal(translate('en', 'Une autre zone ? La première reste à côté.'), 'Another zone? The first one stays beside it.');
+  assert.equal(translate('en', 'Pas d’appli à ouvrir : tu parles, elle répond sur ton écran. Tu peux l’interrompre.'), 'No app to open: you talk, she answers on your screen. You can interrupt her.');
 });
 
 test('the language of Windows decides the first start: French stays French, the rest is English', () => {
   assert.deepEqual(['fr-FR', 'fr-CA', 'fr', 'en-US', 'en-GB', 'de-DE', 'es', '', undefined].map(detectLanguage), ['fr', 'fr', 'fr', 'en', 'en', 'en', 'en', 'en', 'en']);
   assert.equal(normalizeLanguage('en'), 'en');
   assert.equal(normalizeLanguage('klingon'), 'fr');
-});
-
-test('the errors a user reads follow the language', async () => {
-  const spec = { id: 'mistral', label: 'Mistral', keyPrefix: '', models: [] };
-  const fr = explainHttpError({ spec, status: 401, body: '', model: 'm' }).message;
-  assert.match(fr, /refuse ta clé API/);
-  await inEnglish(() => {
-    assert.match(explainHttpError({ spec, status: 401, body: '', model: 'm' }).message, /Mistral refuses your API key/);
-    const rate = explainHttpError({ spec, status: 429, body: '{"message":"Service tier capacity exceeded for this model."}', model: 'm', retryAfter: 20 });
-    assert.match(rate.message, /too many requests” \(429\) : Service tier capacity exceeded for this model\./);
-    assert.match(rate.message, /wait 20 s/);
-    assert.match(explainNetworkError({ spec, error: Object.assign(new Error('x'), { cause: { code: 'ENOTFOUND' } }) }).message, /Check your internet connection/);
-    assert.equal(priceLabel({ prompt: '0', completion: '0' }), 'free');
-    assert.equal(priceLabel({ prompt: '0.000001', completion: '0.000003' }), '1 / 3 $ per million');
-  });
-});
-
-test('the model list errors follow the language too', async () => {
-  const down = () => fetchModels({ provider: 'openai', key: 'k', fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }) });
-  assert.match((await down()).error.message, /problème de son côté/);
-  await inEnglish(async () => assert.match((await down()).error.message, /has a problem on its side/));
 });
 
 test('the system prompt gives its examples and its offer in the language of the user', () => {
