@@ -67,7 +67,9 @@ mkdirSync(app, { recursive: true });
 const { devDependencies, scripts, ...appPkg } = pkg;
 writeFileSync(join(app, 'package.json'), JSON.stringify(appPkg, null, 2));
 for (const item of ['src', 'assets', 'LICENSE']) {
-  if (existsSync(join(root, item))) cpSync(join(root, item), join(app, item), { recursive: true });
+  // assets/readme holds the screenshots of the README (10 MB): the app does not use them.
+  const keep = (src) => !/^assets[\\/]readme([\\/]|$)/.test(relative(root, src));
+  if (existsSync(join(root, item))) cpSync(join(root, item), join(app, item), { recursive: true, filter: keep });
 }
 
 // Native companions, built with the .NET SDK when it is installed. Without
@@ -110,7 +112,8 @@ const skip = (rel) =>
   rel.endsWith('.map') ||
   /onnxruntime-node[\\/]bin[\\/]napi-v\d+[\\/](darwin|linux)/.test(rel) ||
   /onnxruntime-node[\\/]bin[\\/]napi-v\d+[\\/]win32[\\/]arm64/.test(rel) ||
-  /onnxruntime-web[\\/]dist[\\/].*\.wasm$/.test(rel) ||
+  // onnxruntime-web (the browser build, 37 MB): the Node build of transformers.js carries its own copy.
+  /^node_modules[\\/]onnxruntime-web([\\/]|$)/.test(rel) ||
   // three.js: the 3D scene frame loads build/three.min.js only (~30 MB less).
   (/^node_modules[\\/]three[\\/]/.test(rel) && !/^node_modules[\\/]three([\\/](package\.json|LICENSE|build([\\/]three\.min\.js)?))?$/.test(rel));
 for (const pkgDir of packages) {
