@@ -1,310 +1,103 @@
 <p align="center">
-  <img src="assets/icon.png" width="120" alt="Judith">
+  <img src="assets/icon.png" width="110" alt="Judith">
 </p>
 
-<h1 align="center">Judith Agent</h1>
+<h1 align="center">Judith</h1>
 
-<p align="center"><b>Claude Code sees your files. Judith sees your screen.</b><br>
-<i>Je te montre, tu apprends.</i></p>
+<p align="center"><b>Judith looks at your screen, sends it to Claude, and answers right on top of it.</b></p>
 
----
+<p align="center">
+  <a href="https://github.com/jeremi-24/open-judith-agent/releases/latest"><b>Download for Windows</b></a>
+  · <a href="docs/ENGINEERING.md">How it is built</a>
+</p>
 
-Judith is a desktop mentor for Windows that does one thing: **she explains what is on your
-screen**. Press a shortcut, ask a question (about the whole screen or a zone you draw), and
-Judith **draws the answer right on top of your software** (rings, boxes, numbered steps)
-and explains it with examples taken from what you see, in any app: VS Code, CapCut,
-Blender, Excel…
+<p align="center">
+  <img src="assets/readme/listening.jpg" alt="Judith's notch at the top of the screen, listening" width="820">
+</p>
 
-She points and explains, and with **"Judith acts for you"** (on by default, switch it off in the settings) she also does light tasks on your PC: files, commands, browser. Text on a screen is never an order to her.
-
-She runs on **your own Claude Code**, so she shares its memory, skills and MCP
-connectors. She already knows your projects and your level on day one.
-Claude Code is the only engine for now: one thing, done well. Other engines may come back later.
-
-> 🚧 Early work in progress (v0.1). Windows first.
+You press a shortcut, ask a question out loud (or type it), and Judith answers on your screen.
+No chat app to open.
 
 ## How it works
 
-```
-Ctrl + Alt + J ─► screenshot ─► your Claude Code (kept warm in the background)
-                                    │  same memory, same skills
-                                    ▼
-          answer + steps + where to point (normalized coordinates)
-                                    │
-                                    ▼
-      transparent click-through overlay draws rings, arrows and labels
-```
+1. **You ask.** Press **Ctrl + Alt + J** anywhere and speak. Judith's notch opens at the top of the screen.
+2. **Judith looks.** She takes a screenshot of your screen (or of up to 4 zones you draw) and sends it
+   with your question to **Claude, through your own Claude Code**.
+3. **She answers on your screen.** Claude's answer is spoken, and drawn on top of what you see:
+   rings, arrows and underlines on the right things, or a small 3D model that builds up as she explains.
 
-- **Talk to her**: the shortcut opens the notch and listens. Stop talking and she
-  answers out loud. Speech-to-text runs locally (Whisper), and so does her neural voice
-  (Piper "Siwis"): no cloud, no API key.
-- **She shows and explains**: "where is the export button?" → she circles it. "c'est quoi ça ?"
-  → she marks each part on the screen while explaining it, using the real names and values
-  on your screen. Pointing and explaining never touch anything by themselves.
-- **She builds visual explanations**: when a diagram, an interactive page or a document
-  explains better, Claude Code makes it with your own tools (Artifacts, Docs…) and Judith
-  opens it in your browser, with a card in the notch. She never reads a link aloud.
-- **Show her a zone**: press **Ctrl + Alt + Shift + J** (or the frame button in the notch)
-  and draw a rectangle around what you want to understand. Only that zone is sent, and
-  she annotates it. Escape or a simple click cancels. Draw another zone and the first one
-  stays as a numbered thumbnail in the notch (up to 4, a cross removes one): she sees them
-  all and can compare them.
-- **Session mode** *(planned)*: give her a goal, she guides you step by step, quizzes
-  you and tracks what you have learned.
+<p align="center">
+  <img src="assets/readme/flow.png" alt="From a question to an answer: shortcut, notch, conversation manager, screenshot, Claude Code, answer" width="820">
+</p>
 
-## Requirements
+<p align="center">
+  <img src="assets/readme/balloon-3d.jpg" alt="Judith explaining how a hot air balloon flies, with a 3D model built part by part" width="820">
+</p>
 
-- Windows 10/11
-- [Claude Code](https://code.claude.com) installed and logged in (`claude` works in a terminal).
-  Judith keeps it warm for fast answers, with its memory, skills and connectors.
+She can also do light tasks on your PC when you ask (files, commands, browser). That is on by default and
+can be turned off in the settings (the gear in the notch): see [Privacy and safety](#privacy-and-safety).
 
-### Settings
-
-The gear in the notch (on the resting pill when hovered, or while listening) opens the settings,
-one per row:
-
-- **Model**: Haiku (fast, right for a conversation), Sonnet, or Opus (annotates better, answers
-  more slowly). **Thinking**: how much Claude thinks before answering.
-- **Drawing on the screen**: only when it helps, always, or never.
-- **Push to talk** (noisy places), the **notes board**, the **autonomous agent mode**, the language.
-
-**Tester** asks Claude Code a tiny question with a tiny image, with the settings being tried,
-and says if it works. A dot at the top says whether Claude Code was found on this PC.
-
-## Languages
-
-French and English. On a first start Judith takes the language of Windows; change it with the
-**FR | EN** switch of the welcome window or **Langue / Language** in the tray menu.
-See [docs/I18N.md](docs/I18N.md) to add a sentence or a language.
+French and English, chosen from the language of Windows.
 
 ## Install
+
+You need Windows 10/11 and [Claude Code](https://code.claude.com) installed and logged in
+(`claude` works in a terminal). Judith thinks with it, so she shares its memory and skills.
 
 1. Download `Judith-Setup-<version>.exe` from the
    [latest release](https://github.com/jeremi-24/open-judith-agent/releases/latest).
 2. Run it. The installer is not code-signed yet, so Windows SmartScreen may say
    "Windows protected your PC": click **More info → Run anyway**.
-3. Judith starts, and from now on with Windows (right-click her icon near the clock to
-   turn that off). Press **Ctrl + Alt + J** anywhere.
+3. Judith starts. Press **Ctrl + Alt + J**.
 
-No admin rights needed. Uninstall from **Settings → Apps → Installed apps**; your settings,
-keys and diary stay in `%APPDATA%\open-judith-agent`.
+It installs for your account only (no admin rights) and starts with Windows (you can turn that off in the
+welcome window or the tray menu). On first use she downloads her speech model (about 80 MB) and her
+voice (about 65 MB), once. Uninstall from **Settings → Apps**; your settings stay in
+`%APPDATA%\open-judith-agent`.
 
-## Run from source
+## Or install it from the sources (easiest: let Claude Code do it)
 
-Requires Node.js 22+.
+Open Claude Code in an empty folder and paste this:
 
-```bash
-git clone https://github.com/jeremi-24/open-judith-agent.git
-cd open-judith-agent
-npm install
-npm start
+```
+Clone https://github.com/jeremi-24/open-judith-agent.git into my current folder.
+Read its README, install the dependencies with npm, then start Judith locally with `npm start`.
+Tell me when she is running and walk me through anything that fails.
 ```
 
-To build the installer, see [docs/RELEASING.md](docs/RELEASING.md).
+Claude Code clones the project, installs it and starts it for you. By hand, you need Windows 10/11 and
+Node.js 22+: `git clone https://github.com/jeremi-24/open-judith-agent.git`, then `npm install`, then `npm start`
+(in PowerShell, use `npm.cmd` if scripts are blocked on your PC).
 
-### Configuration
+## Privacy and safety
 
-Judith reads `config.json` in her user data folder
-(`%APPDATA%\open-judith-agent\config.json`). All keys are optional:
+- A screenshot is sent only when you ask something. It goes to Claude through your own Claude Code and is
+  never written to disk. Judith's own windows are left out of captures.
+- Speech recognition and her voice run on your PC. A diary of your questions (`journal.jsonl`) stays on
+  your PC too; turn it off with `"journal": false` in `config.json`.
+- **"Claude can act" is on by default**: Claude Code then runs with all its tools and **without permission
+  prompts**. Text on a screen can carry instructions meant for the model, and Judith's prompt says that only
+  your words count, which is not a guarantee. Switch it off in the settings if you look at things you do not
+  trust: she then only looks and explains.
 
-```json
-{
-  "workingDirectory": "C:\\Users\\you\\projects",
-  "claudePath": "C:\\Users\\you\\.local\\bin\\claude.exe",
-  "model": "haiku",
-  "language": "fr",
-  "shortcut": "Control+Alt+J",
-  "voiceInput": true,
-  "speechModel": "onnx-community/whisper-base",
-  "hideFromScreenRecordings": true
-}
-```
+## More
 
-- `workingDirectory` matters: Claude Code loads the memory and `CLAUDE.md` of that folder,
-  so point it where you usually run `claude`. In JSON, write paths with `/` or `\\`.
-- `voiceInput`: listen as soon as Judith is summoned. The Whisper model (~80 MB) is
-  downloaded once on first launch, then everything stays offline.
-- `voice`: local neural voice (Siwis in French, Kristin in English, ~65 MB each,
-  downloaded once for the language you use) or `windows`
-  (the system voices, more robotic). `voiceSpeed`: 1 = normal.
-- `hideFromScreenRecordings`: keep `true` for privacy; set `false` to film demos with OBS.
-- `alwaysLook` (default `false`): Judith takes a screenshot only when the question needs it
-  (her `look_at_screen` tool). `true` sends one with every question, slower.
-- `zoneShortcut` (default `Control+Alt+Shift+J`): summon Judith and draw the zone to explain.
-- `claudeActs` (default `true`): Claude Code may act on your PC (files, commands, browser), without permission prompts. `false`: it only looks and explains.
-- `openCreations` (default `true`): open what Claude makes to explain (artifact, diagram, document) in the browser.
-- `conversation` (default `true`): after answering, Judith listens for 5 more seconds.
-- `annotations`: `helpful` (default, draws only when it saves you searching), `none`, `always`.
+[What she can do](docs/FEATURES.md) · [Configuration](docs/CONFIG.md) · [Adding a language](docs/I18N.md) ·
+[Building a release](docs/RELEASING.md)
 
-### Cloud voice and listening (optional, your own keys)
-
-Out of the box everything is local: Whisper listens, Piper "Siwis" speaks. For the best
-quality, the same approach as commercial assistants is available with your own accounts:
-
-| Setting | Effect |
-|---|---|
-| `"speechInput": "deepgram"`, `"deepgramKey": "…"` | Live listening with [Deepgram](https://deepgram.com): words appear while you speak and the end of your sentence is detected by the service. Free credit at sign-up. |
-| `"voice": "elevenlabs"`, `"elevenlabsKey": "…"` | Natural voice by [ElevenLabs](https://elevenlabs.io) (`elevenlabsVoice` = voice id). Free tier available. |
-| `"voice": "fish"`, `"fishKey": "…"` | Natural voice by [Fish Audio](https://fish.audio) (`fishVoice` = voice id). The `s2.1-pro-free` model is free (until 30 Nov 2026 at least). |
-
-Keys can also come from the `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY` and `FISH_API_KEY` environment variables.
-If a cloud service fails (bad key, no credit), Judith falls back to the local voice.
-Cloud mode sends your voice (Deepgram) and Judith's sentences (ElevenLabs) to those services.
-
-### How a conversation works
-
-One conversation manager (`src/core/conversation.js`) decides who talks and when; the
-microphone, the transcription, Claude Code and the voice only report events to it.
-
-- **Listening**: a voice detector that learns the room noise. A pause after "et",
-  "parce que", "euh" or a comma waits for the rest of the sentence.
-- **Interrupting**: talk over Judith and she stops to listen (`"interruptions": true`).
-- **Cancelling**: the **X** button (or Esc) stops everything, whoever is talking, including
-  Claude Code in the middle of an answer. The conversation memory is kept.
-- **Follow-up**: after answering, Judith listens a few more seconds (`"conversation": true`).
-
-### Marks on the real controls
-
-The model gives an approximate box from a screenshot. On Windows, a tiny companion
-(`companions/eyes`, .NET Framework 4.8, built into Windows 10/11) asks **UI Automation** which
-controls are around that point, with their exact bounds, and Judith draws the ring or box on
-the right one (`src/core/snap.js` picks it: overlap, name matching the label, kind of control).
-Without the companion, marks keep the model's position. To build it from source: install the
-[.NET SDK](https://dotnet.microsoft.com/download) and run `dotnet build companions/eyes -c Release`.
-
-### Diagrams on the screen
-
-To explain how things relate, Judith marks the parts and joins them with hand-drawn arrows
-(`arrow` in her script): "this value comes from there", "this call goes to that function".
-A word, a title or a number gets a line under it (`underline`). When she explains what is on
-the screen, each sentence comes with its own mark, to the last one.
-
-### The board
-
-Notes, visuals and 3D scenes open in a small panel at the bottom left. It never takes more
-than 42% of the width and 62% of the height of the screen (past that it scrolls), its title
-bar folds it to one line, and you can drag it elsewhere.
-
-### 3D explanations
-
-When the question is how a physical thing works (the engine of a jet in a video, a gearbox, a
-heart, a building), Judith can build a **schematic 3D model** in a small window next to the
-screen. The model **builds up part by part** while she talks (`scene <n>` in her script), each
-part labelled by hand with a line to it. What she builds is her own choice: she describes any
-list of solids, where they sit, and in which step they appear. Smooth shapes (a profile turned
-round an axis, ellipsoids, capsules, pipes along a path, curved outlines, soft-edged boxes) keep
-it from looking like stacked blocks, and a soft shadow grounds it. She can make a part turn, rock or slide. The
-screenshot she looked at is one press away ("Ce que j'ai vu"). If she is not sure what the
-object is, she says so and explains the principle rather than inventing a model name.
-
-The model writes the scene's code (`show_scene`) with Judith's bricks
-(`src/renderer/scene-bricks.js`: `J.build` for free placement, plus assemblies of parts, flows,
-exploded views, motion) on three.js. The code runs in a sandboxed frame served from `judith-frame://` with its own
-CSP: no network, no access to Judith. If it fails or hangs, the tool says so (a hung scene is
-stopped after 5 s) and she explains with words and marks instead.
-
-### Agent mode (guided)
-
-Start a question with the special word **"Agent"** (or "mode agent") and Judith takes you to
-the goal step by step, in a loop: "Agent, exporte cette vidéo en MP4".
-
-1. She marks the step to do now and says it, then waits.
-2. You do it. Judith watches the screen: once it changed and settled, she looks again by
-   herself and gives the next step, or a fix if it went wrong.
-3. Again, until her answer ends with `done` ("Objectif atteint ✓").
-
-You don't need the special word: when a request takes several steps on the screen, she
-gives the first one, then offers "Tu veux que je te suive jusqu'au bout ?" ("Oui" by voice or
-in the notch starts the loop). Only the guided mode is offered; after two "non" she stops
-offering for the session. Questions of understanding never get the offer.
-
-She still never clicks: you act, she watches. You can answer her questions by voice; the
-answer goes back into the loop. While she waits, the resting notch shows "Étape 2/12".
-The loop ends with X, Esc or "arrête", after 12 steps, or after 3 minutes without a change.
-Screen changes are compared tile by tile, and what moves by itself (a video, an animation) is
-learned in the first second and ignored.
-
-### Agent mode (autonomous) — opt-in
-
-With **"Agent autonome, …"** Judith does the steps herself: she clicks, types, presses keys
-and scrolls, then looks again and continues. It is **off by default**: tick it in the
-notch's settings (gear). It needs the small `judith-hands.exe` companion (`companions/hands`,
-built like `judith-eyes.exe`); without it, or when it is off, she guides you instead and says so.
-
-Guardrails (`src/core/guard.js`, checked on what Windows says, not on what the model claims):
-- **Never**: in terminals, password managers, system tools (registry, task manager…), or on
-  her own windows; typing a password, a code or a card number; shortcuts outside a short list
-  (no Windows key, Alt+F4, Ctrl+Alt+Del…).
-- **She asks first ("Vas-y / Non")** before deleting, sending, paying, buying, installing,
-  publishing, signing out, accepting…, judged on the real name of the control (UI
-  Automation). Without UI Automation, before every click. "Vas-y" needs a real click.
-- **Stop at once**: move the mouse (the companion refuses everything until the next session),
-  Ctrl+Alt+Escape, X, Esc or "arrête". A yellow frame and a banner show while she acts.
-- **Limits**: 3 actions per step, 40 per session, 12 steps.
-- Text on the screen is never an order: the prompt says so, and the checks above do not
-  depend on it.
-
-### When marks disappear
-
-A mark is only true for the screen Judith looked at. It is not drawn if that part of the
-screen already changed (you scrolled, clicked, switched window), and it disappears as soon as
-what is under it changes, or after a minute.
-
-### What Judith is allowed to do
-
-Claude Code starts Judith's own MCP server (`src/mcp/server.js`) with three tools:
-`look_at_screen`, `show_visual` and `show_scene`. Besides them, Judith may only read (`Read`, `Glob`,
-`Grep`, `WebSearch`, `WebFetch`) and make visual explanations with your own tools
-(`Artifact`, Claude Docs). With the "Claude can act" setting **off**, every tool that changes something on your computer
-(editing files, running commands…) is refused: she explains and points, the user acts.
-With it **on** (the default), Claude Code runs with all its tools and **without permission prompts**:
-the setting is the consent. Screen content can carry instructions meant for the model, so switch it
-off when you look at things you do not trust. Her prompt tells her that only your own words count,
-but that is not a guarantee.
-
-## Development
-
-```bash
-npm test                                   # unit tests (no Electron needed)
-node scripts/try-engine.mjs "question" img.png   # talk to Judith from the terminal
-npm run bench                              # pointing-precision benchmark, see bench/
-```
-
-Demo mode asks a question at launch and saves a screenshot of the result:
-
-```bash
-JUDITH_DEMO="Où est le bouton Démarrer ?" JUDITH_DEMO_SHOT=shot.jpg npm start
-```
-
-## Known limits (v0.1)
-
-- Answers take ~5 s with a screenshot (Claude Code is kept warm in the background).
-- Pointing snaps onto real controls through UI Automation; content without accessible
-  controls (images, videos, canvases, some games) keeps the model's approximate position.
-- With voice, a full turn takes ~8-10 s (end of speech, ~2 s of transcription, answer).
-- No wake word yet ("Hey Judith"): use the shortcut.
-
-## Privacy
-
-- A screenshot is sent only when you ask something: it goes to Claude through your own Claude
-  Code, and is never written to disk. Judith's own windows are excluded from captures.
-- Between two steps of agent mode, and while marks are on the screen, Judith compares tiny copies
-  of the screen on this PC to notice that it changed. Those copies are never sent or saved.
-- `journal.jsonl` in her data folder keeps one line per question (the question, the tools used,
-  the timings), on this PC only. Turn it off with `"journal": false` in `config.json`.
-- The optional cloud voices send your voice (Deepgram) or Judith's sentences (ElevenLabs, Fish
-  Audio) to those services; their keys are stored in clear text in `config.json`.
+For engineers: [how it is built, what protects the user, how it is tested](docs/ENGINEERING.md).
 
 ## Credits
 
-- Voice: [Piper](https://github.com/rhasspy/piper) `fr_FR-siwis-medium`, trained on the
-  [SIWIS French Speech Synthesis Database](https://datashare.is.ed.ac.uk/handle/10283/2353)
-  (CC BY 4.0), run with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0).
-- English voice: Piper `en_US-kristin-medium`, trained on a [LibriVox](https://librivox.org)
-  recording (public domain).
+Judith was built independently. The idea of an AI buddy that sees your screen was made popular by
+[Clicky / HeyClicky](https://github.com/farzaa/clicky) (MIT), whose open-source version is for macOS.
+
+- Voice: [Piper](https://github.com/rhasspy/piper) `fr_FR-siwis-medium` (trained on the
+  [SIWIS database](https://datashare.is.ed.ac.uk/handle/10283/2353), CC BY 4.0) and `en_US-kristin-medium`
+  (a public-domain LibriVox recording), run with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0).
 - Speech recognition: [Whisper](https://github.com/openai/whisper) through
   [Transformers.js](https://github.com/huggingface/transformers.js).
 
 ## License
 
-MIT
+MIT. Judith is an independent project, not affiliated with Anthropic.
