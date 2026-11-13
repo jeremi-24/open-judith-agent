@@ -18,6 +18,16 @@
 You press a shortcut, ask a question out loud (or type it), and Judith answers on your screen.
 No chat app to open.
 
+## Why
+
+A chat assistant does not see what you are looking at. Here, asked "where is this?", it can only ask for a file:
+
+<p align="center">
+  <img src="assets/readme/without-judith.jpg" alt="A chat app answering 'where is this?' by asking for an attached image" width="820">
+</p>
+
+Judith already sees your screen, so you just ask.
+
 ## How it works
 
 1. **You ask.** Press **Ctrl + Alt + J** anywhere and speak. Judith's notch opens at the top of the screen.
