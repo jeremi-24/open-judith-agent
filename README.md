@@ -50,6 +50,20 @@ welcome window or the tray menu). On first use she downloads her speech model (a
 voice (about 65 MB), once. Uninstall from **Settings → Apps**; your settings stay in
 `%APPDATA%\open-judith-agent`.
 
+## Or install it from the sources (easiest: let Claude Code do it)
+
+Open Claude Code in an empty folder and paste this:
+
+```
+Clone https://github.com/jeremi-24/open-judith-agent.git into my current folder.
+Read its README, install the dependencies with npm, then start Judith locally with `npm start`.
+Tell me when she is running and walk me through anything that fails.
+```
+
+Claude Code clones the project, installs it and starts it for you. By hand, you need Windows 10/11 and
+Node.js 22+: `git clone https://github.com/jeremi-24/open-judith-agent.git`, then `npm install`, then `npm start`
+(in PowerShell, use `npm.cmd` if scripts are blocked on your PC).
+
 ## Privacy and safety
 
 - A screenshot is sent only when you ask something. It goes to Claude through your own Claude Code and is
@@ -65,8 +79,6 @@ voice (about 65 MB), once. Uninstall from **Settings → Apps**; your settings s
 
 [What she can do](docs/FEATURES.md) · [Configuration](docs/CONFIG.md) · [Adding a language](docs/I18N.md) ·
 [Building a release](docs/RELEASING.md)
-
-To run it from the sources (Node.js 22+): `git clone`, `npm install`, `npm start`.
 
 ## Credits
 
