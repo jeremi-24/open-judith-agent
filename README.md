@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/jeremi-24/open-judith-agent/releases/latest"><b>Download for Windows</b></a>
+  · <a href="docs/ENGINEERING.md">How it is built</a>
 </p>
 
 <p align="center">
@@ -24,6 +25,10 @@ No chat app to open.
    with your question to **Claude, through your own Claude Code**.
 3. **She answers on your screen.** Claude's answer is spoken, and drawn on top of what you see:
    rings, arrows and underlines on the right things, or a small 3D model that builds up as she explains.
+
+<p align="center">
+  <img src="assets/readme/flow.png" alt="From a question to an answer: shortcut, notch, conversation manager, screenshot, Claude Code, answer" width="820">
+</p>
 
 <p align="center">
   <img src="assets/readme/balloon-3d.jpg" alt="Judith explaining how a hot air balloon flies, with a 3D model built part by part" width="820">
