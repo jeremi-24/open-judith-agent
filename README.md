@@ -80,6 +80,8 @@ Node.js 22+: `git clone https://github.com/jeremi-24/open-judith-agent.git`, the
 [What she can do](docs/FEATURES.md) · [Configuration](docs/CONFIG.md) · [Adding a language](docs/I18N.md) ·
 [Building a release](docs/RELEASING.md)
 
+For engineers: [how it is built, what protects the user, how it is tested](docs/ENGINEERING.md).
+
 ## Credits
 
 Judith was built independently. The idea of an AI buddy that sees your screen was made popular by
