@@ -1,88 +1,104 @@
-# Engineering notes
+# How Judith is built
 
-How Judith is built, what protects the user, how it is tested, and where it is weak.
-Everything here can be checked in the code; file names are given.
+A plain tour of the code: how a question travels, what keeps the user safe, how it is tested, and what is still weak.
+You can check everything here in the code. File names are given.
 
-Judith was built with Claude Code as a pair programmer. The product choices, the tests on real screens and
-the decisions are the author's.
+I built Judith with Claude Code as a pair programmer. The product choices, the tests on real screens and the decisions are mine.
 
-## The path of one question
+## What happens when you ask a question
 
 ```
-Ctrl+Alt+J ─► notch (renderer) ─► conversation manager (src/core/conversation.js)
-                                        │ question + turn number
-                                        ▼
-            main process (src/main/main.js) ─► screenshot (capture.js)
-                                        │ image + question, stream-json
-                                        ▼
-        Claude Code, kept warm (src/engine/claude-code.js) ─► Judith's MCP server (src/mcp/server.js)
-                                        │ answer as a script of lines
-                                        ▼
-   script reader (src/core/script.js) ─► say  → voice (local Piper)
-                                       ├ ring / box / arrow / underline → overlay window (hand-drawn ink)
-                                       └ scene n → 3D board (three.js, sandboxed frame)
+Ctrl+Alt+J ─► notch ─► conversation manager (src/core/conversation.js)
+                              │ your question
+                              ▼
+        main process (src/main/main.js) ─► takes a screenshot (capture.js)
+                              │ image + question
+                              ▼
+        Claude Code, kept running (src/engine/claude-code.js)
+                  │ may call Judith's own tools through MCP (src/mcp/server.js)
+                  ▼
+        answer, written as short script lines (src/core/script.js)
+           ├─ say                          → her voice (local Piper)
+           ├─ ring / box / arrow / underline → drawn on your screen
+           └─ scene n                       → a 3D model that builds up
 ```
 
-- **One conversation manager decides who talks and when** (`conversation.js`). The microphone, the speech
-  recognition, Claude Code and the voice only report events to it. Each question has a turn number, and
-  anything a cancelled turn still sends is ignored. This is what prevents echo loops, double answers and
-  fights between the microphone and the voice.
-- **Claude Code is kept warm** as a long-lived process spoken to over `stream-json`: a fresh process per
-  question costs about 10 s. Cancelling interrupts the turn; if it does not stop quickly, the process is
-  restarted on the same session so the conversation is kept.
-- **Claude answers in a tiny line-based script** (`say`, `ring`, `box`, `arrow`, `underline`, `scene`,
-  `zone`, `step`…) read as it streams in, so a drawing appears when her sentence about it starts.
-- **Marks have a life cycle** (`src/core/pixels.js`, in `main.js`): a mark is true only for the screen she
-  looked at. Tiny copies of the screen are compared on this PC; a mark follows its content when the page
-  scrolls and disappears when its content changes.
-- **Windows UI Automation** (`companions/eyes`, .NET Framework 4.8) gives the exact bounds of the control
-  under a mark; `src/core/snap.js` picks the right one (overlap, name, kind of control). Without it, marks
-  keep the model's position.
+In short:
 
-## Layout of the code
+- **One part decides who talks and when.** It is `conversation.js`. The microphone, speech recognition, Claude Code
+  and the voice only tell it what happened. Every question has a number, and anything a cancelled question still
+  sends is ignored. That is how I avoid echo loops, double answers and the mic fighting the voice.
+- **Claude Code stays running.** Starting a new one for each question takes about 10 seconds. Judith keeps one open and
+  talks to it over `stream-json`. If you cancel and it does not stop fast, she restarts it on the same session, so the
+  conversation is not lost.
+- **Claude answers with a few simple lines** (`say`, `ring`, `box`, `arrow`, `underline`, `scene`…). Judith reads them
+  while they stream in, so a drawing shows up when she starts the sentence about it.
+- **Drawings only stay while they are true.** Judith compares small copies of the screen. If the page scrolls, the
+  drawing follows it. If the content changes, it disappears.
+- **Marks snap to the real buttons.** A small Windows helper (`companions/eyes`) asks Windows for the exact size of the
+  control under a mark, so a ring lands on the real button and not 30 pixels away.
 
-| Folder | Role |
+## The MCP server
+
+MCP is the way Claude Code gets extra tools. Judith has her own small MCP server (`src/mcp/server.js`). Claude Code
+starts it by itself when Judith runs, so the user sets up nothing.
+
+It gives Claude three tools:
+
+- `look_at_screen`: take a screenshot when the answer depends on what is on the screen.
+- `show_visual`: show a diagram or a page next to the screen.
+- `show_scene`: build a 3D model, step by step.
+
+The server does not touch your screen itself. It calls a small local server inside the app (`src/main/bridge.js`),
+which only listens on `127.0.0.1` and needs a random token on every call.
+
+```
+Claude Code ─► Judith's MCP server ─► local bridge (127.0.0.1 + token) ─► the app
+```
+
+## Where things are
+
+| Folder | What is in it |
 |---|---|
-| `src/core/` | Pure logic with no Electron: conversation, script, ink, snapping, pixels, guard, i18n |
+| `src/core/` | The logic, with no Electron: conversation, script, drawing, snapping, guardrails, translations |
 | `src/engine/` | The Claude Code process |
-| `src/main/` | Electron main process: windows, capture, voice, config, companions |
-| `src/renderer/` | The pages: notch, overlay, board, welcome, 3D frame |
-| `src/mcp/` | Judith's own MCP server (`look_at_screen`, `show_visual`, `show_scene`) |
-| `companions/` | Two small Windows programs: `eyes` (UI Automation), `hands` (mouse and keyboard) |
-| `test/` | Unit tests, run without Electron |
+| `src/main/` | The Electron side: windows, screenshots, voice, settings, the helpers |
+| `src/renderer/` | The pages: notch, drawing layer, board, welcome screens, 3D frame |
+| `src/mcp/` | Judith's MCP server |
+| `companions/` | Two small Windows programs: `eyes` (finds real buttons) and `hands` (mouse and keyboard) |
+| `test/` | Unit tests, no Electron needed |
 
-## What protects the user
+## What keeps the user safe
 
-- **Windows are isolated**: `sandbox`, `contextIsolation`, no Node in pages, a content-security policy on each page,
-  and a narrow preload bridge (`src/main/preload.cjs`).
-- **What the model writes runs in a sandboxed frame.** HTML visuals and 3D scene code are served from their own
-  scheme (`judith-frame://`, `src/main/frames.js`) with a policy that allows no network. A 3D scene that hangs is
-  stopped after 5 s and reported back to the model.
-- **The local bridge** between Claude Code's tools and the app listens on `127.0.0.1` only, and every call must carry
-  a random token (`src/main/bridge.js`).
-- **Screenshots are never written to disk** and are sent only when the user asks.
-- **The autonomous mode has guardrails that do not depend on the model** (`src/core/guard.js`, `src/core/pilot.js`):
-  forbidden apps (terminals, password managers, system tools, Judith herself), confirmation before deleting,
-  sending, paying or installing (judged on the real name of the control), no typing of passwords or card numbers,
-  an allowed list of keys, limits on actions and steps, and a stop as soon as the mouse moves
-  (enforced in the companion, `companions/hands`).
-- **"Claude can act" is a choice with a cost**: when it is on, Claude Code runs with all its tools and no permission
-  prompts. Text on a screen can carry instructions meant for the model. The prompt says only the user's words count;
-  that is a mitigation, not a guarantee. It can be turned off in the settings.
+- **Pages are isolated.** Sandbox on, no Node in the pages, a content policy on each page, and a very small bridge
+  to the app (`src/main/preload.cjs`).
+- **Code written by the model runs in a locked box.** HTML visuals and 3D scene code are served from their own scheme
+  (`judith-frame://`, `src/main/frames.js`) with a policy that allows no network. A 3D scene that freezes is stopped
+  after 5 seconds and the model is told.
+- **The local bridge is private.** It is on `127.0.0.1` only and every call needs the token.
+- **Screenshots are never saved to disk.** They are sent only when you ask something.
+- **The autonomous mode has guardrails that do not trust the model** (`src/core/guard.js`, `src/core/pilot.js`).
+  She never works in terminals, password managers or system tools. She asks before deleting, sending, paying or
+  installing (judged on the real name of the control). She never types passwords or card numbers. She uses a short
+  list of keys. She has a limit on actions. She stops as soon as you move the mouse, and that last check is inside the
+  helper program (`companions/hands`), not in the model.
+- **"Claude can act" has a real cost.** When it is on, Claude Code runs with all its tools and no permission prompts.
+  Text on a screen can contain instructions aimed at the model. Judith's prompt says only the user's words count, but
+  that helps, it does not guarantee anything. You can turn it off in the settings.
 
-## Tests and checks
+## Tests
 
-- Unit tests in `test/` run with `npm test` and need no Electron: the logic is kept in `src/core` for that reason.
-- The 3D scene code is tested in Node with the real three.js, through `vm`, with a fake renderer.
-- A test fails when a sentence of the interface has no English version or an English entry is left over.
-- A CI workflow (`.github/workflows/ci.yml`) runs the tests on Windows and Linux and builds both companions.
+- `npm test` runs the unit tests. They do not need Electron, because the logic lives in `src/core`.
+- The 3D code is tested in Node with the real three.js and a fake renderer.
+- A test fails if a sentence in the interface has no English version.
+- A CI workflow (`.github/workflows/ci.yml`) runs the tests on Windows and Linux and builds both helpers.
 
-## Known limits
+## What is still weak
 
-- Windows only. It needs Claude Code installed and logged in.
-- The installer is not code-signed; Windows SmartScreen warns.
-- Speed: a spoken turn takes from about 1.5 s (a short follow-up) to about 7–14 s (a screenshot, a long answer, a 3D model
-  that had to be redone). Most of it is the model; speech-to-text adds about 2 s.
-- The precision of marks depends on the model: the same screen is annotated further with a stronger model than with a small one.
-- Content without accessible controls (video, canvas, some games) keeps the model's approximate position for marks.
-- `src/main/main.js` is large and holds a lot of state. Splitting it by concern (voice, marks, agent, settings) is the next refactor.
+- Windows only, and Claude Code must be installed and logged in.
+- The installer is not signed, so Windows SmartScreen shows a warning.
+- Speed: an answer takes from about 1.5 seconds (a short follow-up) to 7 to 14 seconds (a screenshot, a long answer,
+  or a 3D model that had to be redone). Most of that time is the model. Speech recognition adds about 2 seconds.
+- Drawing precision depends on the model. A stronger model annotates a screen further than a small one.
+- On content without real controls (video, canvas, some games), marks keep the model's rough position.
+- `src/main/main.js` is too big and holds too much state. Splitting it (voice, marks, agent, settings) is the next cleanup.
