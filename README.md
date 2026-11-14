@@ -7,7 +7,7 @@
 <p align="center"><b>Judith looks at your screen, sends it to Claude, and answers right on top of it.</b></p>
 
 <p align="center">
-  <a href="https://github.com/jeremi-24/open-judith-agent/releases/latest"><b>Download for Windows</b></a>
+  <a href="https://github.com/jeremi-24/open-judith-agent/releases/latest/download/Judith-Setup.exe"><b>Download for Windows</b></a>
   · <a href="docs/ENGINEERING.md">How it is built</a>
 </p>
 
@@ -54,8 +54,8 @@ French and English, chosen from the language of Windows.
 You need Windows 10/11 and [Claude Code](https://code.claude.com) installed and logged in
 (`claude` works in a terminal). Judith thinks with it, so she shares its memory and skills.
 
-1. Download `Judith-Setup-<version>.exe` from the
-   [latest release](https://github.com/jeremi-24/open-judith-agent/releases/latest).
+1. [Download `Judith-Setup.exe`](https://github.com/jeremi-24/open-judith-agent/releases/latest/download/Judith-Setup.exe)
+   (release notes and checksum: [latest release](https://github.com/jeremi-24/open-judith-agent/releases/latest)).
 2. Run it. The installer is not code-signed yet, so Windows SmartScreen may say
    "Windows protected your PC": click **More info → Run anyway**.
 3. Judith starts. Press **Ctrl + Alt + J**.
